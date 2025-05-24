@@ -2,23 +2,111 @@
  * Configuration utility for handling environment variables
  */
 
+// Detect if running in Electron
 declare global {
   interface Window {
-    __VERBWEAVER_CONFIG__?: {
-      API_URL?: string;
+    electronAPI?: {
+      getStoreValue: (key: string) => Promise<any>;
+      setStoreValue: (key: string, value: any) => Promise<void>;
+      getBackendStatus: () => Promise<{ running: boolean; port?: number; pid?: number }>;
     };
   }
+}
+
+const isElectron = (): boolean => {
+  return typeof window !== 'undefined' && window.electronAPI !== undefined;
+};
+
+export class ConfigManager {
+  private static instance: ConfigManager;
+  private backendUrl: string | null = null;
+  private wsUrl: string | null = null;
+
+  private constructor() {}
+
+  static getInstance(): ConfigManager {
+    if (!ConfigManager.instance) {
+      ConfigManager.instance = new ConfigManager();
+    }
+    return ConfigManager.instance;
+  }
+
+  async initializeForElectron(): Promise<void> {
+    if (!isElectron()) return;
+
+    try {
+      // Get the backend URL from electron store
+      const storedUrl = await window.electronAPI!.getStoreValue('backendUrl');
+      if (storedUrl) {
+        this.backendUrl = storedUrl;
+        this.wsUrl = storedUrl.replace('http://', 'ws://');
+      } else {
+        // If not stored, check backend status
+        const status = await window.electronAPI!.getBackendStatus();
+        if (status.running && status.port) {
+          this.backendUrl = `http://127.0.0.1:${status.port}`;
+          this.wsUrl = `ws://127.0.0.1:${status.port}`;
+          // Store for future use
+          await window.electronAPI!.setStoreValue('backendUrl', this.backendUrl);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to initialize Electron backend URL:', error);
+    }
+  }
+
+  getApiBaseUrl(): string {
+    // For Electron, use the dynamic backend URL
+    if (isElectron() && this.backendUrl) {
+      return `${this.backendUrl}/api/v1`;
+    }
+    
+    // For web production, use relative URLs
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+      return '/api/v1';
+    }
+    
+    // For web development, use environment variables or default
+    return process.env.VITE_API_URL || process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+  }
+
+  getWsUrl(): string {
+    // For Electron, use the dynamic WebSocket URL
+    if (isElectron() && this.wsUrl) {
+      return `${this.wsUrl}/ws`;
+    }
+    
+    // For web production
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${protocol}//${window.location.host}/ws`;
+    }
+    
+    // For web development, use environment variables or default
+    return process.env.VITE_WS_URL || process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
+  }
+
+  isElectronApp(): boolean {
+    return isElectron();
+  }
+}
+
+// Create and export singleton instance
+export const configManager = ConfigManager.getInstance();
+
+// Initialize for Electron on module load
+if (typeof window !== 'undefined' && isElectron()) {
+  configManager.initializeForElectron().catch(console.error);
 }
 
 /**
  * Shared configuration values
  */
-
 export const config = {
-  // API configuration - these will be overridden by environment variables
+  // API configuration - these will be overridden by ConfigManager
   api: {
-    baseUrl: process.env.VITE_API_URL || process.env.REACT_APP_API_URL || '/api/v1',
-    wsUrl: process.env.VITE_WS_URL || process.env.REACT_APP_WS_URL || '/ws',
+    get baseUrl() { return configManager.getApiBaseUrl(); },
+    get wsUrl() { return configManager.getWsUrl(); },
     timeout: 30000,
   },
   
@@ -37,28 +125,11 @@ export const config = {
   },
 };
 
-// Helper function to get API URL
+// Legacy helper functions for backward compatibility
 export function getApiUrl(): string {
-  // In production, use relative URLs
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
-    return '/api/v1';
-  }
-  // In development, check for environment variable
-  return process.env.VITE_API_URL || process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+  return configManager.getApiBaseUrl();
 }
 
-// Helper function to get WebSocket URL
 export function getWsUrl(): string {
-  if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    
-    // In production, use the same host
-    if (window.location.hostname !== 'localhost') {
-      return `${protocol}//${host}/ws`;
-    }
-  }
-  
-  // In development
-  return process.env.VITE_WS_URL || process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
+  return configManager.getWsUrl();
 } 

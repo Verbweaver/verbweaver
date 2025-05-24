@@ -1,6 +1,6 @@
 import React from 'react';
 import { create } from 'zustand';
-import { WebSocketEventType } from '@verbweaver/shared';
+import { WebSocketEventType, getWsUrl } from '@verbweaver/shared';
 
 interface WebSocketState {
   socket: WebSocket | null;
@@ -44,8 +44,9 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
       return;
     }
 
-    // Create new WebSocket connection
-    const ws = new WebSocket(`${WS_URL}/${projectId}?token=${accessToken}`);
+    // Create new WebSocket connection with dynamic URL
+    const wsUrl = getWsUrl();
+    const ws = new WebSocket(`${wsUrl}/${projectId}?token=${accessToken}`);
 
     ws.onopen = () => {
       console.log('WebSocket connected');

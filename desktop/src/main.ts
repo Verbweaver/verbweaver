@@ -78,10 +78,23 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
   }
 
   const port = await findAvailablePort();
-  const backendPath = isDevelopment 
-    ? join(__dirname, '../../backend')
-    : join(process.resourcesPath, 'backend');
-
+  
+  // Fix backend path for electron-vite development
+  let backendPath: string;
+  if (isDevelopment) {
+    // In development, go from dist/main up to project root, then to backend
+    backendPath = join(__dirname, '../../../backend');
+  } else {
+    backendPath = join(process.resourcesPath, 'backend');
+  }
+  
+  console.log('Backend path:', backendPath);
+  
+  // Check if backend exists
+  if (!existsSync(backendPath)) {
+    throw new Error(`Backend directory not found at: ${backendPath}`);
+  }
+  
   // Try different Python executables
   const pythonCommands = process.platform === 'win32' 
     ? ['py', 'python', 'python3'] 
@@ -113,7 +126,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
 
     backendProcess = spawn(pythonExecutable, [
       '-m', 'uvicorn',
-      'main:app',
+      'app.main:app',
       '--host', '127.0.0.1',
       '--port', port.toString(),
       '--no-access-log'
@@ -125,7 +138,8 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
         DATABASE_URL: `sqlite+aiosqlite:///${join(app.getPath('userData'), 'verbweaver.db')}`,
         SECRET_KEY: store.get('secretKey', 'default-secret-key-change-in-production') as string,
         BACKEND_CORS_ORIGINS: `http://localhost:3000,http://localhost:${port},file://`
-      }
+      },
+      shell: process.platform === 'win32'
     });
 
     const currentProcess = backendProcess;

@@ -10,12 +10,14 @@ import uvicorn
 from app.core.config import settings
 from app.api.v1.api import api_router
 from app.db.init_db import init_db
-from app.database import engine, Base
+from app.database import engine
+from app.db.base import Base
 from app.websocket import websocket_endpoint
 
 
 # Create database tables
-Base.metadata.create_all(bind=engine)
+# Note: With async SQLAlchemy, tables are created in init_db() during startup
+# Base.metadata.create_all(bind=engine)
 
 # Create FastAPI app
 app = FastAPI(

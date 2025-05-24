@@ -1,14 +1,25 @@
 import axios, { AxiosInstance } from 'axios'
-import { API_BASE_URL, API_VERSION } from '@verbweaver/shared'
+import { getApiUrl } from '@verbweaver/shared'
 
 // Create axios instance
 export const apiClient: AxiosInstance = axios.create({
-  baseURL: `${API_BASE_URL}${API_VERSION}`,
+  baseURL: getApiUrl(),
   headers: {
     'Content-Type': 'application/json',
   },
   withCredentials: true, // Send cookies with requests
 })
+
+// Update base URL dynamically (for Electron)
+if (typeof window !== 'undefined') {
+  // Check periodically if we're in Electron and the URL has changed
+  setInterval(() => {
+    const currentUrl = getApiUrl();
+    if (apiClient.defaults.baseURL !== currentUrl) {
+      apiClient.defaults.baseURL = currentUrl;
+    }
+  }, 1000);
+}
 
 // Request interceptor
 apiClient.interceptors.request.use(
