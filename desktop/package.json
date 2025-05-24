@@ -2,55 +2,104 @@
   "name": "@verbweaver/desktop",
   "version": "1.0.0",
   "private": true,
-  "main": "dist/main.js",
+  "main": "dist/main/main.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build && electron-builder",
+    "dev": "cross-env NODE_ENV=development electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
     "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
-    "@verbweaver/shared": "^1.0.0",
+    "@verbweaver/shared": "file:../shared",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.7"
   },
   "devDependencies": {
+    "@types/node": "^20.10.4",
+    "cross-env": "^7.0.3",
     "electron": "^27.1.3",
     "electron-builder": "^24.9.1",
     "electron-vite": "^1.0.29",
-    "@types/node": "^20.10.4",
     "typescript": "^5.3.3"
   },
   "build": {
     "appId": "com.verbweaver.app",
     "productName": "Verbweaver",
     "directories": {
-      "output": "dist"
+      "output": "dist-app",
+      "buildResources": "resources"
     },
     "files": [
       "dist/**/*",
-      "renderer/**/*"
+      "!node_modules",
+      "node_modules/**/*",
+      "!**/*.{ts,tsx,map}",
+      "!**/.*"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!**/__pycache__",
+          "!**/*.pyc",
+          "!**/venv",
+          "!**/.env"
+        ]
+      }
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "icon": "resources/icon.icns"
+      "icon": "resources/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist"
     },
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64", "ia32"]
+        }
+      ],
       "icon": "resources/icon.ico"
     },
     "linux": {
       "target": [
         "AppImage",
-        "deb"
+        "deb",
+        "rpm"
       ],
       "category": "Office",
-      "icon": "resources/icon.png"
+      "icon": "resources/icon.png",
+      "maintainer": "Verbweaver Team"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 110,
+          "y": 150
+        },
+        {
+          "x": 410,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     }
   }
 } 

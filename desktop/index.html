@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verbweaver</title>
+    <script>
+      // In development, redirect to the frontend dev server
+      if (process.env.NODE_ENV === 'development') {
+        window.location.href = 'http://localhost:5173';
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root">
+      <h1>Loading Verbweaver...</h1>
+      <p>If you see this message, please ensure the frontend is built and available.</p>
+    </div>
+  </body>
+</html> 

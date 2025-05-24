@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Verbweaver Desktop Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #4f46e5;
+        }
+        .info {
+            background: #e0e7ff;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        button {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #4338ca;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Verbweaver Desktop Test Page</h1>
+        
+        <div class="info">
+            <h2>Electron API Status</h2>
+            <p id="electron-status">Checking...</p>
+        </div>
+        
+        <div class="info">
+            <h2>Backend Status</h2>
+            <p id="backend-status">Checking...</p>
+        </div>
+        
+        <div>
+            <h2>Test Functions</h2>
+            <button onclick="testBackend()">Test Backend Connection</button>
+            <button onclick="testFileDialog()">Test File Dialog</button>
+            <button onclick="getAppVersion()">Get App Version</button>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+    
+    <script>
+        // Check if Electron API is available
+        const electronStatus = document.getElementById('electron-status');
+        const backendStatus = document.getElementById('backend-status');
+        const results = document.getElementById('results');
+        
+        if (window.electronAPI) {
+            electronStatus.innerHTML = '✅ Electron API is available';
+            electronStatus.style.color = 'green';
+            
+            // Check backend status
+            checkBackendStatus();
+        } else {
+            electronStatus.innerHTML = '❌ Electron API is NOT available';
+            electronStatus.style.color = 'red';
+        }
+        
+        async function checkBackendStatus() {
+            try {
+                const status = await window.electronAPI.getBackendStatus();
+                if (status.running) {
+                    backendStatus.innerHTML = `✅ Backend is running on port ${status.port} (PID: ${status.pid})`;
+                    backendStatus.style.color = 'green';
+                } else {
+                    backendStatus.innerHTML = '❌ Backend is not running';
+                    backendStatus.style.color = 'red';
+                }
+            } catch (error) {
+                backendStatus.innerHTML = `❌ Error checking backend: ${error.message}`;
+                backendStatus.style.color = 'red';
+            }
+        }
+        
+        async function testBackend() {
+            try {
+                const backendUrl = await window.electronAPI.getStoreValue('backendUrl');
+                results.innerHTML = `<div class="info">Backend URL: ${backendUrl || 'Not set'}</div>`;
+                
+                if (backendUrl) {
+                    const response = await fetch(`${backendUrl}/health`);
+                    if (response.ok) {
+                        results.innerHTML += '<div class="info">✅ Backend is reachable</div>';
+                    } else {
+                        results.innerHTML += `<div class="error">Backend returned status: ${response.status}</div>`;
+                    }
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function testFileDialog() {
+            try {
+                const result = await window.electronAPI.openFile();
+                if (result.canceled) {
+                    results.innerHTML = '<div class="info">File dialog was canceled</div>';
+                } else {
+                    results.innerHTML = `<div class="info">Selected files: ${result.filePaths.join(', ')}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function getAppVersion() {
+            try {
+                const version = await window.electronAPI.getAppVersion();
+                results.innerHTML = `<div class="info">App Version: ${version}</div>`;
+            } catch (error) {
+                results.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html> 
