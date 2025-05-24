@@ -1,0 +1,206 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+*.lcov
+.nyc_output
+
+# Production builds
+dist/
+dist-ssr/
+build/
+out/
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.ruff_cache/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+verbweaver.db
+alembic/versions/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Electron
+desktop/dist/
+desktop/out/
+desktop/release/
+*.provisionprofile
+
+# React Native
+*.hprof
+.gradle/
+local.properties
+*.iml
+*.xcworkspace
+*.xcuserstate
+android/.gradle/
+android/app/build/
+android/build/
+ios/build/
+ios/Pods/
+ios/*.xcworkspace/
+*.jsbundle
+metro.bundleCache
+.expo/
+.expo-shared/
+
+# TypeScript
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Misc
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.vuepress/dist/
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+.vercel
+*.pid
+*.seed
+*.pid.lock
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Package lock files (if using only one package manager)
+# Uncomment the ones you don't use:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+tmp/
+temp/
+
+# Git
+*.orig
+
+# Project specific
+/backend/static/
+/backend/media/
+/uploads/
+/downloads/
+.git-repos/
+*.bak
+
+# Documentation build
+docs/_build/
+docs/.doctrees/
+site/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# VS Code specific
+.vscode-test/
+*.vsix
+
+# JetBrains specific
+.idea/
+*.iws
+out/
+.idea_modules/
+
+# macOS
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk 

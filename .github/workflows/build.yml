@@ -1,0 +1,190 @@
+name: Build Verbweaver
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ created ]
+
+jobs:
+  # Build backend Docker image
+  backend-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Log in to Docker Hub
+        if: github.event_name == 'release'
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      - name: Build and push backend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend
+          push: ${{ github.event_name == 'release' }}
+          tags: |
+            verbweaver/backend:latest
+            verbweaver/backend:${{ github.ref_name }}
+
+  # Build frontend for web
+  frontend-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd frontend && npm ci
+      
+      - name: Build frontend
+        run: cd frontend && npm run build
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  # Build Electron desktop apps
+  desktop-apps:
+    needs: frontend-web
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact: verbweaver-linux
+          - os: windows-latest
+            artifact: verbweaver-windows
+          - os: macos-latest
+            artifact: verbweaver-macos
+    
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd desktop && npm ci
+      
+      - name: Download frontend build
+        uses: actions/download-artifact@v3
+        with:
+          name: frontend-dist
+          path: desktop/renderer
+      
+      - name: Build Electron app
+        run: cd desktop && npm run build
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.artifact }}
+          path: desktop/dist/*
+
+  # Build React Native mobile apps
+  mobile-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+      
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd mobile && npm ci
+      
+      - name: Build Android app
+        run: |
+          cd mobile/android
+          ./gradlew assembleRelease
+      
+      - name: Upload APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: verbweaver-android
+          path: mobile/android/app/build/outputs/apk/release/*.apk
+
+  mobile-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd mobile && npm ci
+          cd ios && pod install
+      
+      - name: Build iOS app
+        run: |
+          cd mobile/ios
+          xcodebuild -workspace Verbweaver.xcworkspace \
+            -scheme Verbweaver \
+            -configuration Release \
+            -archivePath $PWD/build/Verbweaver.xcarchive \
+            archive
+      
+      - name: Upload archive
+        uses: actions/upload-artifact@v3
+        with:
+          name: verbweaver-ios
+          path: mobile/ios/build/*.xcarchive
+
+  # Create release with all artifacts
+  create-release:
+    if: github.event_name == 'release'
+    needs: [backend-docker, desktop-apps, mobile-android, mobile-ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+      
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            verbweaver-windows/*
+            verbweaver-macos/*
+            verbweaver-linux/*
+            verbweaver-android/*.apk
+            verbweaver-ios/*.xcarchive 

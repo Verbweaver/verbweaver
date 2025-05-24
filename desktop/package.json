@@ -1,0 +1,56 @@
+{
+  "name": "@verbweaver/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build && electron-builder",
+    "preview": "electron-vite preview",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "@verbweaver/shared": "^1.0.0",
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.1.7"
+  },
+  "devDependencies": {
+    "electron": "^27.1.3",
+    "electron-builder": "^24.9.1",
+    "electron-vite": "^1.0.29",
+    "@types/node": "^20.10.4",
+    "typescript": "^5.3.3"
+  },
+  "build": {
+    "appId": "com.verbweaver.app",
+    "productName": "Verbweaver",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "resources/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+} 

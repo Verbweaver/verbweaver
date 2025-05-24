@@ -1,0 +1,47 @@
+{
+  "name": "verbweaver",
+  "version": "1.0.0",
+  "description": "A writing and design platform that thinks in relationships (graphs)",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend", 
+    "shared",
+    "desktop",
+    "mobile"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && python run_dev.py",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:desktop": "cd desktop && npm run dev",
+    "build": "npm run build:shared && npm run build:frontend && npm run build:backend",
+    "build:shared": "cd shared && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && echo 'Backend is Python, no build needed'",
+    "build:desktop": "cd desktop && npm run build",
+    "build:mobile": "cd mobile && npm run build",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces"
+  },
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/verbweaver.git"
+  },
+  "keywords": [
+    "writing",
+    "graph",
+    "markdown",
+    "git",
+    "project-management"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+} 
