@@ -2,36 +2,91 @@
 
 Welcome to Verbweaver! This guide will help you get up and running quickly.
 
-## Installation
+## Installation Options
 
-### System Requirements
+### Option 1: Desktop Application (Recommended for Writers)
 
-- **Operating System**: Windows 10+, macOS 10.15+, or Linux (Ubuntu 20.04+)
-- **Python**: 3.11 or higher
-- **Node.js**: 18.0 or higher
-- **Git**: 2.30 or higher
-- **Memory**: 4GB RAM minimum (8GB recommended)
-- **Storage**: 2GB free space
+The desktop application provides the best experience for individual writers who want to work offline with their local Git repositories.
 
-### Development Setup
+#### Pre-built Releases (Coming Soon)
 
-1. **Install Python**
-   - Download from [python.org](https://python.org)
-   - Ensure `pip` is installed and updated: `python -m pip install --upgrade pip`
+Once available, download the installer for your platform:
+- **Windows**: `Verbweaver-Setup-x.x.x.exe`
+- **macOS**: `Verbweaver-x.x.x.dmg`
+- **Linux**: `Verbweaver-x.x.x.AppImage`
 
-2. **Install Node.js**
-   - Download from [nodejs.org](https://nodejs.org)
-   - Verify installation: `node --version` and `npm --version`
+#### Building from Source
 
-3. **Install Git**
-   - Download from [git-scm.com](https://git-scm.com)
-   - Configure Git:
-     ```bash
-     git config --global user.name "Your Name"
-     git config --global user.email "your.email@example.com"
-     ```
+1. **Prerequisites**
+   - Node.js 18+ and npm
+   - Python 3.11+
+   - Git
+   - Build tools for your platform:
+     - **Windows**: Windows Build Tools (`npm install -g windows-build-tools`)
+     - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
+     - **Linux**: `build-essential` package
 
-4. **Clone and Setup Verbweaver**
+2. **Clone and Setup**
+   ```bash
+   git clone https://github.com/yourusername/verbweaver.git
+   cd verbweaver
+   
+   # Install shared dependencies
+   cd shared
+   npm install
+   npm run build
+   cd ..
+   
+   # Setup backend (required for desktop app)
+   cd backend
+   pip install -r requirements.txt
+   python init_db.py
+   cd ..
+   
+   # Setup desktop app
+   cd desktop
+   npm install
+   ```
+
+3. **Run in Development Mode**
+   ```bash
+   # From the desktop directory
+   npm run dev
+   ```
+   
+   This will start:
+   - The Electron application
+   - A local backend server (embedded)
+   - Hot reload for development
+
+4. **Build for Distribution**
+   ```bash
+   # Build for current platform
+   npm run build
+   
+   # Build for specific platform
+   npm run dist -- --win   # Windows
+   npm run dist -- --mac   # macOS
+   npm run dist -- --linux # Linux
+   ```
+   
+   Built applications will be in `desktop/dist/`
+
+### Option 2: Web Application
+
+Perfect for teams and collaboration.
+
+#### Development Setup
+
+1. **System Requirements**
+   - **Operating System**: Windows 10+, macOS 10.15+, or Linux (Ubuntu 20.04+)
+   - **Python**: 3.11 or higher
+   - **Node.js**: 18.0 or higher
+   - **Git**: 2.30 or higher
+   - **Memory**: 4GB RAM minimum (8GB recommended)
+   - **Storage**: 2GB free space
+
+2. **Clone and Setup**
    ```bash
    git clone https://github.com/yourusername/verbweaver.git
    cd verbweaver
@@ -48,9 +103,7 @@ Welcome to Verbweaver! This guide will help you get up and running quickly.
    npm install
    ```
 
-## First Run
-
-1. **Configure the Backend**
+3. **Configure the Backend**
    ```bash
    cd backend
    cp .env.example .env
@@ -60,7 +113,7 @@ Welcome to Verbweaver! This guide will help you get up and running quickly.
    python init_db.py
    ```
 
-2. **Start the Servers**
+4. **Start the Servers**
    ```bash
    # From project root
    # Windows:
@@ -70,9 +123,127 @@ Welcome to Verbweaver! This guide will help you get up and running quickly.
    ./start-dev.sh
    ```
 
-3. **Access Verbweaver**
+5. **Access Verbweaver**
    - Open http://localhost:5173 in your browser
    - The API is available at http://localhost:8000
+
+### Option 3: Docker Deployment
+
+For production deployments or isolated development:
+
+```bash
+# Start all services
+docker-compose up -d
+
+# Access the application
+# Frontend: http://localhost:3000
+# API: http://localhost:8000
+```
+
+## Desktop Application Features
+
+The desktop version includes:
+
+### Integrated Backend
+- No need to run separate servers
+- Automatic backend startup
+- Local SQLite database
+- Git integration for local repos
+
+### Native Features
+- System tray integration
+- Native file dialogs
+- OS-specific keyboard shortcuts
+- Auto-updater for new versions
+- Offline mode support
+
+### Security
+- Local data storage
+- No authentication required
+- Secure IPC communication
+- Sandboxed execution
+
+### Performance
+- Faster file operations
+- Native Git integration
+- Optimized for local workflows
+- Background processing
+
+## Desktop Application Usage
+
+### First Launch
+
+1. **Windows**: Double-click `Verbweaver.exe`
+2. **macOS**: Open `Verbweaver.app`
+3. **Linux**: Run `./Verbweaver.AppImage`
+
+### Creating Projects
+
+1. Click "New Project" or `Ctrl/Cmd + N`
+2. Choose a local directory for your Git repository
+3. Configure project settings
+4. Start creating!
+
+### Settings
+
+Access desktop-specific settings:
+- **File → Preferences** (Windows/Linux)
+- **Verbweaver → Preferences** (macOS)
+
+Configure:
+- Default project directory
+- Git author information
+- Editor preferences
+- Export settings
+
+### Keyboard Shortcuts
+
+| Action | Windows/Linux | macOS |
+|--------|--------------|-------|
+| New Project | Ctrl+N | Cmd+N |
+| Open Project | Ctrl+O | Cmd+O |
+| Save | Ctrl+S | Cmd+S |
+| Settings | Ctrl+, | Cmd+, |
+| Toggle DevTools | Ctrl+Shift+I | Cmd+Opt+I |
+
+## Troubleshooting Desktop App
+
+### Common Issues
+
+**App won't start**
+- Check antivirus software isn't blocking it
+- Run as administrator (Windows)
+- Check Gatekeeper settings (macOS)
+- Make executable: `chmod +x Verbweaver.AppImage` (Linux)
+
+**Backend connection failed**
+- Check if port 8000 is available
+- Look at logs in `%APPDATA%/verbweaver/logs` (Windows) or `~/.config/verbweaver/logs` (Linux/Mac)
+- Try restarting the application
+
+**Git operations fail**
+- Ensure Git is installed and in PATH
+- Configure Git credentials in settings
+- Check repository permissions
+
+### Debug Mode
+
+Run with debug logging:
+```bash
+# Windows
+set VERBWEAVER_DEBUG=true && Verbweaver.exe
+
+# Linux/Mac
+VERBWEAVER_DEBUG=true ./Verbweaver
+```
+
+### Reset Application
+
+To reset all settings and data:
+
+**Windows**: Delete `%APPDATA%\verbweaver`
+**macOS**: Delete `~/Library/Application Support/verbweaver`
+**Linux**: Delete `~/.config/verbweaver`
 
 ## Creating Your First Project
 
@@ -108,40 +279,25 @@ Welcome to Verbweaver! This guide will help you get up and running quickly.
 - **Version Control**: Git history and operations
 - **Compiler**: Export your project
 
-## Keyboard Shortcuts
-
-| Action | Windows/Linux | macOS |
-|--------|--------------|-------|
-| New Tab | Ctrl+T | Cmd+T |
-| Close Tab | Ctrl+W | Cmd+W |
-| Save | Ctrl+S | Cmd+S |
-| Search | Ctrl+F | Cmd+F |
-| Graph View | Ctrl+1 | Cmd+1 |
-| Editor View | Ctrl+2 | Cmd+2 |
-| Threads View | Ctrl+3 | Cmd+3 |
-
 ## Next Steps
 
 - Read the [User Guide](user-guide.md) for detailed features
 - Check the [API Reference](api-reference.md) for automation
 - Join our [community](https://github.com/yourusername/verbweaver/discussions)
 
-## Troubleshooting
+## Getting Help
 
-### Common Issues
+### Documentation
+- [User Guide](user-guide.md)
+- [FAQ](faq.md)
+- [Troubleshooting](troubleshooting.md)
 
-**Backend won't start**
-- Check Python version: `python --version`
-- Ensure virtual environment is activated
-- Check `.env` file exists and is configured
+### Community
+- [GitHub Issues](https://github.com/yourusername/verbweaver/issues)
+- [Discord Server](https://discord.gg/verbweaver)
+- [Discussion Forum](https://github.com/yourusername/verbweaver/discussions)
 
-**Frontend won't start**
-- Check Node version: `node --version`
-- Clear npm cache: `npm cache clean --force`
-- Delete `node_modules` and reinstall: `npm install`
-
-**Database errors**
-- Delete `verbweaver.db` and run `python init_db.py` again
-- Check file permissions in the backend directory
-
-For more help, see our [FAQ](faq.md) or [open an issue](https://github.com/yourusername/verbweaver/issues). 
+### Support
+- Email: support@verbweaver.com
+- Documentation: [docs/](.)
+- Bug Reports: [GitHub Issues](https://github.com/yourusername/verbweaver/issues) 

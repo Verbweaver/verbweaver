@@ -63,11 +63,69 @@ Verbweaver is built as a modern, scalable application using a microservices-insp
 - **Framework**: Electron
 - **IPC**: Electron IPC with typed channels
 - **Auto-updater**: electron-updater
+- **Embedded Backend**: Python server via child process
+- **Storage**: electron-store for settings
+- **Build**: electron-builder
 
 ### Mobile
 - **Framework**: React Native
 - **Navigation**: React Navigation
 - **State**: Shared with web (Zustand)
+
+## Desktop Application Architecture
+
+The desktop application uses a unique architecture that embeds the backend server:
+
+```
+┌─────────────────────────────────────────────┐
+│            Electron Main Process            │
+├─────────────────────────────────────────────┤
+│  • Window Management                        │
+│  • IPC Handler                              │
+│  • Backend Process Manager                  │
+│  • Auto Updater                            │
+│  • System Integration                       │
+└──────────────┬──────────────────────────────┘
+               │
+      ┌────────┴────────┐
+      │                 │
+      ▼                 ▼
+┌─────────────┐   ┌─────────────┐
+│  Renderer   │   │  Backend    │
+│  Process    │   │  Process    │
+├─────────────┤   ├─────────────┤
+│ React App   │   │ FastAPI     │
+│ (Frontend)  │   │ Server      │
+└──────┬──────┘   └──────┬──────┘
+       │                 │
+       └────────┬────────┘
+                │
+                ▼
+        ┌───────────────┐
+        │ Local SQLite  │
+        │   Database    │
+        └───────────────┘
+```
+
+### Desktop IPC Architecture
+
+```typescript
+// Main Process
+ipcMain.handle('git:commit', async (event, message) => {
+  return await gitService.commit(message);
+});
+
+// Renderer Process
+const result = await ipcRenderer.invoke('git:commit', 'My commit');
+```
+
+### Desktop Security Model
+
+1. **Context Isolation**: Renderer processes are isolated
+2. **Node Integration**: Disabled in renderer
+3. **Preload Scripts**: Secure bridge between main and renderer
+4. **CSP Headers**: Strict content security policy
+5. **Permissions**: Explicit permissions for file system access
 
 ## Core Components
 
@@ -76,23 +134,27 @@ Verbweaver is built as a modern, scalable application using a microservices-insp
 - Supports email/password and OAuth providers (Google, GitHub)
 - Implements JWT with refresh tokens
 - Password security with bcrypt and configurable policies
+- Desktop app bypasses auth for local use
 
 ### 2. Project Management
 - Creates and manages Git repositories
 - Handles project metadata and settings
 - Manages user permissions per project
+- Desktop: Local project management without server
 
 ### 3. Graph Engine
 - Parses Markdown files to build node relationships
 - Manages hard links (directory structure) and soft links (content references)
 - Provides real-time graph updates via WebSockets
 - Handles node positioning and styling
+- Desktop: Direct file system access for better performance
 
 ### 4. Editor Service
 - File CRUD operations with Git integration
 - Real-time collaborative editing (future feature)
 - Syntax highlighting and auto-completion
 - Markdown preview with custom renderers
+- Desktop: Native file watching and faster I/O
 
 ### 5. Task Management
 - Converts nodes to trackable tasks
@@ -105,12 +167,14 @@ Verbweaver is built as a modern, scalable application using a microservices-insp
 - Visual diff viewer
 - Branch management
 - Conflict resolution UI
+- Desktop: Direct Git binary integration
 
 ### 7. Compiler Service
 - Exports node collections to various formats
 - Template engine for custom exports
 - Pandoc integration for document conversion
 - Background job processing for large exports
+- Desktop: Local processing without upload limits
 
 ## Data Flow
 
@@ -143,6 +207,17 @@ Editor Change → API → Git Working Directory
             Graph Update Broadcast
 ```
 
+### 4. Desktop File Operations
+```
+Editor Change → IPC → Main Process
+                 ↓
+            Direct File Write
+                 ↓
+            Git Operations (Native)
+                 ↓
+            UI Update via IPC
+```
+
 ## Security Architecture
 
 ### Authentication & Authorization
@@ -150,6 +225,7 @@ Editor Change → API → Git Working Directory
 - Refresh token rotation
 - Role-based access control (RBAC)
 - Project-level permissions
+- Desktop: No auth, OS-level security
 
 ### Data Protection
 - HTTPS everywhere
@@ -157,6 +233,7 @@ Editor Change → API → Git Working Directory
 - SQL injection prevention via ORM
 - XSS protection in React
 - CSRF tokens for state-changing operations
+- Desktop: Local encryption options
 
 ### Password Security
 - Bcrypt hashing with salt
@@ -178,12 +255,14 @@ Editor Change → API → Git Working Directory
 - Lazy loading for large graphs
 - Pagination for list endpoints
 - File streaming for large exports
+- Desktop: Local caching, no network latency
 
 ### Monitoring & Observability
 - Structured logging with correlation IDs
 - Prometheus metrics
 - Health check endpoints
 - Error tracking with Sentry (optional)
+- Desktop: Local logging and diagnostics
 
 ## Development Practices
 
@@ -207,8 +286,13 @@ verbweaver/
 │   │   ├── api/          # API clients
 │   │   └── utils/        # Utilities
 │   └── tests/
+├── desktop/
+│   ├── src/
+│   │   ├── main/         # Main process code
+│   │   ├── preload/      # Preload scripts
+│   │   └── renderer/     # Renderer process
+│   └── resources/        # Icons, installers
 ├── shared/               # Shared types/constants
-├── desktop/              # Electron app
 └── mobile/               # React Native app
 ```
 
@@ -218,15 +302,18 @@ verbweaver/
 - E2E tests for critical user flows
 - Performance tests for scalability
 - Security tests for vulnerabilities
+- Desktop: Native integration tests
 
 ### CI/CD Pipeline
 1. Code push triggers GitHub Actions
 2. Run linters and formatters
 3. Execute test suites
 4. Build Docker images
-5. Deploy to staging
-6. Run E2E tests
-7. Deploy to production (manual approval)
+5. Build desktop apps for all platforms
+6. Deploy to staging
+7. Run E2E tests
+8. Deploy to production (manual approval)
+9. Release desktop builds
 
 ## Deployment Architecture
 
@@ -257,6 +344,12 @@ services:
 - Horizontal Pod Autoscaler
 - Persistent volumes for Git repos
 
+### Desktop Distribution
+- **Windows**: NSIS installer, auto-update via Squirrel
+- **macOS**: DMG with auto-update via Sparkle
+- **Linux**: AppImage, deb, rpm packages
+- **Update Server**: Static file hosting or dedicated server
+
 ### Cloud Deployment Options
 - **AWS**: ECS/EKS, RDS, ElastiCache, S3
 - **GCP**: GKE, Cloud SQL, Memorystore, GCS
@@ -276,9 +369,11 @@ services:
 - Server-side rendering for SEO
 - Edge caching with CDN
 - WebAssembly for intensive computations
+- Desktop: Native modules for performance
 
 ### Collaboration Features
 - Operational Transform for real-time editing
 - Presence indicators
 - Voice/video integration
-- Comment threads with notifications 
+- Comment threads with notifications
+- Desktop: P2P sync for offline collaboration 

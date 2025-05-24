@@ -16,6 +16,43 @@
 
 ## 🚀 Getting Started
 
+### Desktop Application (Recommended for Individual Writers)
+
+The desktop application provides the best offline experience:
+
+```bash
+# Clone and build from source
+git clone https://github.com/yourusername/verbweaver.git
+cd verbweaver
+
+# Setup and run desktop app
+cd desktop
+npm install
+npm run dev
+```
+
+Pre-built installers coming soon:
+- Windows: `.exe` installer
+- macOS: `.dmg` installer  
+- Linux: `.AppImage`
+
+### Web Application (For Teams)
+
+Perfect for collaboration and cloud access:
+
+```bash
+# Quick start with Docker
+docker-compose up -d
+
+# Or run manually
+cd backend && python -m uvicorn main:app --reload
+cd frontend && npm run dev
+```
+
+### Development Setup
+
+For detailed setup instructions, see the [Getting Started Guide](docs/getting-started.md).
+
 ### Prerequisites
 
 - **Python 3.11+** (for backend)
@@ -23,76 +60,59 @@
 - **Git** (for version control features)
 - **Docker** (optional, for containerized deployment)
 
-### Quick Start
+## 📦 Project Structure
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/verbweaver.git
-   cd verbweaver
-   ```
+```
+verbweaver/
+├── backend/          # FastAPI backend
+│   ├── app/
+│   │   ├── api/      # API endpoints
+│   │   ├── core/     # Core functionality
+│   │   ├── models/   # Database models
+│   │   └── services/ # Business logic
+│   └── requirements.txt
+├── frontend/         # React frontend
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   ├── store/
+│   │   └── views/
+│   └── package.json
+├── desktop/         # Electron desktop app
+│   ├── src/
+│   │   ├── main/     # Main process
+│   │   └── preload/  # Preload scripts
+│   └── package.json
+├── mobile/          # React Native mobile app
+├── shared/          # Shared TypeScript types
+└── docs/           # Documentation
+```
 
-2. **Set up the backend**
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   cp .env.example .env  # Edit .env with your settings
-   python init_db.py
-   ```
+## 🖥️ Desktop Application
 
-3. **Set up the frontend**
-   ```bash
-   cd ../frontend
-   npm install
-   ```
+The desktop version offers unique advantages:
 
-4. **Start the development servers**
-   
-   From the project root:
-   ```bash
-   # Windows PowerShell
-   .\start-dev.ps1
-   
-   # Linux/Mac
-   ./start-dev.sh
-   ```
+### Features
+- **Offline Mode**: Work without internet connection
+- **Local Storage**: Your data stays on your machine
+- **Native Performance**: Faster file operations and Git integration
+- **System Integration**: Native file dialogs, system tray, auto-updates
+- **No Authentication**: Start working immediately
 
-   Or manually:
-   ```bash
-   # Terminal 1 - Backend
-   cd backend
-   python -m uvicorn main:app --reload
-   
-   # Terminal 2 - Frontend
-   cd frontend
-   npm run dev
-   ```
+### Building
 
-5. **Access the application**
-   - Frontend: http://localhost:5173
-   - Backend API: http://localhost:8000
-   - API Documentation: http://localhost:8000/api/v1/docs
+```bash
+# Development
+cd desktop
+npm run dev
 
-## 📖 Documentation
+# Build for current platform
+npm run build
 
-Comprehensive documentation is available in the [docs](docs/) directory:
-
-- [Getting Started Guide](docs/getting-started.md)
-- [Architecture Overview](docs/architecture.md)
-- [API Reference](docs/api-reference.md)
-- [User Guide](docs/user-guide.md)
-- [Developer Guide](docs/developer-guide.md)
-- [Deployment Guide](docs/deployment.md)
-
-## 🏗️ Architecture
-
-Verbweaver uses a modern, scalable architecture:
-
-- **Backend**: Python with FastAPI, SQLAlchemy, and GitPython
-- **Frontend**: React with TypeScript, Vite, and Tailwind CSS
-- **Desktop**: Electron
-- **Mobile**: React Native
-- **Database**: SQLite (default) or PostgreSQL
-- **Real-time**: WebSockets for collaboration
+# Build for all platforms
+npm run dist -- --win --mac --linux
+```
 
 ## 🔧 Configuration
 
@@ -125,6 +145,17 @@ This will start:
 - PostgreSQL database (optional)
 - Redis for caching (optional)
 
+## 📖 Documentation
+
+Comprehensive documentation is available in the [docs](docs/) directory:
+
+- [Getting Started Guide](docs/getting-started.md) - Installation and setup
+- [Architecture Overview](docs/architecture.md) - System design
+- [API Reference](docs/api-reference.md) - REST API documentation
+- [User Guide](docs/user-guide.md) - How to use Verbweaver
+- [Developer Guide](docs/developer-guide.md) - Contributing and development
+- [Deployment Guide](docs/deployment.md) - Production deployment
+
 ## 🧪 Testing
 
 Run the test suites:
@@ -136,6 +167,10 @@ pytest
 
 # Frontend tests
 cd frontend
+npm test
+
+# Desktop tests
+cd desktop
 npm test
 
 # E2E tests
@@ -152,6 +187,17 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+## 🏗️ Architecture
+
+Verbweaver uses a modern, scalable architecture:
+
+- **Backend**: Python with FastAPI, SQLAlchemy, and GitPython
+- **Frontend**: React with TypeScript, Vite, and Tailwind CSS
+- **Desktop**: Electron with secure IPC communication
+- **Mobile**: React Native with shared business logic
+- **Database**: SQLite (default) or PostgreSQL
+- **Real-time**: WebSockets for collaboration
+
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -162,6 +208,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [React](https://reactjs.org/) for the UI library
 - [React Flow](https://reactflow.dev/) for graph visualization
 - [Monaco Editor](https://microsoft.github.io/monaco-editor/) for the code editor
+- [Electron](https://www.electronjs.org/) for cross-platform desktop apps
 - [GitPython](https://gitpython.readthedocs.io/) for Git integration
 - All our contributors and supporters!
 
@@ -170,6 +217,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Documentation**: [docs/](docs/)
 - **Issues**: [GitHub Issues](https://github.com/yourusername/verbweaver/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yourusername/verbweaver/discussions)
+- **Discord**: [Join our community](https://discord.gg/verbweaver)
 - **Email**: support@verbweaver.com
 
 ---
