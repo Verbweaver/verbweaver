@@ -1,173 +1,150 @@
 # Verbweaver
 
-A writing and design platform that thinks in relationships (graphs). Designed for writers, artists, engineers, developers, and analysts to organize ideas as interconnected nodes with Git-backed version control.
+*Verbweaver* is a writing and design platform that thinks in relationships (graphs). It's designed for writers, artists, engineers, developers, analysts, and anyone who wants to design things while linking every idea together and turning those ideas into manageable tasks.
 
-## 🚀 Features Implemented
+![Verbweaver Logo](docs/images/logo.png)
 
-### Core Features
-- **Graph View**: Visual node-based organization using React Flow
-  - Create, edit, and delete nodes
-  - Connect nodes with edges
-  - Multiple node types (character, scene, plot, research, theme)
-  - Drag-and-drop positioning
-  - Context menus for quick actions
+## 🌟 Features
 
-- **Editor View**: Full-featured markdown editor using Monaco Editor
-  - Syntax highlighting
-  - Multi-tab support
-  - File tree navigation
-  - Auto-save functionality
-  - Keyboard shortcuts
-
-- **Task Management**: Kanban-style task board
-  - Drag-and-drop between columns (To Do, In Progress, Review, Done)
-  - Priority levels and due dates
-  - Tags and assignee support
-  - Real-time updates
-
-- **Version Control**: Git integration
-  - View commit history
-  - Stage and commit changes
-  - Branch management
-  - Push/pull functionality
-  - Visual diff viewer
-
-- **Document Compiler**: Export to multiple formats
-  - PDF, DOCX, ODT, EPUB, MOBI, HTML, Markdown
-  - Customizable formatting options
-  - Table of contents generation
-  - Batch export capabilities
-
-### Authentication & Security
-- JWT-based authentication
-- User registration and login
-- Secure token refresh mechanism
-- Protected routes
-- Session management
-
-### Real-time Collaboration
-- WebSocket support for live updates
-- User presence indicators
-- Collaborative editing preparation
-- Event-based synchronization
-
-### Platform Support
-- **Web**: React + TypeScript + Vite
-- **Desktop**: Electron with secure IPC
-- **Mobile**: React Native structure
-- **Backend**: Python FastAPI
-
-## 🛠️ Tech Stack
-
-### Backend
-- **Framework**: FastAPI (Python)
-- **Database**: SQLAlchemy with SQLite/PostgreSQL
-- **Authentication**: JWT with python-jose
-- **Git Integration**: GitPython
-- **WebSockets**: FastAPI WebSocket support
-- **Document Processing**: Pandoc, WeasyPrint, python-docx
-
-### Frontend
-- **Framework**: React 18 with TypeScript
-- **Build Tool**: Vite
-- **State Management**: Zustand
-- **UI Components**: Tailwind CSS + Custom components
-- **Graph Visualization**: React Flow
-- **Code Editor**: Monaco Editor
-- **Drag & Drop**: react-beautiful-dnd
-
-### Shared
-- **Type Definitions**: TypeScript interfaces
-- **Constants**: Centralized configuration
-- **Utilities**: Common helper functions
-
-## 📦 Project Structure
-
-```
-verbweaver/
-├── backend/          # FastAPI backend
-│   ├── app/
-│   │   ├── api/      # API endpoints
-│   │   ├── core/     # Core functionality
-│   │   ├── models/   # Database models
-│   │   └── services/ # Business logic
-│   └── requirements.txt
-├── frontend/         # React frontend
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── services/
-│   │   ├── store/
-│   │   └── views/
-│   └── package.json
-├── shared/          # Shared TypeScript types
-├── desktop/         # Electron desktop app
-├── mobile/          # React Native mobile app
-└── docs/           # Documentation
-```
+- **Graph-based Design**: Visualize relationships between your ideas, documents, and tasks
+- **Markdown-powered**: All content is stored as Markdown files with metadata headers
+- **Git Version Control**: Built-in version control for all your projects
+- **Task Management**: Turn any idea into a trackable task with Kanban boards
+- **Multi-platform**: Available as a web app, desktop app (Windows, Mac, Linux), and mobile app (iOS, Android)
+- **Real-time Collaboration**: Work together with your team in real-time
+- **Export Anywhere**: Compile your non-linear notes into linear documents (PDF, Word, ePub, etc.)
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 16+
-- Python 3.9+
-- Git
-- Docker (optional)
 
-### Backend Setup
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+- **Python 3.11+** (for backend)
+- **Node.js 18+** and npm (for frontend)
+- **Git** (for version control features)
+- **Docker** (optional, for containerized deployment)
 
-### Frontend Setup
-```bash
-cd frontend
-npm install
-npm run dev
-```
+### Quick Start
 
-### Shared Module Setup
-```bash
-cd shared
-npm install
-npm run build
-```
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/verbweaver.git
+   cd verbweaver
+   ```
 
-### Desktop App
-```bash
-cd desktop
-npm install
-npm run dev
-```
+2. **Set up the backend**
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   cp .env.example .env  # Edit .env with your settings
+   python init_db.py
+   ```
+
+3. **Set up the frontend**
+   ```bash
+   cd ../frontend
+   npm install
+   ```
+
+4. **Start the development servers**
+   
+   From the project root:
+   ```bash
+   # Windows PowerShell
+   .\start-dev.ps1
+   
+   # Linux/Mac
+   ./start-dev.sh
+   ```
+
+   Or manually:
+   ```bash
+   # Terminal 1 - Backend
+   cd backend
+   python -m uvicorn main:app --reload
+   
+   # Terminal 2 - Frontend
+   cd frontend
+   npm run dev
+   ```
+
+5. **Access the application**
+   - Frontend: http://localhost:5173
+   - Backend API: http://localhost:8000
+   - API Documentation: http://localhost:8000/api/v1/docs
+
+## 📖 Documentation
+
+Comprehensive documentation is available in the [docs](docs/) directory:
+
+- [Getting Started Guide](docs/getting-started.md)
+- [Architecture Overview](docs/architecture.md)
+- [API Reference](docs/api-reference.md)
+- [User Guide](docs/user-guide.md)
+- [Developer Guide](docs/developer-guide.md)
+- [Deployment Guide](docs/deployment.md)
+
+## 🏗️ Architecture
+
+Verbweaver uses a modern, scalable architecture:
+
+- **Backend**: Python with FastAPI, SQLAlchemy, and GitPython
+- **Frontend**: React with TypeScript, Vite, and Tailwind CSS
+- **Desktop**: Electron
+- **Mobile**: React Native
+- **Database**: SQLite (default) or PostgreSQL
+- **Real-time**: WebSockets for collaboration
 
 ## 🔧 Configuration
 
-### Environment Variables
+Key configuration options can be set via environment variables:
 
-Backend (.env):
-```
+```env
+# Backend
 SECRET_KEY=your-secret-key
-DATABASE_URL=sqlite:///./verbweaver.db
-PROJECTS_DIR=./projects
+DATABASE_URL=sqlite+aiosqlite:///./verbweaver.db
+BACKEND_CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+
+# OAuth (optional)
+GOOGLE_CLIENT_ID=your-google-client-id
+GITHUB_CLIENT_ID=your-github-client-id
 ```
 
-Frontend (.env):
-```
-VITE_API_URL=http://localhost:8000/api/v1
-VITE_WS_URL=ws://localhost:8000/ws
+See [.env.example](backend/.env.example) for all available options.
+
+## 🐳 Docker Deployment
+
+Deploy Verbweaver using Docker:
+
+```bash
+docker-compose up -d
 ```
 
-## 📝 API Documentation
+This will start:
+- Backend API on port 8000
+- Frontend on port 3000
+- PostgreSQL database (optional)
+- Redis for caching (optional)
 
-Once the backend is running, visit:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+## 🧪 Testing
+
+Run the test suites:
+
+```bash
+# Backend tests
+cd backend
+pytest
+
+# Frontend tests
+cd frontend
+npm test
+
+# E2E tests
+npm run test:e2e
+```
 
 ## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
@@ -175,17 +152,26 @@ Once the backend is running, visit:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## 📝 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🎯 Next Steps
+## 🙏 Acknowledgments
 
-- Complete mobile app screens
-- Implement advanced graph algorithms
-- Add AI-powered writing assistance
-- Enhance real-time collaboration features
-- Add plugin system
-- Implement cloud sync
-- Add more export formats
-- Create comprehensive test suite
+- [FastAPI](https://fastapi.tiangolo.com/) for the excellent Python web framework
+- [React](https://reactjs.org/) for the UI library
+- [React Flow](https://reactflow.dev/) for graph visualization
+- [Monaco Editor](https://microsoft.github.io/monaco-editor/) for the code editor
+- [GitPython](https://gitpython.readthedocs.io/) for Git integration
+- All our contributors and supporters!
+
+## 📞 Support
+
+- **Documentation**: [docs/](docs/)
+- **Issues**: [GitHub Issues](https://github.com/yourusername/verbweaver/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/verbweaver/discussions)
+- **Email**: support@verbweaver.com
+
+---
+
+Built with ❤️ by the Verbweaver team

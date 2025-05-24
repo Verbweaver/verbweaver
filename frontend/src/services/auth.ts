@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { getApiUrl } from '@verbweaver/shared';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = getApiUrl();
 
 interface User {
   id: number;

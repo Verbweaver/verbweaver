@@ -8,6 +8,12 @@ from app.api.v1.endpoints import auth, users, projects, git, editor, graph, task
 
 api_router = APIRouter()
 
+# Health check endpoint
+@api_router.get("/health")
+async def health_check():
+    """API health check endpoint."""
+    return {"status": "healthy", "api_version": "v1"}
+
 # Include all endpoint routers
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])

@@ -2,16 +2,20 @@
 Configuration settings for Verbweaver backend
 """
 
-from typing import Optional, List
+from typing import Optional, List, Any, Dict, Union
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, validator
 import secrets
+import json
+import os
 
 
 class Settings(BaseSettings):
     """Application settings"""
     
     # Application
+    PROJECT_NAME: str = "Verbweaver"
+    VERSION: str = "0.1.0"
     APP_NAME: str = "Verbweaver API"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = Field(default=False, env="DEBUG")
@@ -30,20 +34,38 @@ class Settings(BaseSettings):
     )
     
     # Security
-    SECRET_KEY: str = secrets.token_urlsafe(32)
+    SECRET_KEY: str = Field(
+        default_factory=lambda: secrets.token_urlsafe(32),
+        env="SECRET_KEY"
+    )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
+    # Password Policy
+    PASSWORD_MIN_LENGTH: int = 8
+    PASSWORD_REQUIRE_UPPERCASE: bool = True
+    PASSWORD_REQUIRE_LOWERCASE: bool = True
+    PASSWORD_REQUIRE_DIGIT: bool = True
+    PASSWORD_REQUIRE_SPECIAL: bool = True
+    
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:3000", "http://localhost:3001"],
+        default=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"],
         env="BACKEND_CORS_ORIGINS"
     )
     
+    @validator("BACKEND_CORS_ORIGINS", pre=True)
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
+        if isinstance(v, str) and not v.startswith("["):
+            return [i.strip() for i in v.split(",")]
+        elif isinstance(v, (list, str)):
+            return v
+        raise ValueError(v)
+    
     # Git
     GIT_PROJECTS_ROOT: str = Field(
-        default="./projects",
+        default="./git-repos",
         env="GIT_PROJECTS_ROOT"
     )
     
@@ -73,6 +95,10 @@ class Settings(BaseSettings):
     
     # Export settings
     PANDOC_PATH: Optional[str] = Field(default=None, env="PANDOC_PATH")
+    
+    # Rate limiting
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_PER_MINUTE: int = 60
     
     class Config:
         env_file = ".env"

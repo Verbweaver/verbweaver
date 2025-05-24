@@ -1,217 +1,147 @@
 # Getting Started with Verbweaver
 
-This guide will help you get Verbweaver up and running on your system.
+Welcome to Verbweaver! This guide will help you get up and running quickly.
 
-## Prerequisites
+## Installation
 
-Before you begin, ensure you have the following installed:
+### System Requirements
 
-- **Node.js** (v16.0.0 or higher) - [Download](https://nodejs.org/)
-- **npm** (v8.0.0 or higher) - Comes with Node.js
-- **Python** (3.8 or higher) - [Download](https://www.python.org/)
-- **Git** - [Download](https://git-scm.com/)
+- **Operating System**: Windows 10+, macOS 10.15+, or Linux (Ubuntu 20.04+)
+- **Python**: 3.11 or higher
+- **Node.js**: 18.0 or higher
+- **Git**: 2.30 or higher
+- **Memory**: 4GB RAM minimum (8GB recommended)
+- **Storage**: 2GB free space
 
-## Installation Options
+### Development Setup
 
-### Option 1: Desktop Application (Recommended for Writers)
+1. **Install Python**
+   - Download from [python.org](https://python.org)
+   - Ensure `pip` is installed and updated: `python -m pip install --upgrade pip`
 
-Download the pre-built desktop application for your platform:
+2. **Install Node.js**
+   - Download from [nodejs.org](https://nodejs.org)
+   - Verify installation: `node --version` and `npm --version`
 
-- **Windows**: Download `Verbweaver-Setup.exe` from [Releases](https://github.com/verbweaver/releases)
-- **macOS**: Download `Verbweaver.dmg` from [Releases](https://github.com/verbweaver/releases)
-- **Linux**: Download `Verbweaver.AppImage` from [Releases](https://github.com/verbweaver/releases)
+3. **Install Git**
+   - Download from [git-scm.com](https://git-scm.com)
+   - Configure Git:
+     ```bash
+     git config --global user.name "Your Name"
+     git config --global user.email "your.email@example.com"
+     ```
 
-### Option 2: Web Application (For Teams)
+4. **Clone and Setup Verbweaver**
+   ```bash
+   git clone https://github.com/yourusername/verbweaver.git
+   cd verbweaver
+   
+   # Backend setup
+   cd backend
+   python -m venv venv
+   # Windows: venv\Scripts\activate
+   # Linux/Mac: source venv/bin/activate
+   pip install -r requirements.txt
+   
+   # Frontend setup
+   cd ../frontend
+   npm install
+   ```
 
-Use Docker Compose for the easiest setup:
+## First Run
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/verbweaver.git
-cd verbweaver
+1. **Configure the Backend**
+   ```bash
+   cd backend
+   cp .env.example .env
+   # Edit .env with your settings
+   
+   # Initialize the database
+   python init_db.py
+   ```
 
-# Start the application
-docker-compose up -d
+2. **Start the Servers**
+   ```bash
+   # From project root
+   # Windows:
+   .\start-dev.ps1
+   
+   # Linux/Mac:
+   ./start-dev.sh
+   ```
 
-# Access the application at http://localhost:3000
-```
+3. **Access Verbweaver**
+   - Open http://localhost:5173 in your browser
+   - The API is available at http://localhost:8000
 
-### Option 3: Development Setup
+## Creating Your First Project
 
-For developers who want to contribute or customize Verbweaver:
+1. **Sign Up** (Web version only)
+   - Click "Sign Up" and create an account
+   - Verify your email address
 
-#### 1. Clone the Repository
+2. **Create a Project**
+   - Click "New Project"
+   - Enter project name and description
+   - Choose a Git repository location
 
-```bash
-git clone https://github.com/yourusername/verbweaver.git
-cd verbweaver
-```
+3. **Start Creating**
+   - Use the Graph view to create nodes
+   - Switch to Editor view to write content
+   - Create tasks in the Threads view
 
-#### 2. Install Dependencies
+## Basic Concepts
 
-```bash
-# Install Node.js dependencies
-npm install
+### Nodes
+- Each file in your project is a "node"
+- Nodes can be documents, images, or any file type
+- Markdown files have special metadata headers
 
-# Install Python dependencies for the backend
-cd backend
-pip install -r requirements.txt
-cd ..
-```
+### Links
+- **Hard Links**: Structural relationships (folders/files)
+- **Soft Links**: Content relationships you define
 
-#### 3. Configure Environment
-
-Create a `.env` file in the backend directory:
-
-```bash
-cd backend
-cp .env.example .env
-# Edit .env with your settings
-cd ..
-```
-
-#### 4. Start Development Servers
-
-```bash
-# Start both backend and frontend
-npm run dev
-
-# Or start them separately:
-# Terminal 1 - Backend
-cd backend
-python run_dev.py
-
-# Terminal 2 - Frontend
-cd frontend
-npm run dev
-```
-
-The application will be available at:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Documentation: http://localhost:8000/api/v1/docs
-
-## First Steps
-
-### 1. Create Your First Project
-
-1. Click "New Project" or use `Ctrl/Cmd + N`
-2. Choose between:
-   - **Local Repository**: Store your project on your computer
-   - **Remote Repository**: Connect to GitHub, GitLab, or other Git hosting
-3. Name your project and configure settings
-
-### 2. Add Content
-
-1. Navigate to the **Editor** view
-2. Create your first Markdown file
-3. Add metadata in the YAML header:
-
-```markdown
----
-id: my-first-note
-title: My First Note
-type: note
-tags: [getting-started, tutorial]
----
-
-# My First Note
-
-Welcome to Verbweaver! Start writing here...
-```
-
-### 3. Create Relationships
-
-1. Switch to the **Graph** view
-2. Drag from one node to another to create links
-3. Or add links in your Markdown:
-
-```markdown
-This note is related to [[another-note]].
-```
-
-### 4. Track Progress
-
-1. Go to the **Threads** view
-2. Convert any node into a task
-3. Set status, assignee, and due dates
-4. Track your progress visually
-
-### 5. Export Your Work
-
-1. Open the **Compiler** view
-2. Select nodes to include
-3. Choose export format (PDF, Word, etc.)
-4. Configure options and export
+### Views
+- **Graph**: Visual representation of your project
+- **Editor**: Write and edit files
+- **Threads**: Task management
+- **Version Control**: Git history and operations
+- **Compiler**: Export your project
 
 ## Keyboard Shortcuts
 
 | Action | Windows/Linux | macOS |
 |--------|--------------|-------|
-| New Project | Ctrl+N | Cmd+N |
-| Open Project | Ctrl+O | Cmd+O |
-| Save | Ctrl+S | Cmd+S |
-| Search | Ctrl+P | Cmd+P |
-| Toggle Sidebar | Ctrl+B | Cmd+B |
 | New Tab | Ctrl+T | Cmd+T |
 | Close Tab | Ctrl+W | Cmd+W |
+| Save | Ctrl+S | Cmd+S |
+| Search | Ctrl+F | Cmd+F |
+| Graph View | Ctrl+1 | Cmd+1 |
+| Editor View | Ctrl+2 | Cmd+2 |
+| Threads View | Ctrl+3 | Cmd+3 |
 
-## Configuration
+## Next Steps
 
-### Project Settings
-
-Each project has its own settings stored in `.verbweaver/config.yaml`:
-
-```yaml
-version: 1.0.0
-structure:
-  content: content
-  tasks: tasks
-  templates: templates
-  exports: exports
-settings:
-  theme: dark
-  autoSave: true
-  gitAutoPush: false
-```
-
-### Global Settings
-
-Access global settings via the Settings button in the sidebar:
-
-- **Appearance**: Theme, font size, color profiles
-- **Editor**: Tab size, word wrap, auto-save
-- **Git**: Default author, auto-push preferences
-- **Export**: Default formats, templates
+- Read the [User Guide](user-guide.md) for detailed features
+- Check the [API Reference](api-reference.md) for automation
+- Join our [community](https://github.com/yourusername/verbweaver/discussions)
 
 ## Troubleshooting
 
 ### Common Issues
 
 **Backend won't start**
-- Ensure Python 3.8+ is installed
-- Check if port 8000 is available
-- Verify all Python dependencies are installed
+- Check Python version: `python --version`
+- Ensure virtual environment is activated
+- Check `.env` file exists and is configured
 
-**Frontend build fails**
+**Frontend won't start**
+- Check Node version: `node --version`
 - Clear npm cache: `npm cache clean --force`
-- Delete `node_modules` and reinstall: `rm -rf node_modules && npm install`
-- Ensure Node.js 16+ is installed
+- Delete `node_modules` and reinstall: `npm install`
 
-**Git operations fail**
-- Verify Git is installed and in PATH
-- Check repository permissions
-- Ensure Git credentials are configured
+**Database errors**
+- Delete `verbweaver.db` and run `python init_db.py` again
+- Check file permissions in the backend directory
 
-### Getting Help
-
-- Check the [Documentation](README.md)
-- Report issues on [GitHub](https://github.com/verbweaver/issues)
-- Join our [Community Discord](https://discord.gg/verbweaver)
-
-## Next Steps
-
-- Read the [User Guide](user-guide/README.md) for detailed features
-- Explore [Templates](templates/README.md) to jumpstart your projects
-- Learn about [Advanced Features](advanced/README.md)
-- Contribute to the project - see [Contributing](CONTRIBUTING.md) 
+For more help, see our [FAQ](faq.md) or [open an issue](https://github.com/yourusername/verbweaver/issues). 

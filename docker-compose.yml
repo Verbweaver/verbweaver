@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Backend API
   backend:
     build:
       context: ./backend
@@ -9,59 +10,115 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:///./data/verbweaver.db
-      - GIT_PROJECTS_ROOT=/app/projects
+      - DATABASE_URL=postgresql+asyncpg://verbweaver:verbweaver@postgres:5432/verbweaver
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - DEBUG=${DEBUG:-False}
     volumes:
-      - ./data:/app/data
-      - ./projects:/app/projects
+      - ./git-repos:/app/git-repos
+      - ./uploads:/app/uploads
     depends_on:
-      - redis
-    networks:
-      - verbweaver-network
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
+  # Frontend
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: verbweaver-frontend
     ports:
-      - "3000:3000"
-    environment:
-      - VITE_API_URL=http://localhost:8000
+      - "3000:80"
     depends_on:
       - backend
-    networks:
-      - verbweaver-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: verbweaver-postgres
+    environment:
+      - POSTGRES_USER=verbweaver
+      - POSTGRES_PASSWORD=verbweaver
+      - POSTGRES_DB=verbweaver
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U verbweaver"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
   redis:
     image: redis:7-alpine
     container_name: verbweaver-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
     ports:
       - "6379:6379"
-    volumes:
-      - redis-data:/data
-    networks:
-      - verbweaver-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Optional: PostgreSQL for production
-  # postgres:
-  #   image: postgres:15-alpine
-  #   container_name: verbweaver-postgres
-  #   environment:
-  #     - POSTGRES_USER=verbweaver
-  #     - POSTGRES_PASSWORD=verbweaver_password
-  #     - POSTGRES_DB=verbweaver
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql/data
-  #   networks:
-  #     - verbweaver-network
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: verbweaver-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+  # Database migrations
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: verbweaver-migrate
+    command: alembic upgrade head
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://verbweaver:verbweaver@postgres:5432/verbweaver
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - setup
 
 volumes:
-  redis-data:
-  # postgres-data:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
 
 networks:
-  verbweaver-network:
+  default:
+    name: verbweaver-network
     driver: bridge 
