@@ -17,6 +17,12 @@ const queryClient = new QueryClient({
   },
 })
 
+// Clear localStorage for desktop users to prevent auth conflicts
+if (typeof window !== 'undefined' && window.electronAPI !== undefined) {
+  localStorage.removeItem('auth-storage');
+  console.log('Cleared localStorage for desktop app');
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

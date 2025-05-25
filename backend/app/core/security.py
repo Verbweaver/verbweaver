@@ -52,6 +52,30 @@ async def get_current_user(
     db: Session = Depends(get_db)
 ) -> User:
     """Get current authenticated user from JWT token."""
+    
+    # Special handling for desktop users
+    if token == "desktop-token":
+        # Check if desktop user exists
+        desktop_user = db.query(User).filter(User.email == "desktop@verbweaver.local").first()
+        
+        if not desktop_user:
+            # Create a virtual desktop user if it doesn't exist
+            desktop_user = User(
+                email="desktop@verbweaver.local",
+                username="Desktop User",
+                full_name="Desktop User",
+                hashed_password=get_password_hash("desktop-secure-password"),
+                is_active=True,
+                is_superuser=False,
+                email_verified=True
+            )
+            db.add(desktop_user)
+            db.commit()
+            db.refresh(desktop_user)
+        
+        return desktop_user
+    
+    # Normal JWT token validation for web users
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",

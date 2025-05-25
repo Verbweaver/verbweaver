@@ -1,5 +1,9 @@
 import axios, { AxiosInstance } from 'axios'
 import { getApiUrl } from '@verbweaver/shared'
+import { useAuthStore } from '../services/auth'
+
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
 
 // Create axios instance
 export const apiClient: AxiosInstance = axios.create({
@@ -12,6 +16,12 @@ export const apiClient: AxiosInstance = axios.create({
 
 // Update base URL dynamically (for Electron)
 if (typeof window !== 'undefined') {
+  // Initialize immediately for Electron
+  if (isElectron && window.electronAPI) {
+    // Force use of 127.0.0.1 for Electron
+    apiClient.defaults.baseURL = 'http://127.0.0.1:8000/api/v1'
+  }
+  
   // Check periodically if we're in Electron and the URL has changed
   setInterval(() => {
     const currentUrl = getApiUrl();
@@ -24,8 +34,8 @@ if (typeof window !== 'undefined') {
 // Request interceptor
 apiClient.interceptors.request.use(
   (config) => {
-    // Add auth token if available
-    const token = localStorage.getItem('verbweaver_token')
+    // Get auth token from store
+    const token = useAuthStore.getState().accessToken
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -40,8 +50,9 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid
+    // Don't redirect desktop users to login
+    if (error.response?.status === 401 && !isElectron) {
+      // Token expired or invalid for web users only
       localStorage.removeItem('verbweaver_token')
       window.location.href = '/login'
     }

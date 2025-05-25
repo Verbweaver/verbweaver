@@ -105,127 +105,164 @@ api.interceptors.response.use(
   }
 );
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
+// Create the store without persistence for desktop
+const createAuthStore = () => {
+  if (isElectron) {
+    // For Electron, don't use persistence - always use desktop auth
+    return create<AuthState>()((set, get) => ({
       ...getInitialAuthState(),
       isLoading: false,
       error: null,
 
       login: async (username: string, password: string) => {
-        set({ isLoading: true, error: null });
-        try {
-          const formData = new FormData();
-          formData.append('username', username);
-          formData.append('password', password);
-          
-          const response = await authApi.post('/auth/login', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-          });
-          
-          const { user, token } = response.data;
-          
-          set({
-            user,
-            accessToken: token.access_token,
-            refreshToken: token.refresh_token,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } catch (error: any) {
-          set({
-            error: error.response?.data?.detail || 'Login failed',
-            isLoading: false,
-          });
-          throw error;
-        }
+        // Desktop users don't need to login
+        console.log('Desktop user attempted login - already authenticated');
       },
 
       register: async (email: string, username: string, password: string, full_name?: string) => {
-        set({ isLoading: true, error: null });
-        try {
-          const response = await authApi.post('/auth/register', {
-            email,
-            username,
-            password,
-            full_name,
-          });
-          
-          const { user, token } = response.data;
-          
-          set({
-            user,
-            accessToken: token.access_token,
-            refreshToken: token.refresh_token,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } catch (error: any) {
-          set({
-            error: error.response?.data?.detail || 'Registration failed',
-            isLoading: false,
-          });
-          throw error;
-        }
+        // Desktop users don't need to register
+        console.log('Desktop user attempted register - already authenticated');
       },
 
       logout: async () => {
-        const token = get().accessToken;
-        if (token) {
-          try {
-            await api.post('/auth/logout');
-          } catch (error) {
-            console.error('Logout error:', error);
-          }
-        }
-        
-        set({
-          user: null,
-          accessToken: null,
-          refreshToken: null,
-          isAuthenticated: false,
-          error: null,
-        });
+        // Desktop users can't logout
+        console.log('Desktop user attempted logout - staying authenticated');
       },
 
       refreshAccessToken: async () => {
-        const refreshToken = get().refreshToken;
-        if (!refreshToken) {
-          throw new Error('No refresh token available');
-        }
-        
-        try {
-          const response = await authApi.post('/auth/refresh', {
-            refresh_token: refreshToken,
-          });
+        // Desktop token doesn't expire
+        console.log('Desktop token refresh requested - not needed');
+      },
+
+      clearError: () => set({ error: null }),
+    }));
+  }
+
+  // For web users, use persistence
+  return create<AuthState>()(
+    persist(
+      (set, get) => ({
+        ...getInitialAuthState(),
+        isLoading: false,
+        error: null,
+
+        login: async (username: string, password: string) => {
+          set({ isLoading: true, error: null });
+          try {
+            const formData = new FormData();
+            formData.append('username', username);
+            formData.append('password', password);
+            
+            const response = await authApi.post('/auth/login', formData, {
+              headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            
+            const { user, token } = response.data;
+            
+            set({
+              user,
+              accessToken: token.access_token,
+              refreshToken: token.refresh_token,
+              isAuthenticated: true,
+              isLoading: false,
+            });
+          } catch (error: any) {
+            set({
+              error: error.response?.data?.detail || 'Login failed',
+              isLoading: false,
+            });
+            throw error;
+          }
+        },
+
+        register: async (email: string, username: string, password: string, full_name?: string) => {
+          set({ isLoading: true, error: null });
+          try {
+            const response = await authApi.post('/auth/register', {
+              email,
+              username,
+              password,
+              full_name,
+            });
+            
+            const { user, token } = response.data;
+            
+            set({
+              user,
+              accessToken: token.access_token,
+              refreshToken: token.refresh_token,
+              isAuthenticated: true,
+              isLoading: false,
+            });
+          } catch (error: any) {
+            set({
+              error: error.response?.data?.detail || 'Registration failed',
+              isLoading: false,
+            });
+            throw error;
+          }
+        },
+
+        logout: async () => {
+          const token = get().accessToken;
+          if (token) {
+            try {
+              await api.post('/auth/logout');
+            } catch (error) {
+              console.error('Logout error:', error);
+            }
+          }
           
-          const { access_token, refresh_token } = response.data;
-          
-          set({
-            accessToken: access_token,
-            refreshToken: refresh_token,
-          });
-        } catch (error) {
           set({
             user: null,
             accessToken: null,
             refreshToken: null,
             isAuthenticated: false,
+            error: null,
           });
-          throw error;
-        }
-      },
+        },
 
-      clearError: () => set({ error: null }),
-    }),
-    {
-      name: 'auth-storage',
-      partialize: (state) => ({
-        user: state.user,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
-        isAuthenticated: state.isAuthenticated,
+        refreshAccessToken: async () => {
+          const refreshToken = get().refreshToken;
+          if (!refreshToken) {
+            throw new Error('No refresh token available');
+          }
+          
+          try {
+            const response = await authApi.post('/auth/refresh', {
+              refresh_token: refreshToken,
+            });
+            
+            const { access_token, refresh_token } = response.data;
+            
+            set({
+              accessToken: access_token,
+              refreshToken: refresh_token,
+            });
+          } catch (error) {
+            set({
+              user: null,
+              accessToken: null,
+              refreshToken: null,
+              isAuthenticated: false,
+            });
+            throw error;
+          }
+        },
+
+        clearError: () => set({ error: null }),
       }),
-    }
-  )
-); 
+      {
+        name: 'auth-storage',
+        partialize: (state) => ({
+          user: state.user,
+          accessToken: state.accessToken,
+          refreshToken: state.refreshToken,
+          isAuthenticated: state.isAuthenticated,
+        }),
+      }
+    )
+  );
+};
+
+export const useAuthStore = createAuthStore(); 
