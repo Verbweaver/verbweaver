@@ -1,6 +1,9 @@
 import { useAuthStore } from '../services/auth';
 import { useThemeStore } from '../store/themeStore';
 
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
+
 export default function Settings() {
   const { user, logout } = useAuthStore();
   const { theme, setTheme } = useThemeStore();
@@ -24,17 +27,19 @@ export default function Settings() {
           <h2 className="text-xl font-semibold mb-4">User Information</h2>
           <div className="space-y-2">
             <div>
-              <span className="text-muted-foreground">Username:</span>{' '}
-              <span className="font-medium">{user?.username}</span>
+              <span className="text-muted-foreground">Name:</span>{' '}
+              <span className="font-medium">{user?.name || 'Desktop User'}</span>
             </div>
             <div>
               <span className="text-muted-foreground">Email:</span>{' '}
               <span className="font-medium">{user?.email}</span>
             </div>
-            <div>
-              <span className="text-muted-foreground">Full Name:</span>{' '}
-              <span className="font-medium">{user?.full_name || 'Not set'}</span>
-            </div>
+            {isElectron && (
+              <div>
+                <span className="text-muted-foreground">Environment:</span>{' '}
+                <span className="font-medium">Desktop Application</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -70,16 +75,18 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="bg-card p-6 rounded-lg shadow-sm border">
-          <h2 className="text-xl font-semibold mb-4">Actions</h2>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 transition-colors"
-          >
-            Logout
-          </button>
-        </div>
+        {/* Actions - Only show for web users */}
+        {!isElectron && (
+          <div className="bg-card p-6 rounded-lg shadow-sm border">
+            <h2 className="text-xl font-semibold mb-4">Actions</h2>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 transition-colors"
+            >
+              Logout
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import TabBar from './TabBar'
 import NewProjectDialog from './NewProjectDialog'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX } from '@verbweaver/shared'
+import { useProjectStore } from '../store/projectStore'
 
 // Check if we're in Electron
 const isElectron = window.electronAPI !== undefined
@@ -13,6 +14,7 @@ const isElectron = window.electronAPI !== undefined
 function Layout() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false)
+  const { setCurrentProjectPath } = useProjectStore()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -47,13 +49,23 @@ function Layout() {
     if (!isElectron || !window.electronAPI) return
     
     try {
-      const result = await window.electronAPI.openFile?.()
+      const result = await window.electronAPI.openDirectory?.()
       if (result && !result.canceled && result.filePaths.length > 0) {
-        // TODO: Handle opening the project
-        console.log('Selected project:', result.filePaths[0])
+        const projectPath = result.filePaths[0]
+        console.log('Selected project:', projectPath)
+        
+        // Open the project using the Electron API
+        await window.electronAPI.openProject?.(projectPath)
+        
+        // Update the project store with the current project path
+        setCurrentProjectPath(projectPath)
+        
+        // Navigate to dashboard after opening project
+        navigate('/dashboard')
       }
     } catch (error) {
       console.error('Error opening project:', error)
+      alert('Failed to open project: ' + error)
     }
   }
 

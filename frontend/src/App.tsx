@@ -9,6 +9,7 @@ import Threads from './pages/Threads'
 import Version from './pages/Version'
 import Compiler from './pages/Compiler'
 import Settings from './pages/Settings'
+import Help from './pages/Help'
 import Login from './pages/Login'
 import { useProjectStore } from './store/projectStore'
 import { useThemeStore } from './store/themeStore'
@@ -52,6 +53,7 @@ function App() {
         <Route path="version" element={<Version />} />
         <Route path="compiler" element={<Compiler />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="help" element={<Help />} />
       </Route>
       <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
     </Routes>

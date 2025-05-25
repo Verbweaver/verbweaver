@@ -13,7 +13,7 @@ export default function NewProjectDialog({ isOpen, onClose }: NewProjectDialogPr
   const [projectName, setProjectName] = useState('')
   const [projectPath, setProjectPath] = useState('')
   const [isCreating, setIsCreating] = useState(false)
-  const { loadProjects } = useProjectStore()
+  const { loadProjects, setCurrentProjectPath } = useProjectStore()
 
   if (!isOpen) return null
 
@@ -36,7 +36,11 @@ export default function NewProjectDialog({ isOpen, onClose }: NewProjectDialogPr
     setIsCreating(true)
     try {
       if (isElectron && window.electronAPI) {
+        // Create the project directory structure and project
         await window.electronAPI.createProject(projectName, projectPath)
+        
+        // Set the current project path in the store
+        setCurrentProjectPath(projectPath, projectName)
       }
       
       // Reload projects

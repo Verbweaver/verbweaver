@@ -3,14 +3,19 @@ import { ProjectConfig } from '@verbweaver/shared'
 import { projectApi } from '../api/projectApi'
 import toast from 'react-hot-toast'
 
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+
 interface ProjectState {
   projects: ProjectConfig[]
   currentProject: ProjectConfig | null
+  currentProjectPath: string | null  // For Electron projects
   isLoading: boolean
   error: string | null
   
   loadProjects: () => Promise<void>
   selectProject: (projectId: string) => void
+  setCurrentProjectPath: (path: string, name?: string) => void  // For Electron
   createProject: (project: Omit<ProjectConfig, 'id' | 'created' | 'modified'>) => Promise<void>
   updateProject: (projectId: string, updates: Partial<ProjectConfig>) => Promise<void>
   deleteProject: (projectId: string) => Promise<void>
@@ -19,12 +24,20 @@ interface ProjectState {
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   currentProject: null,
+  currentProjectPath: null,
   isLoading: false,
   error: null,
 
   loadProjects: async () => {
     set({ isLoading: true, error: null })
     try {
+      if (isElectron) {
+        // For Electron, we don't load from API but from local storage/recent projects
+        // The projects are managed locally
+        set({ projects: [], isLoading: false })
+        return
+      }
+      
       const projects = await projectApi.getProjects()
       set({ projects, isLoading: false })
       
@@ -35,7 +48,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       }
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false })
-      toast.error('Failed to load projects')
+      if (!isElectron) {
+        toast.error('Failed to load projects')
+      }
     }
   },
 
@@ -47,9 +62,42 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
+  setCurrentProjectPath: (path: string, name?: string) => {
+    // For Electron projects, set the current project path
+    const projectName = name || path.split(/[/\\]/).pop() || 'Unknown Project'
+    const mockProject: ProjectConfig = {
+      id: path, // Use path as ID for Electron projects
+      name: projectName,
+      description: `Local project at ${path}`,
+      created: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      settings: {},
+      gitRepository: {
+        url: '',
+        branch: 'main',
+        type: 'local'
+      }
+    }
+    
+    set({ 
+      currentProject: mockProject,
+      currentProjectPath: path 
+    })
+    
+    localStorage.setItem('verbweaver_active_project_path', path)
+    toast.success(`Opened project: ${projectName}`)
+  },
+
   createProject: async (projectData) => {
     set({ isLoading: true, error: null })
     try {
+      if (isElectron) {
+        // For Electron, project creation is handled by the main process
+        // We just update the local state
+        set({ isLoading: false })
+        return
+      }
+      
       const newProject = await projectApi.createProject(projectData)
       set(state => ({
         projects: [...state.projects, newProject],

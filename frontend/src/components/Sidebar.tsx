@@ -71,16 +71,20 @@ function Sidebar({ isCollapsed }: SidebarProps) {
 
       {/* Bottom Actions */}
       <div className="p-2 border-t border-border space-y-1">
-        <button
-          className={clsx(
-            'flex items-center gap-3 px-3 py-2 rounded-md transition-colors w-full',
-            'hover:bg-accent hover:text-accent-foreground',
-            isCollapsed && 'justify-center'
-          )}
+        <NavLink
+          to="/help"
+          className={({ isActive }) =>
+            clsx(
+              'flex items-center gap-3 px-3 py-2 rounded-md transition-colors w-full',
+              'hover:bg-accent hover:text-accent-foreground',
+              isActive && 'bg-primary text-primary-foreground',
+              isCollapsed && 'justify-center'
+            )
+          }
         >
           <HelpCircle className="w-5 h-5 flex-shrink-0" />
           {!isCollapsed && <span>Help</span>}
-        </button>
+        </NavLink>
         
         <NavLink
           to="/settings"
@@ -102,7 +106,7 @@ function Sidebar({ isCollapsed }: SidebarProps) {
           <div className="px-3 py-2">
             <div className="flex items-center gap-3">
               <User className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm truncate">{user.username}</span>
+              <span className="text-sm truncate">{user.name || user.email}</span>
             </div>
           </div>
         )}
