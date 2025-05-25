@@ -8,6 +8,7 @@ export interface ElectronAPI {
   saveFile: (content: string) => Promise<{ canceled: boolean; filePath?: string }>;
   readFile: (filePath: string) => Promise<string>;
   writeFile: (filePath: string, content: string) => Promise<void>;
+  readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
   
   // Project operations
   createProject: (name: string, path: string) => Promise<void>;
@@ -69,6 +70,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFile: (content: string) => ipcRenderer.invoke('dialog:saveFile', content),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
+  readDirectory: (dirPath: string) => ipcRenderer.invoke('fs:readDirectory', dirPath),
   
   // Project operations
   createProject: (name: string, path: string) => ipcRenderer.invoke('project:create', name, path),

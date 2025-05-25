@@ -13,6 +13,7 @@ interface FileNode {
   path: string
   type: 'file' | 'directory'
   children?: FileNode[]
+  loaded?: boolean // Track if directory contents have been loaded
 }
 
 // Check if we're in Electron
@@ -37,45 +38,36 @@ function EditorSidebar() {
     
     setIsLoading(true)
     try {
-      if (isElectron && currentProjectPath) {
-        // For Electron, create a mock file tree based on the project structure
-        const mockTree: FileNode[] = [
-          {
-            id: 'nodes',
-            name: 'nodes',
-            path: `${currentProjectPath}/nodes`,
-            type: 'directory',
-            children: []
-          },
-          {
-            id: 'tasks',
-            name: 'tasks',
-            path: `${currentProjectPath}/tasks`,
-            type: 'directory',
-            children: []
-          },
-          {
-            id: 'docs',
-            name: 'docs',
-            path: `${currentProjectPath}/docs`,
-            type: 'directory',
-            children: []
-          },
-          {
-            id: 'templates',
-            name: 'templates',
-            path: `${currentProjectPath}/templates`,
-            type: 'directory',
-            children: []
-          },
-          {
-            id: 'readme',
-            name: 'README.md',
-            path: `${currentProjectPath}/README.md`,
-            type: 'file'
-          }
-        ]
-        setFileTree(mockTree)
+      if (isElectron && currentProjectPath && window.electronAPI) {
+        // For Electron, read the actual project structure
+        const rootItems = await window.electronAPI.readDirectory(currentProjectPath)
+        
+        // Convert to FileNode format and filter for relevant directories/files
+        const tree: FileNode[] = rootItems
+          .filter(item => {
+            // Show specific directories and markdown files
+            if (item.type === 'directory') {
+              return ['nodes', 'tasks', 'docs', 'templates'].includes(item.name)
+            }
+            return item.name.endsWith('.md')
+          })
+          .map(item => ({
+            id: item.path,
+            name: item.name,
+            path: item.path,
+            type: item.type,
+            children: item.type === 'directory' ? [] : undefined,
+            loaded: false
+          }))
+          .sort((a, b) => {
+            // Directories first, then files
+            if (a.type !== b.type) {
+              return a.type === 'directory' ? -1 : 1
+            }
+            return a.name.localeCompare(b.name)
+          })
+        
+        setFileTree(tree)
       } else {
         // For web version, use the API
         const tree = await editorApi.getFileTree(currentProject.id)
@@ -90,23 +82,78 @@ function EditorSidebar() {
     }
   }
 
-  const toggleDirectory = (path: string) => {
+  const loadDirectoryContents = async (node: FileNode) => {
+    if (!isElectron || !window.electronAPI || node.loaded) return
+    
+    try {
+      const items = await window.electronAPI.readDirectory(node.path)
+      
+      // Convert to FileNode format
+      const children: FileNode[] = items
+        .filter(item => {
+          // Show all directories and markdown files
+          return item.type === 'directory' || item.name.endsWith('.md')
+        })
+        .map(item => ({
+          id: item.path,
+          name: item.name,
+          path: item.path,
+          type: item.type,
+          children: item.type === 'directory' ? [] : undefined,
+          loaded: false
+        }))
+        .sort((a, b) => {
+          // Directories first, then files
+          if (a.type !== b.type) {
+            return a.type === 'directory' ? -1 : 1
+          }
+          return a.name.localeCompare(b.name)
+        })
+      
+      // Update the file tree
+      setFileTree(prevTree => {
+        const updateNode = (nodes: FileNode[]): FileNode[] => {
+          return nodes.map(n => {
+            if (n.path === node.path) {
+              return { ...n, children, loaded: true }
+            }
+            if (n.children) {
+              return { ...n, children: updateNode(n.children) }
+            }
+            return n
+          })
+        }
+        return updateNode(prevTree)
+      })
+    } catch (error) {
+      console.error('Failed to load directory contents:', error)
+    }
+  }
+
+  const toggleDirectory = async (node: FileNode) => {
+    const isExpanded = expandedDirs.has(node.path)
+    
+    if (!isExpanded && !node.loaded) {
+      // Load directory contents if not already loaded
+      await loadDirectoryContents(node)
+    }
+    
     setExpandedDirs(prev => {
       const next = new Set(prev)
-      if (next.has(path)) {
-        next.delete(path)
+      if (next.has(node.path)) {
+        next.delete(node.path)
       } else {
-        next.add(path)
+        next.add(node.path)
       }
       return next
     })
   }
 
-  const handleFileClick = (node: FileNode) => {
+  const handleFileClick = async (node: FileNode) => {
     if (node.type === 'file') {
-      navigate(`/editor/${node.id}`)
+      navigate(`/editor/${encodeURIComponent(node.path)}`)
     } else {
-      toggleDirectory(node.path)
+      await toggleDirectory(node)
     }
   }
 

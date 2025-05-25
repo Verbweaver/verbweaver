@@ -7,6 +7,7 @@ declare global {
       saveFile: (content: string) => Promise<{ canceled: boolean; filePath?: string }>;
       readFile: (filePath: string) => Promise<string>;
       writeFile: (filePath: string, content: string) => Promise<void>;
+      readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
       
       // Project operations
       createProject: (name: string, path: string) => Promise<void>;

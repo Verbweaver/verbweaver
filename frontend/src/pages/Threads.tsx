@@ -8,6 +8,9 @@ import TaskCard from '../components/tasks/TaskCard'
 import CreateTaskModal from '../components/tasks/CreateTaskModal'
 import clsx from 'clsx'
 
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+
 const columns = [
   { id: TASK_STATES.TODO, title: 'To Do', color: 'bg-gray-500' },
   { id: TASK_STATES.IN_PROGRESS, title: 'In Progress', color: 'bg-blue-500' },
@@ -23,7 +26,18 @@ function ThreadsView() {
 
   useEffect(() => {
     if (currentProject) {
-      loadTasks(parseInt(currentProject.id))
+      // For Electron, we'll use a mock project ID or skip API calls
+      if (isElectron) {
+        // TODO: Implement local task storage for Electron
+        // For now, just set empty tasks
+        return
+      }
+      
+      // For web version, parse the numeric ID
+      const projectId = parseInt(currentProject.id)
+      if (!isNaN(projectId)) {
+        loadTasks(projectId)
+      }
     }
   }, [currentProject, loadTasks])
 
@@ -33,7 +47,15 @@ function ThreadsView() {
     const { draggableId, destination } = result
     const newStatus = destination.droppableId as TaskStatus
 
-    updateTaskStatus(parseInt(currentProject.id), draggableId, newStatus)
+    if (isElectron) {
+      // TODO: Implement local task status update
+      return
+    }
+
+    const projectId = parseInt(currentProject.id)
+    if (!isNaN(projectId)) {
+      updateTaskStatus(projectId, draggableId, newStatus)
+    }
   }
 
   const getTasksByStatus = (status: string) => {

@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { GitBranch, GitCommit, Plus, RefreshCw, Upload, Download } from 'lucide-react';
 import { api } from '../services/auth';
+import { useProjectStore } from '../store/projectStore';
+
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
 interface Commit {
   sha: string;
@@ -20,6 +24,7 @@ interface FileChange {
 }
 
 export default function VersionControlView() {
+  const { currentProject, currentProjectPath } = useProjectStore();
   const [commits, setCommits] = useState<Commit[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [currentBranch, setCurrentBranch] = useState<string>('main');
@@ -29,10 +34,21 @@ export default function VersionControlView() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    loadGitStatus();
-  }, []);
+    if (currentProject) {
+      loadGitStatus();
+    }
+  }, [currentProject]);
 
   const loadGitStatus = async () => {
+    if (isElectron) {
+      // For Electron, we'll implement Git operations later
+      // For now, show a placeholder
+      setBranches([{ name: 'main', is_current: true }]);
+      setCommits([]);
+      setChanges([]);
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Load branches
@@ -101,6 +117,40 @@ export default function VersionControlView() {
       alert('Failed to pull changes');
     }
   };
+
+  if (!currentProject) {
+    return (
+      <div className="h-full flex items-center justify-center bg-background">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">No Project Selected</h2>
+          <p className="text-muted-foreground">
+            Please select or create a project to view version control
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isElectron) {
+    return (
+      <div className="h-full flex items-center justify-center bg-background">
+        <div className="text-center max-w-md">
+          <GitBranch className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+          <h2 className="text-2xl font-bold mb-4">Git Integration Coming Soon</h2>
+          <p className="text-muted-foreground mb-4">
+            Git version control for local projects is currently under development.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            In the meantime, you can use your favorite Git client to manage version control
+            for your project at:
+          </p>
+          <code className="block mt-2 p-2 bg-muted rounded text-sm">
+            {currentProjectPath}
+          </code>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex">

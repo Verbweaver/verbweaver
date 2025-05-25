@@ -400,6 +400,36 @@ function setupIpcHandlers() {
     return result;
   });
 
+  ipcMain.handle('fs:readDirectory', async (_, dirPath: string) => {
+    try {
+      const { readdir, stat } = require('fs/promises');
+      const entries = await readdir(dirPath);
+      
+      const items = await Promise.all(
+        entries.map(async (entry: string) => {
+          const fullPath = join(dirPath, entry);
+          try {
+            const stats = await stat(fullPath);
+            return {
+              name: entry,
+              path: fullPath,
+              type: stats.isDirectory() ? 'directory' : 'file',
+              // Don't read children here - let the UI request them when expanded
+            };
+          } catch (error) {
+            // Skip files we can't read
+            return null;
+          }
+        })
+      );
+      
+      // Filter out null entries and hidden files/folders (starting with .)
+      return items.filter(item => item && !item.name.startsWith('.'));
+    } catch (error) {
+      throw new Error(`Failed to read directory: ${error}`);
+    }
+  });
+
   ipcMain.handle('dialog:saveFile', async (_, content: string) => {
     const result = await dialog.showSaveDialog(mainWindow!, {
       filters: [
