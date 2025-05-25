@@ -20,6 +20,11 @@ declare global {
       gitCommit: (projectPath: string, message: string, files?: string[]) => Promise<void>;
       gitPush: (projectPath: string) => Promise<void>;
       gitPull: (projectPath: string) => Promise<void>;
+      gitGetBranches: (projectPath: string) => Promise<Array<{ name: string; is_current: boolean; is_remote: boolean }>>;
+      gitGetCommits: (projectPath: string, limit?: number) => Promise<Array<{ sha: string; author: string; email: string; date: string; message: string }>>;
+      gitCreateBranch: (projectPath: string, branchName: string) => Promise<void>;
+      gitSwitchBranch: (projectPath: string, branchName: string) => Promise<void>;
+      gitGetDiff: (projectPath: string, filePath?: string) => Promise<string>;
       
       // System operations
       getAppVersion: () => Promise<string>;

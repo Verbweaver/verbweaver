@@ -8,6 +8,7 @@ export interface Tab {
   type: 'graph' | 'editor' | 'threads' | 'version' | 'compiler' | 'dashboard' | 'settings' | 'help'
   metadata?: {
     filePath?: string // For editor tabs
+    isModified?: boolean // Track if file has unsaved changes
   }
 }
 
@@ -16,10 +17,12 @@ interface TabState {
   activeTabId: string | null
   
   addTab: (tab: Omit<Tab, 'id'>) => string
+  addEditorTab: (filePath: string, fileName: string) => string
   removeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
   updateTab: (tabId: string, updates: Partial<Tab>) => void
   getActiveTab: () => Tab | null
+  findEditorTab: (filePath: string) => Tab | undefined
 }
 
 export const useTabStore = create<TabState>()(
@@ -40,6 +43,38 @@ export const useTabStore = create<TabState>()(
         const newTab: Tab = {
           ...tabData,
           id
+        }
+        
+        set(state => ({
+          tabs: [...state.tabs, newTab],
+          activeTabId: id
+        }))
+        
+        return id
+      },
+      
+      addEditorTab: (filePath: string, fileName: string) => {
+        // Check if tab already exists
+        const existingTab = get().tabs.find(tab => 
+          tab.type === 'editor' && tab.metadata?.filePath === filePath
+        )
+        
+        if (existingTab) {
+          set({ activeTabId: existingTab.id })
+          return existingTab.id
+        }
+        
+        // Create new editor tab
+        const id = `editor-${Date.now()}`
+        const newTab: Tab = {
+          id,
+          path: `/editor/${encodeURIComponent(filePath)}`,
+          title: fileName,
+          type: 'editor',
+          metadata: {
+            filePath,
+            isModified: false
+          }
         }
         
         set(state => ({
@@ -89,6 +124,13 @@ export const useTabStore = create<TabState>()(
       getActiveTab: () => {
         const state = get()
         return state.tabs.find(tab => tab.id === state.activeTabId) || null
+      },
+      
+      findEditorTab: (filePath: string) => {
+        const state = get()
+        return state.tabs.find(tab => 
+          tab.type === 'editor' && tab.metadata?.filePath === filePath
+        )
       }
     }),
     {

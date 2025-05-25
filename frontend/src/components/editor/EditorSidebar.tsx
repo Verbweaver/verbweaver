@@ -6,6 +6,7 @@ import { editorApi } from '../../api/editorApi'
 import clsx from 'clsx'
 import FileCreateDialog from './FileCreateDialog'
 import toast from 'react-hot-toast'
+import { useTabStore } from '../../store/tabStore'
 
 interface FileNode {
   id: string
@@ -26,6 +27,7 @@ function EditorSidebar() {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const { addEditorTab } = useTabStore()
 
   useEffect(() => {
     if (currentProject) {
@@ -151,6 +153,8 @@ function EditorSidebar() {
 
   const handleFileClick = async (node: FileNode) => {
     if (node.type === 'file') {
+      // Create or switch to editor tab
+      addEditorTab(node.path, node.name)
       navigate(`/editor/${encodeURIComponent(node.path)}`)
     } else {
       await toggleDirectory(node)

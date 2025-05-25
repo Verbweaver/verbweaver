@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Theme, THEMES, STORAGE_KEYS } from '@verbweaver/shared'
+import { STORAGE_KEYS } from '@verbweaver/shared'
+
+export type Theme = 'light' | 'dark' | 'high-contrast' | 'colorblind'
 
 interface ThemeState {
   theme: Theme
@@ -10,7 +12,7 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
-      theme: THEMES.LIGHT,
+      theme: 'dark',
       setTheme: (theme) => set({ theme }),
     }),
     {

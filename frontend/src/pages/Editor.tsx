@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
-import { Save, FileText, Settings, X } from 'lucide-react'
+import { Save, FileText, Plus, Minus, X } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
 import { useThemeStore } from '../store/themeStore'
+import { useTabStore } from '../store/tabStore'
 import EditorSidebar from '../components/editor/EditorSidebar'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import toast from 'react-hot-toast'
@@ -26,6 +27,7 @@ function EditorView() {
     closeFile,
     updateFileContent 
   } = useEditorStore()
+  const { updateTab, findEditorTab } = useTabStore()
   
   const [content, setContent] = useState('')
   const [isModified, setIsModified] = useState(false)
@@ -65,6 +67,18 @@ function EditorView() {
     
     loadContent()
   }, [nodeId, filePath, currentProject, loadFile, navigate])
+
+  // Update tab modified state
+  useEffect(() => {
+    if (localFilePath) {
+      const tab = findEditorTab(localFilePath)
+      if (tab) {
+        updateTab(tab.id, {
+          metadata: { ...tab.metadata, isModified }
+        })
+      }
+    }
+  }, [isModified, localFilePath, findEditorTab, updateTab])
 
   // Handle content changes
   const handleEditorChange = useCallback((value: string | undefined) => {
@@ -125,6 +139,14 @@ function EditorView() {
     }
   }, [currentFile, openFiles, closeFile, navigate])
 
+  const increaseFontSize = () => {
+    setFontSize(prev => Math.min(prev + 2, 32))
+  }
+
+  const decreaseFontSize = () => {
+    setFontSize(prev => Math.max(prev - 2, 10))
+  }
+
   if (!currentProject) {
     return (
       <div className="h-full flex items-center justify-center bg-background">
@@ -138,7 +160,7 @@ function EditorView() {
     )
   }
 
-  if (!isElectron && !currentFile) {
+  if (!isElectron && !currentFile && !filePath) {
     return (
       <div className="h-full flex">
         <EditorSidebar />
@@ -177,17 +199,29 @@ function EditorView() {
             <Save className="w-4 h-4" />
           </button>
           
-          <button
-            onClick={() => setFontSize(prev => Math.min(prev + 1, 24))}
-            className="p-1.5 rounded hover:bg-accent"
-            title="Increase font size"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1 border-l pl-2 ml-1">
+            <button
+              onClick={decreaseFontSize}
+              className="p-1.5 rounded hover:bg-accent"
+              title="Decrease font size"
+              disabled={fontSize <= 10}
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+            <span className="text-xs px-1 min-w-[2rem] text-center">{fontSize}</span>
+            <button
+              onClick={increaseFontSize}
+              className="p-1.5 rounded hover:bg-accent"
+              title="Increase font size"
+              disabled={fontSize >= 32}
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
           
           <button
             onClick={handleCloseFile}
-            className="p-1.5 rounded hover:bg-accent"
+            className="p-1.5 rounded hover:bg-accent ml-2"
             title="Close file"
           >
             <X className="w-4 h-4" />

@@ -1,0 +1,69 @@
+.high-contrast {
+  --background: 0 0% 0%;
+  --foreground: 0 0% 100%;
+  --card: 0 0% 0%;
+  --card-foreground: 0 0% 100%;
+  --popover: 0 0% 0%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 0 0% 100%;
+  --primary-foreground: 0 0% 0%;
+  --secondary: 0 0% 20%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 0 0% 20%;
+  --muted-foreground: 0 0% 80%;
+  --accent: 0 0% 30%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 100% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 40%;
+  --input: 0 0% 40%;
+  --ring: 0 0% 100%;
+  --radius: 0.5rem;
+}
+
+/* Colorblind-friendly theme (optimized for deuteranopia) */
+.colorblind {
+  --background: 210 20% 98%;
+  --foreground: 210 20% 10%;
+  --card: 210 20% 100%;
+  --card-foreground: 210 20% 10%;
+  --popover: 210 20% 100%;
+  --popover-foreground: 210 20% 10%;
+  --primary: 217 91% 60%; /* Blue - easily distinguishable */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 47 100% 50%; /* Orange - good contrast with blue */
+  --secondary-foreground: 210 20% 10%;
+  --muted: 210 10% 90%;
+  --muted-foreground: 210 10% 40%;
+  --accent: 280 60% 60%; /* Purple - distinguishable from blue/orange */
+  --accent-foreground: 0 0% 100%;
+  --destructive: 47 100% 50%; /* Orange for errors instead of red */
+  --destructive-foreground: 0 0% 100%;
+  --border: 210 20% 85%;
+  --input: 210 20% 85%;
+  --ring: 217 91% 60%;
+  --radius: 0.5rem;
+}
+
+.dark.colorblind {
+  --background: 210 20% 10%;
+  --foreground: 210 20% 98%;
+  --card: 210 20% 15%;
+  --card-foreground: 210 20% 98%;
+  --popover: 210 20% 15%;
+  --popover-foreground: 210 20% 98%;
+  --primary: 217 91% 60%; /* Blue */
+  --primary-foreground: 210 20% 10%;
+  --secondary: 47 100% 50%; /* Orange */
+  --secondary-foreground: 210 20% 10%;
+  --muted: 210 10% 25%;
+  --muted-foreground: 210 10% 65%;
+  --accent: 280 60% 60%; /* Purple */
+  --accent-foreground: 210 20% 98%;
+  --destructive: 47 100% 50%; /* Orange */
+  --destructive-foreground: 210 20% 10%;
+  --border: 210 20% 25%;
+  --input: 210 20% 25%;
+  --ring: 217 91% 60%;
+  --radius: 0.5rem;
+} 

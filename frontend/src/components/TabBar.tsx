@@ -1,4 +1,4 @@
-import { X, Plus } from 'lucide-react'
+import { X, Plus, Circle } from 'lucide-react'
 import clsx from 'clsx'
 import { TAB_HEIGHT } from '@verbweaver/shared'
 import { useTabStore } from '../store/tabStore'
@@ -12,7 +12,22 @@ function TabBar() {
 
   // Sync current route with active tab
   useEffect(() => {
-    const currentTab = tabs.find(tab => location.pathname.startsWith(tab.path))
+    // For editor tabs, match by file path
+    if (location.pathname.startsWith('/editor/')) {
+      const filePath = decodeURIComponent(location.pathname.replace('/editor/', ''))
+      const editorTab = tabs.find(tab => 
+        tab.type === 'editor' && tab.metadata?.filePath === filePath
+      )
+      if (editorTab && editorTab.id !== activeTabId) {
+        setActiveTab(editorTab.id)
+        return
+      }
+    }
+    
+    // For other tabs, match by path prefix
+    const currentTab = tabs.find(tab => 
+      tab.type !== 'editor' && location.pathname.startsWith(tab.path)
+    )
     if (currentTab && currentTab.id !== activeTabId) {
       setActiveTab(currentTab.id)
     }
@@ -28,6 +43,15 @@ function TabBar() {
     
     // Don't allow closing the last tab
     if (tabs.length === 1) return
+    
+    const tab = tabs.find(t => t.id === tabId)
+    
+    // If tab has unsaved changes, confirm before closing
+    if (tab?.metadata?.isModified) {
+      if (!confirm(`"${tab.title}" has unsaved changes. Close anyway?`)) {
+        return
+      }
+    }
     
     // Find the tab to be removed and the next active tab
     const tabIndex = tabs.findIndex(tab => tab.id === tabId)
@@ -69,7 +93,12 @@ function TabBar() {
           )}
           onClick={() => handleTabClick(tab.id, tab.path)}
         >
-          <span className="text-sm truncate">{tab.title}</span>
+          <span className="text-sm truncate flex items-center gap-1">
+            {tab.title}
+            {tab.metadata?.isModified && (
+              <Circle className="w-2 h-2 fill-current" />
+            )}
+          </span>
           {tabs.length > 1 && (
             <div
               onClick={(e) => handleCloseTab(e, tab.id)}

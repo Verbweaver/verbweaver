@@ -1,5 +1,7 @@
+import { useState } from 'react';
+import { Save, Moon, Sun, Bell, GitBranch, Shield, LogOut } from 'lucide-react';
 import { useAuthStore } from '../services/auth';
-import { useThemeStore } from '../store/themeStore';
+import { useThemeStore, Theme } from '../store/themeStore';
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -8,7 +10,7 @@ export default function Settings() {
   const { user, logout } = useAuthStore();
   const { theme, setTheme } = useThemeStore();
 
-  const handleThemeChange = (newTheme: 'light' | 'dark') => {
+  const handleThemeChange = (newTheme: 'light' | 'dark' | 'high-contrast' | 'colorblind') => {
     setTheme(newTheme);
   };
 
@@ -48,29 +50,20 @@ export default function Settings() {
           <h2 className="text-xl font-semibold mb-4">Appearance</h2>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium mb-2 block">Theme</label>
-              <div className="flex gap-4">
-                <button
-                  onClick={() => handleThemeChange('light')}
-                  className={`px-4 py-2 rounded-md transition-colors ${
-                    theme === 'light'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                  }`}
-                >
-                  Light
-                </button>
-                <button
-                  onClick={() => handleThemeChange('dark')}
-                  className={`px-4 py-2 rounded-md transition-colors ${
-                    theme === 'dark'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                  }`}
-                >
-                  Dark
-                </button>
-              </div>
+              <label className="block text-sm font-medium mb-2">Theme</label>
+              <select
+                value={theme}
+                onChange={(e) => setTheme(e.target.value as Theme)}
+                className="w-full p-2 border rounded-md bg-background"
+              >
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="high-contrast">High Contrast</option>
+                <option value="colorblind">Colorblind Friendly</option>
+              </select>
+              <p className="text-sm text-muted-foreground mt-1">
+                Choose a color theme for the interface. The colorblind theme uses colors optimized for deuteranopia (red-green colorblindness).
+              </p>
             </div>
           </div>
         </div>
