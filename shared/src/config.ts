@@ -3,18 +3,8 @@
  */
 
 // Detect if running in Electron
-declare global {
-  interface Window {
-    electronAPI?: {
-      getStoreValue: (key: string) => Promise<any>;
-      setStoreValue: (key: string, value: any) => Promise<void>;
-      getBackendStatus: () => Promise<{ running: boolean; port?: number; pid?: number }>;
-    };
-  }
-}
-
 const isElectron = (): boolean => {
-  return typeof window !== 'undefined' && window.electronAPI !== undefined;
+  return typeof window !== 'undefined' && (window as any).electronAPI !== undefined;
 };
 
 export class ConfigManager {
@@ -36,18 +26,19 @@ export class ConfigManager {
 
     try {
       // Get the backend URL from electron store
-      const storedUrl = await window.electronAPI!.getStoreValue('backendUrl');
+      const electronAPI = (window as any).electronAPI;
+      const storedUrl = await electronAPI.getStoreValue('backendUrl');
       if (storedUrl) {
         this.backendUrl = storedUrl;
         this.wsUrl = storedUrl.replace('http://', 'ws://');
       } else {
         // If not stored, check backend status
-        const status = await window.electronAPI!.getBackendStatus();
+        const status = await electronAPI.getBackendStatus();
         if (status.running && status.port) {
           this.backendUrl = `http://127.0.0.1:${status.port}`;
           this.wsUrl = `ws://127.0.0.1:${status.port}`;
           // Store for future use
-          await window.electronAPI!.setStoreValue('backendUrl', this.backendUrl);
+          await electronAPI.setStoreValue('backendUrl', this.backendUrl);
         }
       }
     } catch (error) {

@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import { FolderOpen, Plus, BarChart3, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import NewProjectDialog from '../components/NewProjectDialog';
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
 export default function Dashboard() {
-  const { projects, currentProject, loadProjects } = useProjectStore();
+  const { projects, currentProject, loadProjects, setCurrentProjectPath } = useProjectStore();
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
+  const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Load projects and recent projects
@@ -29,13 +33,25 @@ export default function Dashboard() {
     }
   };
 
-  const handleOpenProject = async (projectPath: string) => {
+  const handleOpenProject = async (projectPath?: string) => {
     if (!isElectron || !window.electronAPI) return;
     
     try {
-      await window.electronAPI.openProject?.(projectPath);
-      // Reload projects after opening
-      await loadProjects();
+      if (projectPath) {
+        // Open specific project from recent projects
+        await window.electronAPI.openProject?.(projectPath);
+        setCurrentProjectPath(projectPath);
+        navigate('/dashboard');
+      } else {
+        // Open project dialog
+        const result = await window.electronAPI.openDirectory?.();
+        if (result && !result.canceled && result.filePaths.length > 0) {
+          const selectedPath = result.filePaths[0];
+          await window.electronAPI.openProject?.(selectedPath);
+          setCurrentProjectPath(selectedPath);
+          navigate('/dashboard');
+        }
+      }
     } catch (error) {
       console.error('Error opening project:', error);
       alert('Failed to open project: ' + error);
@@ -43,9 +59,7 @@ export default function Dashboard() {
   };
 
   const handleNewProject = () => {
-    // This would trigger the new project dialog
-    // For now, just show an alert
-    alert('Use File → New Project from the menu to create a new project');
+    setShowNewProjectDialog(true);
   };
 
   return (
@@ -111,12 +125,7 @@ export default function Dashboard() {
               Create New Project
             </button>
             <button
-              onClick={() => {
-                if (isElectron && window.electronAPI) {
-                  // Trigger open project dialog
-                  alert('Use File → Open Project from the menu to open an existing project');
-                }
-              }}
+              onClick={() => handleOpenProject()}
               className="w-full p-3 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
             >
               Open Existing Project
@@ -165,6 +174,12 @@ export default function Dashboard() {
           </p>
         </div>
       )}
+      
+      {/* New Project Dialog */}
+      <NewProjectDialog 
+        isOpen={showNewProjectDialog}
+        onClose={() => setShowNewProjectDialog(false)}
+      />
     </div>
   );
 } 

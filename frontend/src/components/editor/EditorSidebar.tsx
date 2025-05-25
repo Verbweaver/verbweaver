@@ -4,6 +4,8 @@ import { ChevronRight, ChevronDown, FileText, Folder, Plus } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { editorApi } from '../../api/editorApi'
 import clsx from 'clsx'
+import FileCreateDialog from './FileCreateDialog'
+import toast from 'react-hot-toast'
 
 interface FileNode {
   id: string
@@ -13,28 +15,76 @@ interface FileNode {
   children?: FileNode[]
 }
 
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+
 function EditorSidebar() {
   const navigate = useNavigate()
-  const { currentProject } = useProjectStore()
+  const { currentProject, currentProjectPath } = useProjectStore()
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
 
   useEffect(() => {
     if (currentProject) {
       loadFileTree()
     }
-  }, [currentProject])
+  }, [currentProject, currentProjectPath])
 
   const loadFileTree = async () => {
     if (!currentProject) return
     
     setIsLoading(true)
     try {
-      const tree = await editorApi.getFileTree(currentProject.id)
-      setFileTree(tree)
+      if (isElectron && currentProjectPath) {
+        // For Electron, create a mock file tree based on the project structure
+        const mockTree: FileNode[] = [
+          {
+            id: 'nodes',
+            name: 'nodes',
+            path: `${currentProjectPath}/nodes`,
+            type: 'directory',
+            children: []
+          },
+          {
+            id: 'tasks',
+            name: 'tasks',
+            path: `${currentProjectPath}/tasks`,
+            type: 'directory',
+            children: []
+          },
+          {
+            id: 'docs',
+            name: 'docs',
+            path: `${currentProjectPath}/docs`,
+            type: 'directory',
+            children: []
+          },
+          {
+            id: 'templates',
+            name: 'templates',
+            path: `${currentProjectPath}/templates`,
+            type: 'directory',
+            children: []
+          },
+          {
+            id: 'readme',
+            name: 'README.md',
+            path: `${currentProjectPath}/README.md`,
+            type: 'file'
+          }
+        ]
+        setFileTree(mockTree)
+      } else {
+        // For web version, use the API
+        const tree = await editorApi.getFileTree(currentProject.id)
+        setFileTree(tree)
+      }
     } catch (error) {
       console.error('Failed to load file tree:', error)
+      // Set empty tree on error
+      setFileTree([])
     } finally {
       setIsLoading(false)
     }
@@ -57,6 +107,69 @@ function EditorSidebar() {
       navigate(`/editor/${node.id}`)
     } else {
       toggleDirectory(node.path)
+    }
+  }
+
+  const handleCreateFile = async (fileName: string) => {
+    if (!currentProject) return
+    
+    try {
+      if (isElectron && currentProjectPath && window.electronAPI) {
+        // For Electron, create the file in the nodes directory
+        const filePath = `${currentProjectPath}/nodes/${fileName}`
+        const initialContent = `# ${fileName.replace('.md', '').replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+
+<!-- 
+Verbweaver Metadata
+Type: document
+Created: ${new Date().toISOString()}
+Tags: []
+-->
+
+## Overview
+
+Start writing your content here...
+
+## Sections
+
+### Section 1
+
+Content for section 1.
+
+### Section 2
+
+Content for section 2.
+
+## Related Links
+
+- [[Related Node 1]]
+- [[Related Node 2]]
+
+## Notes
+
+Add any additional notes or references here.
+`
+        
+        // Write the file using Electron API
+        await window.electronAPI.writeFile(filePath, initialContent)
+        
+        // Reload the file tree
+        await loadFileTree()
+        
+        // Optionally navigate to the new file
+        // Since we don't have a proper ID system for local files yet,
+        // we'll just show a success message
+        toast?.success?.(`File "${fileName}" created successfully`) || 
+          alert(`File "${fileName}" created successfully`)
+      } else {
+        // For web version, use the API
+        await editorApi.createFile(currentProject.id, `nodes/${fileName}`, '# New File\n\nContent goes here...')
+        // Reload the file tree
+        await loadFileTree()
+      }
+    } catch (error) {
+      console.error('Failed to create file:', error)
+      alert('Failed to create file: ' + error)
     }
   }
 
@@ -105,7 +218,7 @@ function EditorSidebar() {
       <div className="flex items-center justify-between p-2 border-b border-border">
         <h3 className="text-sm font-semibold">Files</h3>
         <button
-          onClick={() => {/* TODO: Create new file */}}
+          onClick={() => setShowCreateDialog(true)}
           className="p-1 rounded hover:bg-accent"
           title="New file"
         >
@@ -123,6 +236,13 @@ function EditorSidebar() {
           fileTree.map(node => renderNode(node))
         )}
       </div>
+
+      {/* File Create Dialog */}
+      <FileCreateDialog
+        isOpen={showCreateDialog}
+        onClose={() => setShowCreateDialog(false)}
+        onCreate={handleCreateFile}
+      />
     </div>
   )
 }

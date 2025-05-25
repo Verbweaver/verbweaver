@@ -107,6 +107,9 @@ export default function NewProjectDialog({ isOpen, onClose }: NewProjectDialogPr
                 </button>
               )}
             </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              If the folder doesn't exist, it will be created automatically.
+            </p>
           </div>
         </div>
 

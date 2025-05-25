@@ -24,8 +24,11 @@ const nodeTypes: NodeTypes = {
   custom: CustomNode,
 }
 
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+
 function GraphView() {
-  const { currentProject } = useProjectStore()
+  const { currentProject, currentProjectPath } = useProjectStore()
   const { loadGraph, saveNodePosition, createNode, deleteNode, createEdge, deleteEdge } = useGraphStore()
   
   const [nodes, setNodes, onNodesChange] = useNodesState([])
@@ -36,38 +39,99 @@ function GraphView() {
   // Load graph data when project changes
   useEffect(() => {
     if (currentProject) {
-      loadGraph(currentProject.id).then(({ nodes: graphNodes, edges: graphEdges }) => {
-        // Convert GraphNode to React Flow Node
-        const flowNodes = graphNodes.map((node: GraphNode) => ({
-          id: node.id,
-          type: 'custom',
-          position: node.position || { x: Math.random() * 500, y: Math.random() * 500 },
-          data: {
-            label: node.title,
-            type: node.type,
-            metadata: node.metadata,
+      if (isElectron && currentProjectPath) {
+        // For Electron, create a sample graph structure
+        const sampleNodes: Node[] = [
+          {
+            id: 'project-root',
+            type: 'custom',
+            position: { x: 250, y: 100 },
+            data: {
+              label: currentProject.name,
+              type: NODE_TYPES.DIRECTORY,
+              metadata: { title: currentProject.name, type: NODE_TYPES.DIRECTORY },
+            },
           },
-        }))
-        
-        // Convert GraphEdge to React Flow Edge
-        const flowEdges = graphEdges.map((edge: GraphEdge) => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          type: edge.type === 'hard' ? 'straight' : 'smoothstep',
-          animated: edge.style?.animated,
-          style: edge.style,
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
+          {
+            id: 'nodes-folder',
+            type: 'custom',
+            position: { x: 100, y: 250 },
+            data: {
+              label: 'Content Nodes',
+              type: NODE_TYPES.DIRECTORY,
+              metadata: { title: 'Content Nodes', type: NODE_TYPES.DIRECTORY },
+            },
           },
-          label: edge.label,
-        }))
-        
-        setNodes(flowNodes)
-        setEdges(flowEdges)
-      })
+          {
+            id: 'tasks-folder',
+            type: 'custom',
+            position: { x: 400, y: 250 },
+            data: {
+              label: 'Tasks',
+              type: NODE_TYPES.DIRECTORY,
+              metadata: { title: 'Tasks', type: NODE_TYPES.DIRECTORY },
+            },
+          },
+        ]
+
+        const sampleEdges: Edge[] = [
+          {
+            id: 'project-to-nodes',
+            source: 'project-root',
+            target: 'nodes-folder',
+            type: 'smoothstep',
+            markerEnd: { type: MarkerType.ArrowClosed },
+          },
+          {
+            id: 'project-to-tasks',
+            source: 'project-root',
+            target: 'tasks-folder',
+            type: 'smoothstep',
+            markerEnd: { type: MarkerType.ArrowClosed },
+          },
+        ]
+
+        setNodes(sampleNodes)
+        setEdges(sampleEdges)
+      } else {
+        // For web version, load from API
+        loadGraph(currentProject.id).then(({ nodes: graphNodes, edges: graphEdges }) => {
+          // Convert GraphNode to React Flow Node
+          const flowNodes = graphNodes.map((node: GraphNode) => ({
+            id: node.id,
+            type: 'custom',
+            position: node.position || { x: Math.random() * 500, y: Math.random() * 500 },
+            data: {
+              label: node.title,
+              type: node.type,
+              metadata: node.metadata,
+            },
+          }))
+          
+          // Convert GraphEdge to React Flow Edge
+          const flowEdges = graphEdges.map((edge: GraphEdge) => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            type: edge.type === 'hard' ? 'straight' : 'smoothstep',
+            animated: edge.style?.animated,
+            style: edge.style,
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+            },
+            label: edge.label,
+          }))
+          
+          setNodes(flowNodes)
+          setEdges(flowEdges)
+        }).catch(() => {
+          // If API fails, show empty graph
+          setNodes([])
+          setEdges([])
+        })
+      }
     }
-  }, [currentProject, loadGraph, setNodes, setEdges])
+  }, [currentProject, currentProjectPath, loadGraph, setNodes, setEdges])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
@@ -153,26 +217,43 @@ function GraphView() {
       }
       
       try {
-        await createNode(currentProject.id, newNode)
-        const flowNode: Node = {
-          id: newNode.id,
-          type: 'custom',
-          position: newNode.position!,
-          data: {
-            label: newNode.title,
-            type: newNode.type,
-            metadata: newNode.metadata,
-          },
+        if (isElectron && currentProjectPath) {
+          // For Electron, just add the node locally
+          const flowNode: Node = {
+            id: newNode.id,
+            type: 'custom',
+            position: newNode.position!,
+            data: {
+              label: newNode.title,
+              type: newNode.type,
+              metadata: newNode.metadata,
+            },
+          }
+          setNodes((nds) => [...nds, flowNode])
+          toast.success('Node created locally')
+        } else {
+          // For web version, use the API
+          await createNode(currentProject.id, newNode)
+          const flowNode: Node = {
+            id: newNode.id,
+            type: 'custom',
+            position: newNode.position!,
+            data: {
+              label: newNode.title,
+              type: newNode.type,
+              metadata: newNode.metadata,
+            },
+          }
+          setNodes((nds) => [...nds, flowNode])
+          toast.success('Node created')
         }
-        setNodes((nds) => [...nds, flowNode])
-        toast.success('Node created')
       } catch (error) {
         toast.error('Failed to create node')
       }
       
       setContextMenu(null)
     },
-    [currentProject, createNode, setNodes]
+    [currentProject, currentProjectPath, createNode, setNodes]
   )
 
   // Handle deleting node

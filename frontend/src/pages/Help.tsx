@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
 import { ChevronRight, ChevronDown, FileText, Folder } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.css';
+import '../styles/markdown.css';
 
 interface DocFile {
   name: string;
@@ -7,6 +12,9 @@ interface DocFile {
   type: 'file' | 'directory';
   children?: DocFile[];
 }
+
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
 export default function Help() {
   const [docFiles, setDocFiles] = useState<DocFile[]>([]);
@@ -20,49 +28,50 @@ export default function Help() {
   }, []);
 
   const loadDocumentationStructure = async () => {
-    // For now, create a mock structure
-    // In a real implementation, this would read from the docs folder
-    const mockDocs: DocFile[] = [
+    // Create structure based on actual docs folder
+    const actualDocs: DocFile[] = [
       {
         name: 'Getting Started',
         path: 'getting-started.md',
         type: 'file'
       },
       {
-        name: 'User Guide',
-        path: 'user-guide',
-        type: 'directory',
-        children: [
-          { name: 'Creating Projects', path: 'user-guide/creating-projects.md', type: 'file' },
-          { name: 'Using the Graph View', path: 'user-guide/graph-view.md', type: 'file' },
-          { name: 'Editor Features', path: 'user-guide/editor.md', type: 'file' },
-          { name: 'Task Management', path: 'user-guide/tasks.md', type: 'file' },
-          { name: 'Version Control', path: 'user-guide/version-control.md', type: 'file' },
-          { name: 'Compiling Documents', path: 'user-guide/compiler.md', type: 'file' }
-        ]
+        name: 'Desktop Guide',
+        path: 'desktop-guide.md',
+        type: 'file'
+      },
+      {
+        name: 'Desktop Quick Reference',
+        path: 'desktop-quick-reference.md',
+        type: 'file'
+      },
+      {
+        name: 'Architecture',
+        path: 'architecture.md',
+        type: 'file'
       },
       {
         name: 'API Reference',
-        path: 'api',
-        type: 'directory',
-        children: [
-          { name: 'Projects API', path: 'api/projects.md', type: 'file' },
-          { name: 'Authentication', path: 'api/auth.md', type: 'file' },
-          { name: 'Git Integration', path: 'api/git.md', type: 'file' }
-        ]
+        path: 'api-reference.md',
+        type: 'file'
       },
       {
-        name: 'Troubleshooting',
-        path: 'troubleshooting.md',
+        name: 'Security Checklist',
+        path: 'security-checklist.md',
+        type: 'file'
+      },
+      {
+        name: 'README',
+        path: '../README.md',
         type: 'file'
       }
     ];
 
-    setDocFiles(mockDocs);
+    setDocFiles(actualDocs);
     
     // Load the first document by default
-    if (mockDocs.length > 0) {
-      const firstFile = mockDocs[0];
+    if (actualDocs.length > 0) {
+      const firstFile = actualDocs[0];
       if (firstFile.type === 'file') {
         setSelectedDoc(firstFile.path);
         loadDocContent(firstFile.path);
@@ -71,37 +80,54 @@ export default function Help() {
   };
 
   const loadDocContent = async (docPath: string) => {
-    // For now, show placeholder content
-    // In a real implementation, this would read the actual markdown file
-    const placeholderContent = `# ${docPath.replace('.md', '').replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+    try {
+      if (isElectron && window.electronAPI) {
+        // For Electron, read the actual file from the docs folder
+        // Need to go up from desktop folder to root docs folder
+        const docsPath = `../docs/${docPath}`;
+        const content = await window.electronAPI.readFile(docsPath);
+        setDocContent(content || 'Failed to load documentation content.');
+      } else {
+        // For web version, we'd need to fetch from a docs API endpoint
+        // For now, show a message about desktop-only feature
+        setDocContent(`# ${docPath.replace('.md', '').replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
 
-Welcome to the Verbweaver documentation!
+This documentation is available in the desktop version of Verbweaver.
 
-## Overview
+To view the full documentation, please use the desktop application.
 
-Verbweaver is a writing and design platform that thinks in relationships (graphs). It is intended for writers, artists, engineers, developers, analysts and anyone else who want to design things while linking every idea together to its related ideas.
+## Available Documentation
 
-## Key Features
+The following documentation files are available in the desktop version:
 
-- **Graph-based Organization**: Visualize relationships between your ideas and content
-- **Markdown Support**: All content is backed by Markdown for formatting
-- **Git Integration**: Version control for all your projects
-- **Task Management**: Turn your ideas into manageable tasks
-- **Multi-format Export**: Compile your work into various formats
-
-## Getting Help
-
-If you need additional assistance:
-
-1. Check the troubleshooting section
-2. Review the user guide for detailed instructions
-3. Consult the API reference for technical details
+- Getting Started Guide
+- Desktop User Guide  
+- Desktop Quick Reference
+- Architecture Overview
+- API Reference
+- Security Checklist
+- Project README
 
 ---
 
-*This is placeholder documentation. The actual documentation would be loaded from the docs folder.*`;
+*Documentation viewing is optimized for the desktop application where files can be read directly from the local filesystem.*`);
+      }
+    } catch (error) {
+      console.error('Error loading documentation:', error);
+      setDocContent(`# Error Loading Documentation
 
-    setDocContent(placeholderContent);
+Failed to load the documentation file: ${docPath}
+
+Please ensure the documentation files are available in the docs folder.
+
+## Troubleshooting
+
+1. Check that the docs folder exists in your Verbweaver installation
+2. Verify that the documentation files are present
+3. Ensure you have proper file permissions
+
+If the problem persists, please check the application logs for more details.`);
+    }
   };
 
   const toggleFolder = (path: string) => {
@@ -169,7 +195,114 @@ If you need additional assistance:
       <div className="flex-1 p-6 overflow-y-auto">
         {docContent ? (
           <div className="prose prose-slate dark:prose-invert max-w-none">
-            <pre className="whitespace-pre-wrap font-sans">{docContent}</pre>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHighlight]}
+              components={{
+                // Custom link renderer to handle relative links
+                a: ({ node, href, children, ...props }) => {
+                  // Handle relative links
+                  if (href && !href.startsWith('http') && !href.startsWith('#')) {
+                    return (
+                      <a
+                        {...props}
+                        href={href}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          // Handle internal navigation if needed
+                          console.log('Internal link clicked:', href);
+                        }}
+                        className="text-primary hover:underline cursor-pointer"
+                      >
+                        {children}
+                      </a>
+                    );
+                  }
+                  // External links open in new tab
+                  return (
+                    <a
+                      {...props}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {children}
+                    </a>
+                  );
+                },
+                // Custom code block renderer
+                pre: ({ children, ...props }) => (
+                  <pre {...props} className="bg-muted p-4 rounded-lg overflow-x-auto">
+                    {children}
+                  </pre>
+                ),
+                // Custom inline code renderer
+                code: ({ node, inline, className, children, ...props }: any) => {
+                  if (inline) {
+                    return (
+                      <code {...props} className="bg-muted px-1 py-0.5 rounded text-sm">
+                        {children}
+                      </code>
+                    );
+                  }
+                  return <code {...props} className={className}>{children}</code>;
+                },
+                // Tables with proper styling
+                table: ({ children, ...props }) => (
+                  <div className="overflow-x-auto my-4">
+                    <table {...props} className="min-w-full divide-y divide-border">
+                      {children}
+                    </table>
+                  </div>
+                ),
+                th: ({ children, ...props }) => (
+                  <th {...props} className="px-4 py-2 bg-muted font-semibold text-left">
+                    {children}
+                  </th>
+                ),
+                td: ({ children, ...props }) => (
+                  <td {...props} className="px-4 py-2 border-t border-border">
+                    {children}
+                  </td>
+                ),
+                // Blockquotes with better styling
+                blockquote: ({ children, ...props }) => (
+                  <blockquote {...props} className="border-l-4 border-primary pl-4 my-4 italic">
+                    {children}
+                  </blockquote>
+                ),
+                // Lists with proper spacing
+                ul: ({ children, ...props }) => (
+                  <ul {...props} className="list-disc list-inside space-y-2 my-4">
+                    {children}
+                  </ul>
+                ),
+                ol: ({ children, ...props }) => (
+                  <ol {...props} className="list-decimal list-inside space-y-2 my-4">
+                    {children}
+                  </ol>
+                ),
+                // Headings with proper spacing
+                h1: ({ children, ...props }) => (
+                  <h1 {...props} className="text-3xl font-bold mt-8 mb-4">
+                    {children}
+                  </h1>
+                ),
+                h2: ({ children, ...props }) => (
+                  <h2 {...props} className="text-2xl font-semibold mt-6 mb-3">
+                    {children}
+                  </h2>
+                ),
+                h3: ({ children, ...props }) => (
+                  <h3 {...props} className="text-xl font-semibold mt-4 mb-2">
+                    {children}
+                  </h3>
+                ),
+              }}
+            >
+              {docContent}
+            </ReactMarkdown>
           </div>
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground">

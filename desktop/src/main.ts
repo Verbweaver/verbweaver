@@ -7,7 +7,7 @@ import {
   dialog,
   protocol
 } from 'electron';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { spawn, ChildProcess } from 'child_process';
@@ -417,7 +417,12 @@ function setupIpcHandlers() {
 
   ipcMain.handle('fs:readFile', async (_, filePath: string) => {
     try {
-      const content = await readFile(filePath, 'utf-8');
+      // If it's a relative path, resolve it from the app directory
+      const resolvedPath = filePath.startsWith('..') || filePath.startsWith('.')
+        ? resolve(app.getAppPath(), filePath)
+        : filePath;
+      
+      const content = await readFile(resolvedPath, 'utf-8');
       return content;
     } catch (error) {
       throw new Error(`Failed to read file: ${error}`);
@@ -426,6 +431,14 @@ function setupIpcHandlers() {
 
   ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
     try {
+      // Ensure parent directory exists
+      const { dirname } = require('path');
+      const dir = dirname(filePath);
+      
+      if (!existsSync(dir)) {
+        await mkdir(dir, { recursive: true });
+      }
+      
       await writeFile(filePath, content, 'utf-8');
     } catch (error) {
       throw new Error(`Failed to write file: ${error}`);
