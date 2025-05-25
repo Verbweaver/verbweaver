@@ -5,6 +5,38 @@ import { getApiUrl } from '@verbweaver/shared';
 
 const API_URL = getApiUrl();
 
+// Check if we're in Electron - with fallback check
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
+
+// Helper to get initial auth state for Electron
+const getInitialAuthState = () => {
+  // Check both at initialization and with a fallback
+  const electronDetected = (typeof window !== 'undefined' && window.electronAPI !== undefined) || 
+                          (typeof window !== 'undefined' && window.location.protocol === 'file:');
+  
+  if (electronDetected) {
+    return {
+      user: { 
+        id: 1, 
+        email: 'desktop@verbweaver.local', 
+        username: 'Desktop User',
+        full_name: 'Desktop User',
+        is_active: true 
+      },
+      accessToken: 'desktop-token',
+      refreshToken: 'desktop-refresh-token',
+      isAuthenticated: true
+    };
+  }
+  
+  return {
+    user: null,
+    accessToken: null,
+    refreshToken: null,
+    isAuthenticated: false
+  };
+};
+
 interface User {
   id: number;
   email: string;
@@ -76,10 +108,7 @@ api.interceptors.response.use(
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      user: null,
-      accessToken: null,
-      refreshToken: null,
-      isAuthenticated: false,
+      ...getInitialAuthState(),
       isLoading: false,
       error: null,
 

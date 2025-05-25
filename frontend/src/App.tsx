@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -19,6 +19,9 @@ function App() {
   const { loadProjects } = useProjectStore()
   const isAuthenticated = useAuthStore(state => state.isAuthenticated)
 
+  console.log('App component loaded, isAuthenticated:', isAuthenticated)
+  console.log('Is Electron?', window.electronAPI !== undefined)
+
   useEffect(() => {
     // Apply theme to document
     document.documentElement.classList.remove('light', 'dark', 'high-contrast', 'colorblind')
@@ -31,29 +34,27 @@ function App() {
   }, [loadProjects])
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Layout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="editor" element={<Editor />} />
-          <Route path="graph" element={<Graph />} />
-          <Route path="threads" element={<Threads />} />
-          <Route path="version" element={<Version />} />
-          <Route path="compiler" element={<Compiler />} />
-          <Route path="settings" element={<Settings />} />
-        </Route>
-        <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
-      </Routes>
-    </Router>
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Layout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="editor" element={<Editor />} />
+        <Route path="graph" element={<Graph />} />
+        <Route path="threads" element={<Threads />} />
+        <Route path="version" element={<Version />} />
+        <Route path="compiler" element={<Compiler />} />
+        <Route path="settings" element={<Settings />} />
+      </Route>
+      <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
+    </Routes>
   )
 }
 

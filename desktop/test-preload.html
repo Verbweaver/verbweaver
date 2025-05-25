@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Preload Test</title>
+</head>
+<body>
+    <h1>Testing Electron Preload</h1>
+    <div id="status"></div>
+    
+    <script>
+        const status = document.getElementById('status');
+        
+        // Check if electronAPI is available
+        if (window.electronAPI) {
+            status.innerHTML = '<p style="color: green;">✓ electronAPI is available!</p>';
+            
+            // List all available methods
+            const methods = Object.keys(window.electronAPI);
+            status.innerHTML += '<h2>Available methods:</h2><ul>';
+            methods.forEach(method => {
+                status.innerHTML += `<li>${method}</li>`;
+            });
+            status.innerHTML += '</ul>';
+            
+            // Test menu event listeners
+            if (window.electronAPI.onMenuNewProject) {
+                status.innerHTML += '<p style="color: green;">✓ Menu event listeners are available!</p>';
+                
+                // Set up a test listener
+                window.electronAPI.onMenuNewProject(() => {
+                    alert('New Project menu clicked!');
+                });
+            }
+        } else {
+            status.innerHTML = '<p style="color: red;">✗ electronAPI is NOT available!</p>';
+            status.innerHTML += '<p>window.location.protocol: ' + window.location.protocol + '</p>';
+        }
+    </script>
+</body>
+</html> 

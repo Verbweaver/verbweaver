@@ -52,6 +52,11 @@ export interface ElectronAPI {
   onUpdateAvailable: (callback: (event: IpcRendererEvent, info: any) => void) => () => void;
   onProjectOpened: (callback: (event: IpcRendererEvent, path: string) => void) => () => void;
   onBackendLog: (callback: (event: IpcRendererEvent, log: string) => void) => () => void;
+  
+  // Menu events
+  onMenuNewProject: (callback: () => void) => () => void;
+  onMenuOpenProject: (callback: () => void) => () => void;
+  onMenuSettings: (callback: () => void) => () => void;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -118,5 +123,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onBackendLog: (callback: (event: IpcRendererEvent, log: string) => void) => {
     ipcRenderer.on('backend:log', callback);
     return () => ipcRenderer.removeListener('backend:log', callback);
+  },
+  
+  // Menu events
+  onMenuNewProject: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('menu-new-project', handler);
+    return () => ipcRenderer.removeListener('menu-new-project', handler);
+  },
+  onMenuOpenProject: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('menu-open-project', handler);
+    return () => ipcRenderer.removeListener('menu-open-project', handler);
+  },
+  onMenuSettings: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('menu-settings', handler);
+    return () => ipcRenderer.removeListener('menu-settings', handler);
   }
 } as ElectronAPI); 

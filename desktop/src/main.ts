@@ -257,14 +257,24 @@ function createMenu() {
           label: 'New Project',
           accelerator: 'CmdOrCtrl+N',
           click: () => {
-            mainWindow?.webContents.send('menu-new-project');
+            console.log('New Project menu clicked - sending to renderer');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('menu-new-project');
+            } else {
+              console.error('Main window is not available');
+            }
           }
         },
         {
           label: 'Open Project',
           accelerator: 'CmdOrCtrl+O',
           click: () => {
-            mainWindow?.webContents.send('menu-open-project');
+            console.log('Open Project menu clicked - sending to renderer');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('menu-open-project');
+            } else {
+              console.error('Main window is not available');
+            }
           }
         },
         { type: 'separator' },
@@ -272,7 +282,12 @@ function createMenu() {
           label: 'Settings',
           accelerator: 'CmdOrCtrl+,',
           click: () => {
-            mainWindow?.webContents.send('menu-settings');
+            console.log('Settings menu clicked - sending to renderer');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('menu-settings');
+            } else {
+              console.error('Main window is not available');
+            }
           }
         },
         { type: 'separator' },

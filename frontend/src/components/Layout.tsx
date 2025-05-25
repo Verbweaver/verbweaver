@@ -1,12 +1,61 @@
 import { Outlet } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import TabBar from './TabBar'
+import NewProjectDialog from './NewProjectDialog'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX } from '@verbweaver/shared'
 
+// Check if we're in Electron
+const isElectron = window.electronAPI !== undefined
+
 function Layout() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [showNewProjectDialog, setShowNewProjectDialog] = useState(false)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!isElectron || !window.electronAPI) return
+
+    // Listen for menu events from Electron
+    const unsubscribeNewProject = window.electronAPI.onMenuNewProject?.(() => {
+      console.log('New Project menu clicked')
+      setShowNewProjectDialog(true)
+    })
+
+    const unsubscribeOpenProject = window.electronAPI.onMenuOpenProject?.(() => {
+      console.log('Open Project menu clicked')
+      // TODO: Implement open project dialog
+      handleOpenProject()
+    })
+
+    const unsubscribeSettings = window.electronAPI.onMenuSettings?.(() => {
+      console.log('Settings menu clicked')
+      navigate('/settings')
+    })
+
+    // Cleanup
+    return () => {
+      unsubscribeNewProject?.()
+      unsubscribeOpenProject?.()
+      unsubscribeSettings?.()
+    }
+  }, [navigate])
+
+  const handleOpenProject = async () => {
+    if (!isElectron || !window.electronAPI) return
+    
+    try {
+      const result = await window.electronAPI.openFile?.()
+      if (result && !result.canceled && result.filePaths.length > 0) {
+        // TODO: Handle opening the project
+        console.log('Selected project:', result.filePaths[0])
+      }
+    } catch (error) {
+      console.error('Error opening project:', error)
+    }
+  }
 
   const handleTabChange = (path: string) => {
     // Implement tab change logic
@@ -49,6 +98,12 @@ function Layout() {
           </div>
         </Panel>
       </PanelGroup>
+      
+      {/* Dialogs */}
+      <NewProjectDialog 
+        isOpen={showNewProjectDialog}
+        onClose={() => setShowNewProjectDialog(false)}
+      />
     </div>
   )
 }

@@ -67,7 +67,13 @@ export class ConfigManager {
     }
     
     // For web development, use environment variables or default
-    return process.env.VITE_API_URL || process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+    // Check for Vite environment variables (import.meta.env)
+    if (typeof window !== 'undefined' && (window as any).import?.meta?.env?.VITE_API_URL) {
+      return (window as any).import.meta.env.VITE_API_URL;
+    }
+    
+    // Fallback to default development URL
+    return 'http://localhost:8000/api/v1';
   }
 
   getWsUrl(): string {
@@ -83,7 +89,13 @@ export class ConfigManager {
     }
     
     // For web development, use environment variables or default
-    return process.env.VITE_WS_URL || process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
+    // Check for Vite environment variables (import.meta.env)
+    if (typeof window !== 'undefined' && (window as any).import?.meta?.env?.VITE_WS_URL) {
+      return (window as any).import.meta.env.VITE_WS_URL;
+    }
+    
+    // Fallback to default development URL
+    return 'ws://localhost:8000/ws';
   }
 
   isElectronApp(): boolean {
