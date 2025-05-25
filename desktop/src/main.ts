@@ -628,29 +628,160 @@ This project is backed by Git for version control. All changes are tracked and y
 
   // Git operations (stubs for now - would integrate with simple-git)
   ipcMain.handle('git:init', async (_, projectPath: string) => {
-    // TODO: Implement git init using simple-git
-    console.log('Git init:', projectPath);
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      const git = spawn('git', ['init'], { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          resolve(true);
+        } else {
+          reject(new Error(`Git init failed with code ${code}`));
+        }
+      });
+      
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
   });
 
   ipcMain.handle('git:status', async (_, projectPath: string) => {
-    // TODO: Implement git status
-    console.log('Git status:', projectPath);
-    return { modified: [], staged: [], untracked: [] };
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      const git = spawn('git', ['status', '--porcelain'], { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      let output = '';
+      let errorOutput = '';
+      
+      git.stdout.on('data', (data: Buffer) => {
+        output += data.toString();
+      });
+      
+      git.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+      
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          // Parse the porcelain output
+          const lines = output.trim().split('\n').filter(line => line);
+          const changes = lines.map(line => {
+            const status = line.substring(0, 2);
+            const path = line.substring(3);
+            
+            let changeType: 'added' | 'modified' | 'deleted' = 'modified';
+            if (status.includes('A') || status.includes('?')) changeType = 'added';
+            else if (status.includes('D')) changeType = 'deleted';
+            
+            return { path, status: changeType };
+          });
+          
+          resolve({ changes, staged: [], untracked: [] });
+        } else {
+          reject(new Error(errorOutput || `Git status failed with code ${code}`));
+        }
+      });
+      
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
   });
 
   ipcMain.handle('git:commit', async (_, projectPath: string, message: string, files?: string[]) => {
-    // TODO: Implement git commit
-    console.log('Git commit:', projectPath, message, files);
+    const { spawn } = require('child_process');
+    
+    // First, add files if specified
+    if (files && files.length > 0) {
+      await new Promise((resolve, reject) => {
+        const gitAdd = spawn('git', ['add', ...files], { 
+          cwd: projectPath,
+          shell: true 
+        });
+        
+        gitAdd.on('close', (code: number) => {
+          if (code === 0) resolve(true);
+          else reject(new Error(`Git add failed with code ${code}`));
+        });
+        
+        gitAdd.on('error', reject);
+      });
+    }
+    
+    // Then commit
+    return new Promise((resolve, reject) => {
+      const gitCommit = spawn('git', ['commit', '-m', message], { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      gitCommit.on('close', (code: number) => {
+        if (code === 0) {
+          resolve(true);
+        } else {
+          reject(new Error(`Git commit failed with code ${code}`));
+        }
+      });
+      
+      gitCommit.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
   });
 
   ipcMain.handle('git:push', async (_, projectPath: string) => {
-    // TODO: Implement git push
-    console.log('Git push:', projectPath);
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      const git = spawn('git', ['push'], { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          resolve(true);
+        } else {
+          reject(new Error(`Git push failed with code ${code}`));
+        }
+      });
+      
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
   });
 
   ipcMain.handle('git:pull', async (_, projectPath: string) => {
-    // TODO: Implement git pull
-    console.log('Git pull:', projectPath);
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      const git = spawn('git', ['pull'], { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          resolve(true);
+        } else {
+          reject(new Error(`Git pull failed with code ${code}`));
+        }
+      });
+      
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
   });
 
   // System operations
