@@ -21,7 +21,7 @@ export default function NewProjectDialog({ isOpen, onClose }: NewProjectDialogPr
     if (!isElectron || !window.electronAPI) return
     
     try {
-      const result = await window.electronAPI.openFile()
+      const result = await window.electronAPI.openDirectory()
       if (!result.canceled && result.filePaths.length > 0) {
         setProjectPath(result.filePaths[0])
       }

@@ -29,26 +29,26 @@ function TabBar({ currentPath, onTabChange, onNewTab }: TabBarProps) {
       style={{ height: `${TAB_HEIGHT}px` }}
     >
       {tabs.map((tab) => (
-        <button
+        <div
           key={tab.id}
-          onClick={() => onTabChange(tab.path)}
           className={clsx(
-            'flex items-center gap-2 px-4 h-full border-r border-border transition-colors min-w-[120px]',
+            'flex items-center gap-2 px-4 h-full border-r border-border transition-colors min-w-[120px] cursor-pointer',
             'hover:bg-accent/50',
             currentPath.startsWith(tab.path) && 'bg-background'
           )}
+          onClick={() => onTabChange(tab.path)}
         >
           <span className="text-sm truncate">{tab.title}</span>
-          <button
+          <div
             onClick={(e) => {
               e.stopPropagation()
               // TODO: Implement close tab
             }}
-            className="p-0.5 rounded hover:bg-muted"
+            className="p-0.5 rounded hover:bg-muted cursor-pointer"
           >
             <X className="w-3 h-3" />
-          </button>
-        </button>
+          </div>
+        </div>
       ))}
       
       <button

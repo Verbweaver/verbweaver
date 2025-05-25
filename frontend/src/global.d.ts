@@ -3,6 +3,7 @@ declare global {
     electronAPI?: {
       // File operations
       openFile: () => Promise<{ canceled: boolean; filePaths: string[] }>;
+      openDirectory: () => Promise<{ canceled: boolean; filePaths: string[] }>;
       saveFile: (content: string) => Promise<{ canceled: boolean; filePath?: string }>;
       readFile: (filePath: string) => Promise<string>;
       writeFile: (filePath: string, content: string) => Promise<void>;

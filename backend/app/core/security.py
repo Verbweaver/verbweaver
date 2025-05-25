@@ -4,7 +4,8 @@ Security utilities
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.models import User
 from app.database import get_db
 from datetime import datetime, timedelta
@@ -49,29 +50,30 @@ def validate_password(password: str) -> tuple[bool, str]:
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ) -> User:
     """Get current authenticated user from JWT token."""
     
     # Special handling for desktop users
     if token == "desktop-token":
         # Check if desktop user exists
-        desktop_user = db.query(User).filter(User.email == "desktop@verbweaver.local").first()
+        result = await db.execute(select(User).filter(User.email == "desktop@verbweaver.local"))
+        desktop_user = result.scalar_one_or_none()
         
         if not desktop_user:
             # Create a virtual desktop user if it doesn't exist
             desktop_user = User(
                 email="desktop@verbweaver.local",
-                username="Desktop User",
-                full_name="Desktop User",
+                name="Desktop User",
                 hashed_password=get_password_hash("desktop-secure-password"),
                 is_active=True,
                 is_superuser=False,
-                email_verified=True
+                is_verified=True,
+                provider="desktop"
             )
             db.add(desktop_user)
-            db.commit()
-            db.refresh(desktop_user)
+            await db.commit()
+            await db.refresh(desktop_user)
         
         return desktop_user
     
@@ -94,7 +96,8 @@ async def get_current_user(
         raise credentials_exception
     
     try:
-        user = db.query(User).filter(User.id == int(user_id)).first()
+        result = await db.execute(select(User).filter(User.id == user_id))
+        user = result.scalar_one_or_none()
     except (ValueError, TypeError):
         raise credentials_exception
     

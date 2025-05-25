@@ -17,10 +17,9 @@ const getInitialAuthState = () => {
   if (electronDetected) {
     return {
       user: { 
-        id: 1, 
+        id: "desktop-user-id", 
         email: 'desktop@verbweaver.local', 
-        username: 'Desktop User',
-        full_name: 'Desktop User',
+        name: 'Desktop User',
         is_active: true 
       },
       accessToken: 'desktop-token',
@@ -38,10 +37,9 @@ const getInitialAuthState = () => {
 };
 
 interface User {
-  id: number;
+  id: string;
   email: string;
-  username: string;
-  full_name?: string;
+  name?: string;
   is_active: boolean;
 }
 

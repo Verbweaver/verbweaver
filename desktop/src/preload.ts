@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 export interface ElectronAPI {
   // File operations
   openFile: () => Promise<{ canceled: boolean; filePaths: string[] }>;
+  openDirectory: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   saveFile: (content: string) => Promise<{ canceled: boolean; filePath?: string }>;
   readFile: (filePath: string) => Promise<string>;
   writeFile: (filePath: string, content: string) => Promise<void>;
@@ -64,6 +65,7 @@ export interface ElectronAPI {
 contextBridge.exposeInMainWorld('electronAPI', {
   // File operations
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
+  openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
   saveFile: (content: string) => ipcRenderer.invoke('dialog:saveFile', content),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),

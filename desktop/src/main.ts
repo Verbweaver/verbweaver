@@ -392,6 +392,14 @@ function setupIpcHandlers() {
     return result;
   });
 
+  ipcMain.handle('dialog:openDirectory', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'Select Project Location'
+    });
+    return result;
+  });
+
   ipcMain.handle('dialog:saveFile', async (_, content: string) => {
     const result = await dialog.showSaveDialog(mainWindow!, {
       filters: [
@@ -425,10 +433,122 @@ function setupIpcHandlers() {
   });
 
   // Project operations
-  ipcMain.handle('project:create', async (_, _name: string, projectPath: string) => {
+  ipcMain.handle('project:create', async (_, projectName: string, projectPath: string) => {
     try {
+      // Create project directory if it doesn't exist
       if (!existsSync(projectPath)) {
         await mkdir(projectPath, { recursive: true });
+      }
+      
+      // Create Verbweaver project structure
+      const verbweaverDir = join(projectPath, '.verbweaver');
+      const docsDir = join(projectPath, 'docs');
+      const templatesDir = join(projectPath, 'templates');
+      const nodesDir = join(projectPath, 'nodes');
+      const tasksDir = join(projectPath, 'tasks');
+      
+      await mkdir(verbweaverDir, { recursive: true });
+      await mkdir(docsDir, { recursive: true });
+      await mkdir(templatesDir, { recursive: true });
+      await mkdir(nodesDir, { recursive: true });
+      await mkdir(tasksDir, { recursive: true });
+      
+      // Create project configuration file
+      const projectConfig = {
+        name: projectName,
+        version: "1.0.0",
+        created: new Date().toISOString(),
+        verbweaver: {
+          version: "1.0.0",
+          type: "project"
+        }
+      };
+      
+      await writeFile(
+        join(verbweaverDir, 'project.json'),
+        JSON.stringify(projectConfig, null, 2),
+        'utf-8'
+      );
+      
+      // Create README.md
+      const readmeContent = `# ${projectName}
+
+This is a Verbweaver project for ${projectName}.
+
+## Getting Started
+
+This project uses Verbweaver to organize ideas, tasks, and content using a graph-based approach.
+
+### Project Structure
+
+- \`nodes/\` - Contains the content nodes (Markdown files)
+- \`tasks/\` - Contains task-related content
+- \`docs/\` - Project documentation
+- \`templates/\` - Reusable templates
+- \`.verbweaver/\` - Verbweaver configuration and metadata
+
+### Views
+
+- **Graph** - Visual representation of relationships between content
+- **Editor** - Edit content and create new nodes
+- **Threads** - Task management and project tracking
+- **Version Control** - Git integration for tracking changes
+- **Compiler** - Export content to various formats
+
+## Version Control
+
+This project is backed by Git for version control. All changes are tracked and you can view the history in the Version Control view.
+`;
+      
+      await writeFile(join(projectPath, 'README.md'), readmeContent, 'utf-8');
+      
+      // Initialize Git repository
+      const { spawn } = require('child_process');
+      
+      // Check if git is available
+      const gitInit = spawn('git', ['init'], { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      await new Promise((resolve, reject) => {
+        gitInit.on('close', (code: number) => {
+          if (code === 0) {
+            resolve(code);
+          } else {
+            console.warn('Git init failed, continuing without git');
+            resolve(code);
+          }
+        });
+        gitInit.on('error', (error: Error) => {
+          console.warn('Git not available:', error);
+          resolve(null);
+        });
+      });
+      
+      // Create initial commit
+      try {
+        const gitAdd = spawn('git', ['add', '.'], { 
+          cwd: projectPath,
+          shell: true 
+        });
+        
+        await new Promise((resolve) => {
+          gitAdd.on('close', resolve);
+          gitAdd.on('error', resolve);
+        });
+        
+        const gitCommit = spawn('git', ['commit', '-m', 'Initial Verbweaver project setup'], { 
+          cwd: projectPath,
+          shell: true 
+        });
+        
+        await new Promise((resolve) => {
+          gitCommit.on('close', resolve);
+          gitCommit.on('error', resolve);
+        });
+      } catch (error) {
+        console.warn('Git commit failed:', error);
       }
       
       // Add to recent projects
