@@ -48,6 +48,7 @@ function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="editor" element={<Editor />} />
+        <Route path="editor/:filePath" element={<Editor />} />
         <Route path="graph" element={<Graph />} />
         <Route path="threads" element={<Threads />} />
         <Route path="version" element={<Version />} />

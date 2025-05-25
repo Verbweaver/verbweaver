@@ -10,10 +10,13 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import toast from 'react-hot-toast'
 import { EDITOR_DEFAULT_FONT_SIZE } from '@verbweaver/shared'
 
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+
 function EditorView() {
-  const { nodeId } = useParams()
+  const { nodeId, filePath } = useParams()
   const navigate = useNavigate()
-  const { currentProject } = useProjectStore()
+  const { currentProject, currentProjectPath } = useProjectStore()
   const { theme } = useThemeStore()
   const { 
     currentFile, 
@@ -27,43 +30,74 @@ function EditorView() {
   const [content, setContent] = useState('')
   const [isModified, setIsModified] = useState(false)
   const [fontSize, setFontSize] = useState(EDITOR_DEFAULT_FONT_SIZE)
+  const [localFilePath, setLocalFilePath] = useState<string | null>(null)
+  const [localFileName, setLocalFileName] = useState<string | null>(null)
 
-  // Load file when nodeId changes
+  // Load file when nodeId or filePath changes
   useEffect(() => {
-    if (nodeId && currentProject) {
-      loadFile(currentProject.id, nodeId)
-        .then((file) => {
-          setContent(file.content)
+    const loadContent = async () => {
+      if (isElectron && filePath && window.electronAPI) {
+        // For Electron, load file directly from filesystem
+        try {
+          const decodedPath = decodeURIComponent(filePath)
+          const fileContent = await window.electronAPI.readFile(decodedPath)
+          setContent(fileContent)
+          setLocalFilePath(decodedPath)
+          setLocalFileName(decodedPath.split(/[/\\]/).pop() || 'Unknown')
           setIsModified(false)
-        })
-        .catch(() => {
+        } catch (error) {
           toast.error('Failed to load file')
           navigate('/editor')
-        })
+        }
+      } else if (nodeId && currentProject) {
+        // For web version, use the API
+        loadFile(currentProject.id, nodeId)
+          .then((file) => {
+            setContent(file.content)
+            setIsModified(false)
+          })
+          .catch(() => {
+            toast.error('Failed to load file')
+            navigate('/editor')
+          })
+      }
     }
-  }, [nodeId, currentProject, loadFile, navigate])
+    
+    loadContent()
+  }, [nodeId, filePath, currentProject, loadFile, navigate])
 
   // Handle content changes
   const handleEditorChange = useCallback((value: string | undefined) => {
-    if (value !== undefined && currentFile) {
+    if (value !== undefined) {
       setContent(value)
       setIsModified(true)
-      updateFileContent(currentFile.id, value)
+      
+      if (!isElectron && currentFile) {
+        updateFileContent(currentFile.id, value)
+      }
     }
   }, [currentFile, updateFileContent])
 
   // Save file
   const handleSave = useCallback(async () => {
-    if (currentFile && currentProject && isModified) {
+    if (isModified) {
       try {
-        await saveFile(currentProject.id, currentFile.id, content)
-        setIsModified(false)
-        toast.success('File saved')
+        if (isElectron && localFilePath && window.electronAPI) {
+          // For Electron, save directly to filesystem
+          await window.electronAPI.writeFile(localFilePath, content)
+          setIsModified(false)
+          toast.success('File saved')
+        } else if (currentFile && currentProject) {
+          // For web version, use the API
+          await saveFile(currentProject.id, currentFile.id, content)
+          setIsModified(false)
+          toast.success('File saved')
+        }
       } catch (error) {
         toast.error('Failed to save file')
       }
     }
-  }, [currentFile, currentProject, content, isModified, saveFile])
+  }, [currentFile, currentProject, content, isModified, saveFile, localFilePath])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -104,7 +138,7 @@ function EditorView() {
     )
   }
 
-  if (!currentFile) {
+  if (!isElectron && !currentFile) {
     return (
       <div className="h-full flex">
         <EditorSidebar />
@@ -121,13 +155,15 @@ function EditorView() {
     )
   }
 
+  const displayFileName = isElectron ? localFileName : currentFile?.name
+
   return (
     <div className="h-full flex flex-col">
       {/* Editor Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">
           <FileText className="w-4 h-4" />
-          <span className="font-medium">{currentFile.name}</span>
+          <span className="font-medium">{displayFileName || 'Untitled'}</span>
           {isModified && <span className="text-xs text-muted-foreground">(modified)</span>}
         </div>
         

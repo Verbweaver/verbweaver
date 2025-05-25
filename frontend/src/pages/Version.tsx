@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { GitBranch, GitCommit, Plus, RefreshCw, Upload, Download } from 'lucide-react';
 import { api } from '../services/auth';
 import { useProjectStore } from '../store/projectStore';
+import toast from 'react-hot-toast';
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -40,34 +41,45 @@ export default function VersionControlView() {
   }, [currentProject]);
 
   const loadGitStatus = async () => {
-    if (isElectron) {
-      // For Electron, we'll implement Git operations later
-      // For now, show a placeholder
-      setBranches([{ name: 'main', is_current: true }]);
-      setCommits([]);
-      setChanges([]);
+    if (isElectron && currentProjectPath && window.electronAPI) {
+      // For Electron, use actual Git commands
+      setIsLoading(true);
+      try {
+        const status = await window.electronAPI.gitStatus(currentProjectPath);
+        setChanges(status.changes || []);
+        setBranches([{ name: 'main', is_current: true }]); // TODO: Get actual branches
+        setCommits([]); // TODO: Get actual commits
+      } catch (error) {
+        console.error('Failed to load git status:', error);
+        // If git is not initialized, show appropriate message
+        setChanges([]);
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
-    setIsLoading(true);
-    try {
-      // Load branches
-      const branchesRes = await api.get('/git/branches');
-      setBranches(branchesRes.data);
-      const current = branchesRes.data.find((b: Branch) => b.is_current);
-      if (current) setCurrentBranch(current.name);
+    if (!isElectron) {
+      setIsLoading(true);
+      try {
+        // Load branches
+        const branchesRes = await api.get('/git/branches');
+        setBranches(branchesRes.data);
+        const current = branchesRes.data.find((b: Branch) => b.is_current);
+        if (current) setCurrentBranch(current.name);
 
-      // Load commits
-      const commitsRes = await api.get('/git/commits');
-      setCommits(commitsRes.data);
+        // Load commits
+        const commitsRes = await api.get('/git/commits');
+        setCommits(commitsRes.data);
 
-      // Load changes
-      const changesRes = await api.get('/git/status');
-      setChanges(changesRes.data.changes || []);
-    } catch (error) {
-      console.error('Failed to load git status:', error);
-    } finally {
-      setIsLoading(false);
+        // Load changes
+        const changesRes = await api.get('/git/status');
+        setChanges(changesRes.data.changes || []);
+      } catch (error) {
+        console.error('Failed to load git status:', error);
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -75,15 +87,28 @@ export default function VersionControlView() {
     if (!commitMessage.trim() || selectedFiles.size === 0) return;
 
     try {
-      await api.post('/git/commit', {
-        message: commitMessage,
-        files: Array.from(selectedFiles)
-      });
-      setCommitMessage('');
-      setSelectedFiles(new Set());
-      await loadGitStatus();
+      if (isElectron && currentProjectPath && window.electronAPI) {
+        await window.electronAPI.gitCommit(
+          currentProjectPath, 
+          commitMessage, 
+          Array.from(selectedFiles)
+        );
+        setCommitMessage('');
+        setSelectedFiles(new Set());
+        await loadGitStatus();
+        toast.success('Changes committed successfully');
+      } else {
+        await api.post('/git/commit', {
+          message: commitMessage,
+          files: Array.from(selectedFiles)
+        });
+        setCommitMessage('');
+        setSelectedFiles(new Set());
+        await loadGitStatus();
+      }
     } catch (error) {
       console.error('Failed to commit:', error);
+      toast.error('Failed to commit changes');
     }
   };
 
@@ -99,22 +124,33 @@ export default function VersionControlView() {
 
   const handlePush = async () => {
     try {
-      await api.post('/git/push');
-      alert('Successfully pushed to remote');
+      if (isElectron && currentProjectPath && window.electronAPI) {
+        await window.electronAPI.gitPush(currentProjectPath);
+        toast.success('Successfully pushed to remote');
+      } else {
+        await api.post('/git/push');
+        alert('Successfully pushed to remote');
+      }
     } catch (error) {
       console.error('Failed to push:', error);
-      alert('Failed to push changes');
+      toast.error('Failed to push changes. Make sure you have a remote configured.');
     }
   };
 
   const handlePull = async () => {
     try {
-      await api.post('/git/pull');
-      await loadGitStatus();
-      alert('Successfully pulled from remote');
+      if (isElectron && currentProjectPath && window.electronAPI) {
+        await window.electronAPI.gitPull(currentProjectPath);
+        await loadGitStatus();
+        toast.success('Successfully pulled from remote');
+      } else {
+        await api.post('/git/pull');
+        await loadGitStatus();
+        alert('Successfully pulled from remote');
+      }
     } catch (error) {
       console.error('Failed to pull:', error);
-      alert('Failed to pull changes');
+      toast.error('Failed to pull changes. Make sure you have a remote configured.');
     }
   };
 
@@ -133,20 +169,107 @@ export default function VersionControlView() {
 
   if (isElectron) {
     return (
-      <div className="h-full flex items-center justify-center bg-background">
-        <div className="text-center max-w-md">
-          <GitBranch className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-          <h2 className="text-2xl font-bold mb-4">Git Integration Coming Soon</h2>
-          <p className="text-muted-foreground mb-4">
-            Git version control for local projects is currently under development.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            In the meantime, you can use your favorite Git client to manage version control
-            for your project at:
-          </p>
-          <code className="block mt-2 p-2 bg-muted rounded text-sm">
-            {currentProjectPath}
-          </code>
+      <div className="h-full flex">
+        {/* Left Panel - Changes */}
+        <div className="w-80 border-r bg-background p-4 overflow-y-auto">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Changes</h3>
+            <button
+              onClick={loadGitStatus}
+              disabled={isLoading}
+              className="p-2 hover:bg-accent rounded-md transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {changes.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No changes to commit</p>
+          ) : (
+            <div className="space-y-2">
+              {changes.map((change) => (
+                <label
+                  key={change.path}
+                  className="flex items-center gap-2 p-2 hover:bg-accent rounded cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles.has(change.path)}
+                    onChange={() => handleFileToggle(change.path)}
+                    className="rounded"
+                  />
+                  <span className="flex-1 text-sm truncate">{change.path}</span>
+                  <span className={`text-xs px-1 rounded ${
+                    change.status === 'added' ? 'bg-green-500/20 text-green-500' :
+                    change.status === 'deleted' ? 'bg-red-500/20 text-red-500' :
+                    'bg-yellow-500/20 text-yellow-500'
+                  }`}>
+                    {change.status}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4 space-y-2">
+            <textarea
+              value={commitMessage}
+              onChange={(e) => setCommitMessage(e.target.value)}
+              placeholder="Commit message..."
+              className="w-full p-2 border rounded-md bg-background resize-none h-20"
+            />
+            <button
+              onClick={handleCommit}
+              disabled={!commitMessage.trim() || selectedFiles.size === 0}
+              className="w-full py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Commit {selectedFiles.size > 0 && `(${selectedFiles.size})`}
+            </button>
+          </div>
+
+          <div className="mt-4 flex gap-2">
+            <button
+              onClick={handlePush}
+              className="flex-1 py-2 flex items-center justify-center gap-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80"
+            >
+              <Upload className="h-4 w-4" />
+              Push
+            </button>
+            <button
+              onClick={handlePull}
+              className="flex-1 py-2 flex items-center justify-center gap-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80"
+            >
+              <Download className="h-4 w-4" />
+              Pull
+            </button>
+          </div>
+        </div>
+
+        {/* Right Panel - Info */}
+        <div className="flex-1 p-6 overflow-y-auto">
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold mb-2">Version Control</h2>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <GitBranch className="h-4 w-4" />
+              <span>{currentBranch}</span>
+            </div>
+            <p className="text-sm text-muted-foreground mt-2">
+              Project: <code className="bg-muted px-1 rounded">{currentProjectPath}</code>
+            </p>
+          </div>
+
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <h4 className="font-medium text-yellow-800 dark:text-yellow-200 mb-2">
+              Git Integration Active
+            </h4>
+            <p className="text-sm text-yellow-700 dark:text-yellow-300">
+              You can now use the Git features in Verbweaver to manage your version control.
+              Make sure your project has a Git repository initialized.
+            </p>
+            <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-2">
+              Note: Advanced features like branch management and commit history are coming soon.
+            </p>
+          </div>
         </div>
       </div>
     );

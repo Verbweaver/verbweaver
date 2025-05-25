@@ -99,11 +99,7 @@ function Layout() {
         {/* Main Content */}
         <Panel defaultSize={80}>
           <div className="h-full flex flex-col">
-            <TabBar 
-              currentPath="/"
-              onTabChange={handleTabChange}
-              onNewTab={handleNewTab}
-            />
+            <TabBar />
             <div className="flex-1 overflow-hidden">
               <Outlet />
             </div>

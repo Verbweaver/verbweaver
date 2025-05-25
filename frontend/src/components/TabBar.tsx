@@ -1,27 +1,58 @@
 import { X, Plus } from 'lucide-react'
 import clsx from 'clsx'
 import { TAB_HEIGHT } from '@verbweaver/shared'
+import { useTabStore } from '../store/tabStore'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 
-interface Tab {
-  id: string
-  path: string
-  title: string
-}
+function TabBar() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { tabs, activeTabId, addTab, removeTab, setActiveTab } = useTabStore()
 
-interface TabBarProps {
-  currentPath: string
-  onTabChange: (path: string) => void
-  onNewTab: () => void
-}
+  // Sync current route with active tab
+  useEffect(() => {
+    const currentTab = tabs.find(tab => location.pathname.startsWith(tab.path))
+    if (currentTab && currentTab.id !== activeTabId) {
+      setActiveTab(currentTab.id)
+    }
+  }, [location.pathname, tabs, activeTabId, setActiveTab])
 
-// TODO: This should be managed in a store for persistence
-const mockTabs: Tab[] = [
-  { id: '1', path: '/graph', title: 'Graph' },
-  { id: '2', path: '/editor', title: 'Editor' },
-]
+  const handleTabClick = (tabId: string, path: string) => {
+    setActiveTab(tabId)
+    navigate(path)
+  }
 
-function TabBar({ currentPath, onTabChange, onNewTab }: TabBarProps) {
-  const tabs = mockTabs // Will be replaced with store
+  const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
+    e.stopPropagation()
+    
+    // Don't allow closing the last tab
+    if (tabs.length === 1) return
+    
+    // Find the tab to be removed and the next active tab
+    const tabIndex = tabs.findIndex(tab => tab.id === tabId)
+    const isActive = tabId === activeTabId
+    
+    removeTab(tabId)
+    
+    // If we closed the active tab, navigate to the new active tab
+    if (isActive && tabs.length > 1) {
+      const nextTab = tabs[tabIndex === tabs.length - 1 ? tabIndex - 1 : tabIndex + 1]
+      if (nextTab) {
+        navigate(nextTab.path)
+      }
+    }
+  }
+
+  const handleNewTab = () => {
+    // Default to graph view for new tabs
+    const newTabId = addTab({
+      path: '/graph',
+      title: 'Graph',
+      type: 'graph'
+    })
+    navigate('/graph')
+  }
 
   return (
     <div 
@@ -34,26 +65,26 @@ function TabBar({ currentPath, onTabChange, onNewTab }: TabBarProps) {
           className={clsx(
             'flex items-center gap-2 px-4 h-full border-r border-border transition-colors min-w-[120px] cursor-pointer',
             'hover:bg-accent/50',
-            currentPath.startsWith(tab.path) && 'bg-background'
+            tab.id === activeTabId && 'bg-background'
           )}
-          onClick={() => onTabChange(tab.path)}
+          onClick={() => handleTabClick(tab.id, tab.path)}
         >
           <span className="text-sm truncate">{tab.title}</span>
-          <div
-            onClick={(e) => {
-              e.stopPropagation()
-              // TODO: Implement close tab
-            }}
-            className="p-0.5 rounded hover:bg-muted cursor-pointer"
-          >
-            <X className="w-3 h-3" />
-          </div>
+          {tabs.length > 1 && (
+            <div
+              onClick={(e) => handleCloseTab(e, tab.id)}
+              className="p-0.5 rounded hover:bg-muted cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+            </div>
+          )}
         </div>
       ))}
       
       <button
-        onClick={onNewTab}
+        onClick={handleNewTab}
         className="p-2 hover:bg-accent/50 transition-colors"
+        title="New tab"
       >
         <Plus className="w-4 h-4" />
       </button>
