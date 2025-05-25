@@ -671,7 +671,7 @@ This project is backed by Git for version control. All changes are tracked and y
       });
       
       git.on('close', (code: number) => {
-        if (code === 0) {
+        if (code === 0 || (code === 128 && errorOutput.includes('No commits yet'))) {
           // Parse the porcelain output
           const lines = output.trim().split('\n').filter(line => line);
           const changes = lines.map(line => {
@@ -686,6 +686,9 @@ This project is backed by Git for version control. All changes are tracked and y
           });
           
           resolve({ changes, staged: [], untracked: [] });
+        } else if (code === 128 && errorOutput.includes('not a git repository')) {
+          // Git repository not initialized
+          resolve({ changes: [], staged: [], untracked: [] });
         } else {
           reject(new Error(errorOutput || `Git status failed with code ${code}`));
         }
@@ -703,7 +706,10 @@ This project is backed by Git for version control. All changes are tracked and y
     // First, add files if specified
     if (files && files.length > 0) {
       await new Promise((resolve, reject) => {
-        const gitAdd = spawn('git', ['add', ...files], { 
+        // Handle special case for adding all files
+        const addArgs = files.includes('.') ? ['add', '.'] : ['add', ...files];
+        
+        const gitAdd = spawn('git', addArgs, { 
           cwd: projectPath,
           shell: true 
         });
@@ -724,11 +730,17 @@ This project is backed by Git for version control. All changes are tracked and y
         shell: true 
       });
       
+      let errorOutput = '';
+      
+      gitCommit.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+      
       gitCommit.on('close', (code: number) => {
         if (code === 0) {
           resolve(true);
         } else {
-          reject(new Error(`Git commit failed with code ${code}`));
+          reject(new Error(errorOutput || `Git commit failed with code ${code}`));
         }
       });
       
@@ -775,6 +787,231 @@ This project is backed by Git for version control. All changes are tracked and y
           resolve(true);
         } else {
           reject(new Error(`Git pull failed with code ${code}`));
+        }
+      });
+      
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+  });
+
+  ipcMain.handle('git:getBranches', async (_, projectPath: string) => {
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      // First try to get the current branch
+      const getCurrentBranch = () => {
+        return new Promise<string>((resolve) => {
+          const gitRef = spawn('git', ['symbolic-ref', '--short', 'HEAD'], {
+            cwd: projectPath,
+            shell: true
+          });
+          
+          let currentBranch = '';
+          
+          gitRef.stdout.on('data', (data: Buffer) => {
+            currentBranch = data.toString().trim();
+          });
+          
+          gitRef.on('close', () => {
+            resolve(currentBranch || 'main');
+          });
+          
+          gitRef.on('error', () => {
+            resolve('main');
+          });
+        });
+      };
+      
+      const git = spawn('git', ['branch', '-a'], { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      let output = '';
+      let errorOutput = '';
+      
+      git.stdout.on('data', (data: Buffer) => {
+        output += data.toString();
+      });
+      
+      git.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+      
+      git.on('close', async (code: number) => {
+        if (code === 0) {
+          // Parse branch output
+          const lines = output.trim().split('\n').filter(line => line);
+          const branches = lines.map(line => {
+            const isCurrent = line.startsWith('*');
+            const name = line.replace(/^\*?\s+/, '').trim();
+            const isRemote = name.startsWith('remotes/');
+            return { 
+              name: isRemote ? name.replace('remotes/origin/', '') : name, 
+              is_current: isCurrent,
+              is_remote: isRemote
+            };
+          });
+          resolve(branches);
+        } else if (code === 128 && errorOutput.includes('not a git repository')) {
+          // Git repository not initialized - return empty array
+          resolve([]);
+        } else if (code === 129 || (errorOutput.includes('No commits yet') || errorOutput.includes('does not have any commits yet'))) {
+          // No commits yet, but git is initialized
+          const currentBranch = await getCurrentBranch();
+          resolve([{ name: currentBranch, is_current: true, is_remote: false }]);
+        } else {
+          reject(new Error(errorOutput || `Git branch failed with code ${code}`));
+        }
+      });
+      
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+  });
+
+  ipcMain.handle('git:getCommits', async (_, projectPath: string, limit: number = 50) => {
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      // Use double quotes for Windows compatibility
+      const formatString = process.platform === 'win32' 
+        ? '"%H|%an|%ae|%ad|%s"'
+        : '%H|%an|%ae|%ad|%s';
+      
+      const git = spawn('git', [
+        'log', 
+        `--max-count=${limit}`,
+        `--pretty=format:${formatString}`,
+        '--date=iso'
+      ], { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      let output = '';
+      let errorOutput = '';
+      
+      git.stdout.on('data', (data: Buffer) => {
+        output += data.toString();
+      });
+      
+      git.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+      
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          // Parse commit log
+          const lines = output.trim().split('\n').filter(line => line);
+          const commits = lines.map(line => {
+            const [sha, author, email, date, message] = line.split('|');
+            return { sha, author, email, date, message };
+          });
+          resolve(commits);
+        } else if (code === 128 && errorOutput.includes('does not have any commits yet')) {
+          // No commits yet - return empty array
+          resolve([]);
+        } else {
+          reject(new Error(errorOutput || `Git log failed with code ${code}`));
+        }
+      });
+      
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+  });
+
+  ipcMain.handle('git:createBranch', async (_, projectPath: string, branchName: string) => {
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      const git = spawn('git', ['checkout', '-b', branchName], { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      let errorOutput = '';
+      
+      git.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+      
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          resolve(true);
+        } else {
+          reject(new Error(errorOutput || `Git create branch failed with code ${code}`));
+        }
+      });
+      
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+  });
+
+  ipcMain.handle('git:switchBranch', async (_, projectPath: string, branchName: string) => {
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      const git = spawn('git', ['checkout', branchName], { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      let errorOutput = '';
+      
+      git.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+      
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          resolve(true);
+        } else {
+          reject(new Error(errorOutput || `Git checkout failed with code ${code}`));
+        }
+      });
+      
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+  });
+
+  ipcMain.handle('git:getDiff', async (_, projectPath: string, filePath?: string) => {
+    const { spawn } = require('child_process');
+    
+    const args = ['diff'];
+    if (filePath) args.push(filePath);
+    
+    return new Promise((resolve, reject) => {
+      const git = spawn('git', args, { 
+        cwd: projectPath,
+        shell: true 
+      });
+      
+      let output = '';
+      let errorOutput = '';
+      
+      git.stdout.on('data', (data: Buffer) => {
+        output += data.toString();
+      });
+      
+      git.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+      
+      git.on('close', (code: number) => {
+        if (code === 0 || code === 1) { // code 1 means there are differences
+          resolve(output);
+        } else {
+          reject(new Error(errorOutput || `Git diff failed with code ${code}`));
         }
       });
       

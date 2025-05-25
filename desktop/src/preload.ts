@@ -21,6 +21,11 @@ export interface ElectronAPI {
   gitCommit: (projectPath: string, message: string, files?: string[]) => Promise<void>;
   gitPush: (projectPath: string) => Promise<void>;
   gitPull: (projectPath: string) => Promise<void>;
+  gitGetBranches: (projectPath: string) => Promise<Array<{ name: string; is_current: boolean; is_remote: boolean }>>;
+  gitGetCommits: (projectPath: string, limit?: number) => Promise<Array<{ sha: string; author: string; email: string; date: string; message: string }>>;
+  gitCreateBranch: (projectPath: string, branchName: string) => Promise<void>;
+  gitSwitchBranch: (projectPath: string, branchName: string) => Promise<void>;
+  gitGetDiff: (projectPath: string, filePath?: string) => Promise<string>;
   
   // System operations
   getAppVersion: () => Promise<string>;
@@ -83,6 +88,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitCommit: (projectPath: string, message: string, files?: string[]) => ipcRenderer.invoke('git:commit', projectPath, message, files),
   gitPush: (projectPath: string) => ipcRenderer.invoke('git:push', projectPath),
   gitPull: (projectPath: string) => ipcRenderer.invoke('git:pull', projectPath),
+  gitGetBranches: (projectPath: string) => ipcRenderer.invoke('git:getBranches', projectPath),
+  gitGetCommits: (projectPath: string, limit?: number) => ipcRenderer.invoke('git:getCommits', projectPath, limit),
+  gitCreateBranch: (projectPath: string, branchName: string) => ipcRenderer.invoke('git:createBranch', projectPath, branchName),
+  gitSwitchBranch: (projectPath: string, branchName: string) => ipcRenderer.invoke('git:switchBranch', projectPath, branchName),
+  gitGetDiff: (projectPath: string, filePath?: string) => ipcRenderer.invoke('git:getDiff', projectPath, filePath),
   
   // System operations
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
