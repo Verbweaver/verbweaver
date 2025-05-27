@@ -14,8 +14,8 @@ try {
 # Test frontend
 Write-Host "`nTesting Frontend (Vite)..." -ForegroundColor Yellow
 try {
-    $frontend = Invoke-WebRequest -Uri "http://localhost:5173" -UseBasicParsing -ErrorAction Stop
-    Write-Host "✓ Frontend is running on http://localhost:5173" -ForegroundColor Green
+    $frontend = Invoke-WebRequest -Uri "http://localhost:3000" -UseBasicParsing -ErrorAction Stop
+    Write-Host "✓ Frontend is running on http://localhost:3000" -ForegroundColor Green
 } catch {
     Write-Host "✗ Frontend is not running" -ForegroundColor Red
     Write-Host "  Error: $_" -ForegroundColor Gray

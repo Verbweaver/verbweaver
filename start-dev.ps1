@@ -10,8 +10,8 @@ Start-Sleep -Seconds 3
 
 # Start Frontend
 Write-Host "`nStarting Frontend Server..." -ForegroundColor Yellow
-$frontend = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; npm run dev" -PassThru
-Write-Host "Frontend server starting on http://localhost:5173" -ForegroundColor Green
+$frontend = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; npx vite dev --port 3000" -PassThru
+Write-Host "Frontend server starting on http://localhost:3000" -ForegroundColor Green
 
 Write-Host "`nServers are starting..." -ForegroundColor Cyan
 Write-Host "Backend PID: $($backend.Id)" -ForegroundColor Gray
