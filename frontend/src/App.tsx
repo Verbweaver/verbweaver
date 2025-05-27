@@ -11,6 +11,8 @@ import Compiler from './pages/Compiler'
 import Settings from './pages/Settings'
 import Help from './pages/Help'
 import Login from './pages/Login'
+import RequestPasswordReset from './pages/RequestPasswordReset'
+import ResetPassword from './pages/ResetPassword'
 import { useProjectStore } from './store/projectStore'
 import { useThemeStore } from './store/themeStore'
 import { useAuthStore } from './services/auth'
@@ -47,6 +49,8 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/request-password-reset" element={<RequestPasswordReset />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route
         path="/"
         element={

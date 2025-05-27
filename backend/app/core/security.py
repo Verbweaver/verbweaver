@@ -23,6 +23,11 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
+RESET_TOKEN_EXPIRE_MINUTES = settings.RESET_TOKEN_EXPIRE_MINUTES
+
+# Account Lockout Settings
+MAX_LOGIN_ATTEMPTS: int = getattr(settings, 'MAX_LOGIN_ATTEMPTS', 5)
+LOCKOUT_DURATION_MINUTES: int = getattr(settings, 'LOCKOUT_DURATION_MINUTES', 30)
 
 
 def validate_password(password: str) -> tuple[bool, str]:

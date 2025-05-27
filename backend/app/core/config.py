@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     
     # API
     API_V1_STR: str = "/api/v1"
+    FRONTEND_URL: str = Field(default="http://localhost:3000", env="FRONTEND_URL")
     
     # Server
     HOST: str = Field(default="0.0.0.0", env="HOST")
@@ -41,6 +42,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    RESET_TOKEN_EXPIRE_MINUTES: int = Field(default=30, env="RESET_TOKEN_EXPIRE_MINUTES")
+    
+    # Account Lockout settings
+    MAX_LOGIN_ATTEMPTS: int = Field(default=5, env="MAX_LOGIN_ATTEMPTS")
+    LOCKOUT_DURATION_MINUTES: int = Field(default=30, env="LOCKOUT_DURATION_MINUTES")
     
     # Password Policy
     PASSWORD_MIN_LENGTH: int = 8

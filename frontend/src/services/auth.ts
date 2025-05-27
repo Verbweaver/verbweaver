@@ -62,6 +62,8 @@ interface AuthStateActions {
   refreshAccessToken: () => Promise<void>;
   clearError: () => void;
   _setHydrated: () => void;
+  requestPasswordReset: (email: string) => Promise<void>;
+  resetPassword: (token: string, newPassword: string) => Promise<void>;
 }
 
 // Combine fields and actions for the full state type
@@ -188,6 +190,33 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
   },
   clearError: () => set({ error: null }),
   _setHydrated: () => set({ isHydrated: true }),
+  requestPasswordReset: async (email: string) => {
+    if (isElectron) return console.log('Desktop user: requestPasswordReset N/A');
+    set({ isLoading: true, error: null });
+    try {
+      // Use authApi as this is an unauthenticated request initially
+      await authApi.post('/auth/password-reset-request', { email });
+      // Backend sends a generic success message, no specific state change needed here on success other than isLoading
+      set({ isLoading: false });
+      // Message to user is handled by the component
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Failed to request password reset', isLoading: false });
+      throw err; // Re-throw for the component to catch if needed
+    }
+  },
+  resetPassword: async (token: string, newPassword: string) => {
+    if (isElectron) return console.log('Desktop user: resetPassword N/A');
+    set({ isLoading: true, error: null });
+    try {
+      await authApi.post('/auth/reset-password', { token, new_password: newPassword });
+      set({ isLoading: false });
+      // On successful password reset, the user is still logged out.
+      // They will be redirected to login by the component.
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Failed to reset password', isLoading: false });
+      throw err; // Re-throw for the component to catch
+    }
+  },
 });
 
 // Setup persistence options

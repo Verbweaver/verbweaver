@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../services/auth';
 
 export default function Login() {
@@ -195,6 +195,17 @@ export default function Login() {
               </div>
             )}
           </div>
+
+          {!isRegisterMode && (
+            <div className="flex items-center justify-end text-sm">
+              <Link 
+                to="/request-password-reset" 
+                className="font-medium text-primary hover:text-primary/80"
+              >
+                Forgot your password?
+              </Link>
+            </div>
+          )}
 
           <div>
             <button
