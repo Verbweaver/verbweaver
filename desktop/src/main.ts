@@ -581,7 +581,7 @@ This project is backed by Git for version control. All changes are tracked and y
           gitAdd.on('error', resolve);
         });
         
-        const gitCommit = spawn('git', ['commit', '-m', 'Initial Verbweaver project setup'], { 
+        const gitCommit = spawn('git', ['commit', '-m', `"${message}"`, '--'], { 
           cwd: projectPath,
           shell: true 
         });
@@ -676,7 +676,8 @@ This project is backed by Git for version control. All changes are tracked and y
           const lines = output.trim().split('\n').filter(line => line);
           const changes = lines.map(line => {
             const status = line.substring(0, 2);
-            const path = line.substring(3);
+            // Fix path parsing to handle Windows paths correctly
+            const path = line.substring(2).trim();
             
             let changeType: 'added' | 'modified' | 'deleted' = 'modified';
             if (status.includes('A') || status.includes('?')) changeType = 'added';
@@ -706,26 +707,35 @@ This project is backed by Git for version control. All changes are tracked and y
     // First, add files if specified
     if (files && files.length > 0) {
       await new Promise((resolve, reject) => {
-        // Handle special case for adding all files
-        const addArgs = files.includes('.') ? ['add', '.'] : ['add', ...files];
-        
-        const gitAdd = spawn('git', addArgs, { 
+        // Only add specified files
+        const gitAdd = spawn('git', ['add', '--'].concat(files), { 
           cwd: projectPath,
           shell: true 
         });
         
+        let errorOutput = '';
+        
+        gitAdd.stderr.on('data', (data: Buffer) => {
+          errorOutput += data.toString();
+        });
+        
         gitAdd.on('close', (code: number) => {
           if (code === 0) resolve(true);
-          else reject(new Error(`Git add failed with code ${code}`));
+          else reject(new Error(errorOutput || `Git add failed with code ${code}`));
         });
         
         gitAdd.on('error', reject);
       });
     }
     
-    // Then commit
+    // Then commit only the staged changes
     return new Promise((resolve, reject) => {
-      const gitCommit = spawn('git', ['commit', '-m', message], { 
+      // On Windows, we need special handling for the commit message
+      const commitArgs = process.platform === 'win32'
+        ? ['commit', '-m', `"${message.replace(/"/g, '\\"')}"`]
+        : ['commit', '-m', message];
+
+      const gitCommit = spawn('git', commitArgs, { 
         cwd: projectPath,
         shell: true 
       });
@@ -1137,17 +1147,6 @@ app.whenReady().then(async () => {
   createWindow();
   createMenu();
   setupIpcHandlers();
-
-  // Check for updates
-  if (!isDevelopment) {
-    autoUpdater.checkForUpdatesAndNotify();
-  }
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
 });
 
 app.on('window-all-closed', () => {
@@ -1155,23 +1154,3 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
-
-app.on('before-quit', async () => {
-  // Stop backend process
-  await stopBackend();
-});
-
-// Handle certificate errors
-app.on('certificate-error', (event, _webContents, _url, _error, _certificate, callback) => {
-  if (isDevelopment) {
-    // Ignore certificate errors in development
-    event.preventDefault();
-    callback(true);
-  } else {
-    // Use default behavior in production
-    callback(false);
-  }
-});
-
-// Prevent GPU process crash
-app.commandLine.appendSwitch('disable-gpu-sandbox'); 
