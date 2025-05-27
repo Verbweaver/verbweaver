@@ -90,17 +90,61 @@ Perfect for teams and collaboration.
    ```bash
    git clone https://github.com/yourusername/verbweaver.git
    cd verbweaver
-   
-   # Backend setup
+   ```
+
+   **Setting up the Backend (Python)**
+
+   It is highly recommended to use a Python virtual environment to manage dependencies for the backend and avoid conflicts with system-wide packages. This isolates the project's requirements.
+
+   ```bash
+   # Navigate to the backend directory
    cd backend
-   python -m venv venv
-   # Windows: venv\Scripts\activate
-   # Linux/Mac: source venv/bin/activate
-   pip install -r requirements.txt
+
+   # Create a virtual environment (e.g., named .venv)
+   # This only needs to be done once.
+   python -m venv .venv
+
+   # Activate the virtual environment
+   # Windows (PowerShell):
+   # If you get an error, you might need to run: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+   .\.venv\Scripts\Activate.ps1
    
-   # Frontend setup
-   cd ../frontend
+   # Windows (Command Prompt - cmd.exe):
+   # .\.venv\Scripts\activate.bat
+
+   # Linux/macOS (bash/zsh):
+   # source .venv/bin/activate
+
+   # Once activated, your terminal prompt should change (e.g., showing '(.venv)').
+   # Now, install the required Python packages into this isolated environment.
+   pip install -r requirements.txt
+
+   # If you encounter issues with specific packages (like bcrypt),
+   # especially after updating requirements.txt, try reinstalling:
+   # pip install -r requirements.txt --force-reinstall
+   
+   # Any subsequent Python commands (e.g., python init_db.py or running the server)
+   # while the environment is active will use the packages installed here.
+   ```
+
+   **Setting up the Frontend (Node.js)**
+   ```bash
+   # Navigate to the frontend directory from the project root
+   cd ../frontend # If you were in backend/
+   # Or 'cd frontend' if you are in the project root
+
+   # Install Node.js dependencies
    npm install
+   ```
+   After setting up both backend and frontend, you can typically return to the project root:
+   ```bash
+   cd .. # If you were in frontend/ or backend/
+   ```
+
+   To leave/deactivate the Python virtual environment when you're done:
+   ```bash
+   # This command works in any shell where the venv is active
+   deactivate
    ```
 
 3. **Configure the Backend**
