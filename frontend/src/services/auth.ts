@@ -151,8 +151,8 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
       const formData = new FormData();
       formData.append('username', username); formData.append('password', password);
       const response = await authApi.post('/auth/login', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const { user, token } = response.data;
-      set({ user, accessToken: token.access_token, refreshToken: token.refresh_token, isAuthenticated: true, isLoading: false });
+      const { user, access_token, refresh_token } = response.data;
+      set({ user, accessToken: access_token, refreshToken: refresh_token, isAuthenticated: true, isLoading: false });
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Login failed', isLoading: false });
       throw err;
