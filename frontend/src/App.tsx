@@ -19,8 +19,9 @@ function App() {
   const { theme } = useThemeStore()
   const { loadProjects } = useProjectStore()
   const isAuthenticated = useAuthStore(state => state.isAuthenticated)
+  const isAuthHydrated = useAuthStore(state => state.isHydrated)
 
-  console.log('App component loaded, isAuthenticated:', isAuthenticated)
+  console.log('App component loaded, isAuthenticated:', isAuthenticated, 'isAuthHydrated:', isAuthHydrated)
   console.log('Is Electron?', window.electronAPI !== undefined)
 
   useEffect(() => {
@@ -30,9 +31,18 @@ function App() {
   }, [theme])
 
   useEffect(() => {
-    // Load projects on app start
-    loadProjects()
-  }, [loadProjects])
+    if (isAuthHydrated) {
+      console.log('Auth store hydrated, attempting to load projects.');
+      loadProjects()
+    } else {
+      console.log('Auth store not yet hydrated, waiting to load projects.');
+    }
+  }, [loadProjects, isAuthHydrated])
+
+  if (!isAuthHydrated && !window.electronAPI) {
+    console.log('App waiting for auth hydration...');
+    return <div>Loading authentication...</div>;
+  }
 
   return (
     <Routes>

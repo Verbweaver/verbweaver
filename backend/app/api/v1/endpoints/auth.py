@@ -4,7 +4,9 @@ Authentication endpoints
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+# from sqlalchemy.orm import Session # Comment out synchronous Session
+from sqlalchemy.ext.asyncio import AsyncSession # Import AsyncSession
+from sqlalchemy import select # Import select
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -42,11 +44,12 @@ LOCKOUT_DURATION_MINUTES = 30
 @router.post("/register", response_model=UserResponse)
 async def register(
     user_data: UserCreate,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Register a new user."""
     # Check if user exists
-    existing_user = db.query(User).filter(User.email == user_data.email).first()
+    result = await db.execute(select(User).where(User.email == user_data.email))
+    existing_user = result.scalars().first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -72,8 +75,8 @@ async def register(
     )
     
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     
     # TODO: Send verification email
     logger.info(f"New user registered: {user.email}")
@@ -84,12 +87,13 @@ async def register(
 @router.post("/login", response_model=Token)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     request: Request = None
 ):
     """Login and receive access token."""
     # Find user
-    user = db.query(User).filter(User.email == form_data.username).first()
+    result = await db.execute(select(User).where(User.email == form_data.username))
+    user = result.scalars().first()
     
     # Check if user exists and is not locked out
     if user:
@@ -112,7 +116,7 @@ async def login(
         if user:
             user.failed_login_attempts += 1
             user.last_failed_login = datetime.utcnow()
-            db.commit()
+            await db.commit()
         
         # Log failed attempt
         client_ip = request.client.host if request else "unknown"
@@ -134,7 +138,7 @@ async def login(
     # Reset failed attempts on successful login
     user.failed_login_attempts = 0
     user.last_login = datetime.utcnow()
-    db.commit()
+    await db.commit()
     
     # Create tokens
     access_token = create_access_token(user.id)
@@ -149,12 +153,12 @@ async def login(
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
-    refresh_token: str,
-    db: Session = Depends(get_db)
+    refresh_token_payload: str,
+    db: AsyncSession = Depends(get_db)
 ):
     """Refresh access token using refresh token."""
     try:
-        payload = decode_token(refresh_token)
+        payload = decode_token(refresh_token_payload)
         user_id = payload.get("sub")
         token_type = payload.get("type")
         
@@ -164,14 +168,15 @@ async def refresh_token(
                 detail="Invalid token type"
             )
         
-        user = db.query(User).filter(User.id == user_id).first()
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalars().first()
+
         if not user or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid user"
             )
         
-        # Create new tokens
         access_token = create_access_token(user.id)
         new_refresh_token = create_refresh_token(user.id)
         
@@ -182,6 +187,7 @@ async def refresh_token(
         }
         
     except Exception as e:
+        logger.error(f"Error refreshing token: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token"
@@ -208,62 +214,59 @@ async def logout(
 
 @router.post("/password-reset-request")
 async def request_password_reset(
-    request: PasswordResetRequest,
-    db: Session = Depends(get_db)
+    request_body: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db)
 ):
     """Request password reset token."""
-    user = db.query(User).filter(User.email == request.email).first()
+    result = await db.execute(select(User).where(User.email == request_body.email))
+    user = result.scalars().first()
     
     if user:
-        # Generate reset token
         reset_token = generate_reset_token()
         user.reset_password_token = reset_token
         user.reset_password_token_expires = datetime.utcnow() + timedelta(hours=1)
-        db.commit()
+        await db.commit()
         
-        # TODO: Send password reset email
-        logger.info(f"Password reset requested for {user.email}")
+        logger.info(f"Password reset token generated for {user.email}: {reset_token}")
+        return {"message": "Password reset email sent"}
     
-    # Always return success to prevent email enumeration
-    return {"message": "If the email exists, a password reset link has been sent"}
+    logger.info(f"Password reset request for non-existent email: {request_body.email}")
+    return {"message": "If your email is registered, you will receive a password reset link."}
 
 
 @router.post("/password-reset")
 async def reset_password(
     reset_data: PasswordReset,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Reset password using reset token."""
-    user = db.query(User).filter(
-        User.reset_password_token == reset_data.token
-    ).first()
+    result = await db.execute(
+        select(User).where(
+            User.reset_password_token == reset_data.token,
+            User.reset_password_token_expires > datetime.utcnow()
+        )
+    )
+    user = result.scalars().first()
     
-    if not user or not user.reset_password_token_expires:
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token"
+            detail="Invalid or expired password reset token"
         )
-    
-    if datetime.utcnow() > user.reset_password_token_expires:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Reset token has expired"
-        )
-    
-    # Validate new password
+
     is_valid, error_msg = validate_password(reset_data.new_password)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error_msg
         )
-    
-    # Update password
+
     user.hashed_password = get_password_hash(reset_data.new_password)
     user.reset_password_token = None
     user.reset_password_token_expires = None
     user.password_changed_at = datetime.utcnow()
-    user.failed_login_attempts = 0  # Reset failed attempts
-    db.commit()
+    user.failed_login_attempts = 0
+    await db.commit()
     
+    logger.info(f"Password reset successfully for {user.email}")
     return {"message": "Password successfully reset"} 

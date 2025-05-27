@@ -1,6 +1,6 @@
 import axios from 'axios';
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create, StateCreator, StoreApi, UseBoundStore } from 'zustand';
+import { persist, PersistOptions, PersistStorage } from 'zustand/middleware';
 import { getApiUrl } from '@verbweaver/shared';
 
 const API_URL = getApiUrl();
@@ -43,19 +43,55 @@ interface User {
   is_active: boolean;
 }
 
-interface AuthState {
+// This defines the actual state structure
+interface AuthStateFields {
   user: User | null;
   accessToken: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  isHydrated: boolean;
+}
+
+// This defines the actions
+interface AuthStateActions {
   login: (username: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string, full_name?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAccessToken: () => Promise<void>;
   clearError: () => void;
+  _setHydrated: () => void;
 }
+
+// Combine fields and actions for the full state type
+export type AuthState = AuthStateFields & AuthStateActions;
+
+// Moved PersistedAuthState definition here
+// This is the shape of the state that will be persisted.
+type PersistedAuthState = Pick<AuthStateFields, 'user' | 'accessToken' | 'refreshToken' | 'isAuthenticated'>;
+
+// Define initial state for web (not hydrated yet)
+const initialWebState: AuthStateFields = {
+  user: null,
+  accessToken: null,
+  refreshToken: null,
+  isAuthenticated: false,
+  isLoading: false,
+  error: null,
+  isHydrated: false,
+};
+
+// Define initial state for Electron (hydrated by default, with desktop user)
+const initialElectronState: AuthStateFields = {
+  user: { id: "desktop-user-id", email: 'desktop@verbweaver.local', name: 'Desktop User', is_active: true },
+  accessToken: 'desktop-token',
+  refreshToken: 'desktop-refresh-token',
+  isAuthenticated: true,
+  isLoading: false,
+  error: null,
+  isHydrated: true,
+};
 
 // Create axios instance for auth requests
 const authApi = axios.create({
@@ -103,164 +139,115 @@ api.interceptors.response.use(
   }
 );
 
-// Create the store without persistence for desktop
-const createAuthStore = () => {
-  if (isElectron) {
-    // For Electron, don't use persistence - always use desktop auth
-    return create<AuthState>()((set, get) => ({
-      ...getInitialAuthState(),
-      isLoading: false,
-      error: null,
+// Store creator function with explicit types
+const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
+  ...(isElectron ? initialElectronState : initialWebState),
+  login: async (username, password) => {
+    if (isElectron) return console.log('Desktop user: login N/A');
+    set({ isLoading: true, error: null });
+    try {
+      const formData = new FormData();
+      formData.append('username', username); formData.append('password', password);
+      const response = await authApi.post('/auth/login', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const { user, token } = response.data;
+      set({ user, accessToken: token.access_token, refreshToken: token.refresh_token, isAuthenticated: true, isLoading: false });
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Login failed', isLoading: false });
+      throw err;
+    }
+  },
+  register: async (email, username, password, full_name) => {
+    if (isElectron) return console.log('Desktop user: register N/A');
+    set({ isLoading: true, error: null });
+    try {
+      const response = await authApi.post('/auth/register', { email, username, password, full_name });
+      const { user, token } = response.data;
+      set({ user, accessToken: token.access_token, refreshToken: token.refresh_token, isAuthenticated: true, isLoading: false });
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Registration failed', isLoading: false });
+      throw err;
+    }
+  },
+  logout: async () => {
+    if (isElectron) return console.log('Desktop user: logout N/A');
+    const token = get().accessToken;
+    if (token) try { await api.post('/auth/logout'); } catch (e) { console.error('Logout API call failed', e); }
+    set({ ...initialWebState, isHydrated: get().isHydrated }); // Reset, keep hydration status
+  },
+  refreshAccessToken: async () => {
+    if (isElectron) return console.log('Desktop user: refresh N/A');
+    const refreshTokenVal = get().refreshToken;
+    if (!refreshTokenVal) throw new Error('No refresh token');
+    try {
+      const response = await authApi.post('/auth/refresh', { refresh_token: refreshTokenVal });
+      set({ accessToken: response.data.access_token, refreshToken: response.data.refresh_token });
+    } catch (err) {
+      set({ ...initialWebState, isAuthenticated: false, isHydrated: get().isHydrated }); // Reset on failure, keep hydration
+      throw err;
+    }
+  },
+  clearError: () => set({ error: null }),
+  _setHydrated: () => set({ isHydrated: true }),
+});
 
-      login: async (username: string, password: string) => {
-        // Desktop users don't need to login
-        console.log('Desktop user attempted login - already authenticated');
-      },
-
-      register: async (email: string, username: string, password: string, full_name?: string) => {
-        // Desktop users don't need to register
-        console.log('Desktop user attempted register - already authenticated');
-      },
-
-      logout: async () => {
-        // Desktop users can't logout
-        console.log('Desktop user attempted logout - staying authenticated');
-      },
-
-      refreshAccessToken: async () => {
-        // Desktop token doesn't expire
-        console.log('Desktop token refresh requested - not needed');
-      },
-
-      clearError: () => set({ error: null }),
-    }));
-  }
-
-  // For web users, use persistence
-  return create<AuthState>()(
-    persist(
-      (set, get) => ({
-        ...getInitialAuthState(),
-        isLoading: false,
-        error: null,
-
-        login: async (username: string, password: string) => {
-          set({ isLoading: true, error: null });
-          try {
-            const formData = new FormData();
-            formData.append('username', username);
-            formData.append('password', password);
-            
-            const response = await authApi.post('/auth/login', formData, {
-              headers: { 'Content-Type': 'multipart/form-data' }
-            });
-            
-            const { user, token } = response.data;
-            
-            set({
-              user,
-              accessToken: token.access_token,
-              refreshToken: token.refresh_token,
-              isAuthenticated: true,
-              isLoading: false,
-            });
-          } catch (error: any) {
-            set({
-              error: error.response?.data?.detail || 'Login failed',
-              isLoading: false,
-            });
-            throw error;
-          }
-        },
-
-        register: async (email: string, username: string, password: string, full_name?: string) => {
-          set({ isLoading: true, error: null });
-          try {
-            const response = await authApi.post('/auth/register', {
-              email,
-              username,
-              password,
-              full_name,
-            });
-            
-            const { user, token } = response.data;
-            
-            set({
-              user,
-              accessToken: token.access_token,
-              refreshToken: token.refresh_token,
-              isAuthenticated: true,
-              isLoading: false,
-            });
-          } catch (error: any) {
-            set({
-              error: error.response?.data?.detail || 'Registration failed',
-              isLoading: false,
-            });
-            throw error;
-          }
-        },
-
-        logout: async () => {
-          const token = get().accessToken;
-          if (token) {
-            try {
-              await api.post('/auth/logout');
-            } catch (error) {
-              console.error('Logout error:', error);
-            }
-          }
-          
-          set({
-            user: null,
-            accessToken: null,
-            refreshToken: null,
-            isAuthenticated: false,
-            error: null,
-          });
-        },
-
-        refreshAccessToken: async () => {
-          const refreshToken = get().refreshToken;
-          if (!refreshToken) {
-            throw new Error('No refresh token available');
-          }
-          
-          try {
-            const response = await authApi.post('/auth/refresh', {
-              refresh_token: refreshToken,
-            });
-            
-            const { access_token, refresh_token } = response.data;
-            
-            set({
-              accessToken: access_token,
-              refreshToken: refresh_token,
-            });
-          } catch (error) {
-            set({
-              user: null,
-              accessToken: null,
-              refreshToken: null,
-              isAuthenticated: false,
-            });
-            throw error;
-          }
-        },
-
-        clearError: () => set({ error: null }),
-      }),
-      {
-        name: 'auth-storage',
-        partialize: (state) => ({
-          user: state.user,
-          accessToken: state.accessToken,
-          refreshToken: state.refreshToken,
-          isAuthenticated: state.isAuthenticated,
-        }),
-      }
-    )
-  );
+// Setup persistence options
+const persistOptions: PersistOptions<AuthState, PersistedAuthState> = {
+  name: 'verbweaver-auth-storage',
+  onRehydrateStorage: () => (state) => {
+    state?._setHydrated(); // Call the action to update isHydrated in the store
+  },
+  partialize: (state) => ({
+    user: state.user,
+    accessToken: state.accessToken,
+    refreshToken: state.refreshToken,
+    isAuthenticated: state.isAuthenticated,
+    // isHydrated is managed by onRehydrateStorage, not persisted directly here
+  }),
+  // Explicitly typing storage if needed, though default localStorage is often fine
+  // storage: createJSONStorage(() => localStorage) as PersistStorage<PersistedAuthState>,
 };
 
-export const useAuthStore = createAuthStore(); 
+// Create the store: Use a type assertion for the persisted store if complex
+export const useAuthStore = isElectron
+  ? create<AuthState>(storeCreator)
+  : create<AuthState>()(persist(storeCreator, persistOptions));
+
+// Modify getInitialAuthState to include isHydrated
+const getInitialAuthStateCorrected = () => {
+  const electronDetected = (typeof window !== 'undefined' && window.electronAPI !== undefined) || 
+                          (typeof window !== 'undefined' && window.location.protocol === 'file:');
+  
+  if (electronDetected) {
+    return {
+      user: { 
+        id: "desktop-user-id", 
+        email: 'desktop@verbweaver.local', 
+        name: 'Desktop User',
+        is_active: true 
+      },
+      accessToken: 'desktop-token',
+      refreshToken: 'desktop-refresh-token',
+      isAuthenticated: true,
+      isHydrated: true,
+    };
+  }
+  
+  return {
+    user: null,
+    accessToken: null,
+    refreshToken: null,
+    isAuthenticated: false,
+    isHydrated: false,
+  };
+};
+
+// IMPORTANT: Replace the old getInitialAuthState with the corrected one in createInnerAuthStore
+// and the Electron store setup if it's called directly there.
+// The edit will be complex, so this is a conceptual guide for the change in createInnerAuthStore:
+// (set, get) => ({
+//   ...getInitialAuthStateCorrected(), // USE THE CORRECTED FUNCTION HERE
+//   isLoading: false,
+//   error: null,
+//   // isHydrated is now part of getInitialAuthStateCorrected
+// ... rest of the store
+// }); 

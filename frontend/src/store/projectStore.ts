@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { ProjectConfig } from '@verbweaver/shared'
 import { projectApi } from '../api/projectApi'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '../services/auth'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
@@ -29,27 +30,46 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   error: null,
 
   loadProjects: async () => {
+    if (isElectron) {
+      set({ projects: [], isLoading: false })
+      console.log('[ProjectStore] Electron environment, skipping API project load.');
+      return
+    }
+
+    // For web: check auth status from useAuthStore
+    const { isAuthenticated, isHydrated } = useAuthStore.getState()
+
+    if (!isHydrated) {
+      console.log('[ProjectStore] Auth not hydrated yet. Aborting loadProjects.');
+      // Optionally set an error or specific loading state if needed
+      // set({ error: 'Authentication not ready', isLoading: false });
+      return; 
+    }
+
+    if (!isAuthenticated) {
+      console.log('[ProjectStore] User not authenticated. Aborting loadProjects.');
+      // set({ error: 'User not authenticated', isLoading: false, projects: [] });
+      // No need to toast here as App.tsx/ProtectedRoute should handle redirection to login
+      return; 
+    }
+
+    console.log('[ProjectStore] Auth hydrated and user authenticated. Proceeding to load projects.');
     set({ isLoading: true, error: null })
     try {
-      if (isElectron) {
-        // For Electron, we don't load from API but from local storage/recent projects
-        // The projects are managed locally
-        set({ projects: [], isLoading: false })
-        return
-      }
-      
       const projects = await projectApi.getProjects()
       set({ projects, isLoading: false })
-      
-      // Auto-select first project if none selected
       const state = get()
       if (!state.currentProject && projects.length > 0) {
         state.selectProject(projects[0].id)
       }
     } catch (error) {
-      set({ error: (error as Error).message, isLoading: false })
-      if (!isElectron) {
-        toast.error('Failed to load projects')
+      const errorMessage = (error as Error).message;
+      console.error('[ProjectStore] Failed to load projects:', errorMessage);
+      set({ error: errorMessage, isLoading: false })
+      // Avoid toast here if the error is 401, as apiClient's interceptor will redirect.
+      // Only toast for other types of errors.
+      if (!(error as any).response || (error as any).response.status !== 401) {
+        toast.error('Failed to load projects: ' + errorMessage)
       }
     }
   },
