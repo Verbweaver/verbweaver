@@ -99,6 +99,16 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_ID: Optional[str] = Field(default=None, env="GITHUB_CLIENT_ID")
     GITHUB_CLIENT_SECRET: Optional[str] = Field(default=None, env="GITHUB_CLIENT_SECRET")
     
+    # Passkey (WebAuthn) settings
+    WEBAUTHN_RP_ID: str = Field(default="localhost", env="WEBAUTHN_RP_ID") # Relying Party ID (your domain)
+    WEBAUTHN_RP_NAME: str = Field(default="Verbweaver", env="WEBAUTHN_RP_NAME") # Relying Party Name
+    # WEBAUTHN_RP_ORIGIN is derived from FRONTEND_URL for consistency during requests if needed,
+    # but rp_id is the primary one for WebAuthn library configuration usually.
+    # The WebAuthn library will often expect an explicit origin for challenges.
+    # It's often set to be the same as FRONTEND_URL.
+    WEBAUTHN_EXPECTED_ORIGIN: Optional[str] = Field(default=None, env="WEBAUTHN_EXPECTED_ORIGIN") # e.g., http://localhost:3000
+    WEBAUTHN_CHALLENGE_TIMEOUT_SECONDS: int = Field(default=120, env="WEBAUTHN_CHALLENGE_TIMEOUT_SECONDS")
+    
     # Export settings
     PANDOC_PATH: Optional[str] = Field(default=None, env="PANDOC_PATH")
     
@@ -106,6 +116,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
     
+    @validator("WEBAUTHN_EXPECTED_ORIGIN", pre=True, always=True)
+    def default_webauthn_expected_origin(cls, v, values):
+        if v is None:
+            return values.get("FRONTEND_URL")
+        return v
+
     class Config:
         env_file = ".env"
         case_sensitive = True
