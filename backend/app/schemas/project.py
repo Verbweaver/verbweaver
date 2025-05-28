@@ -46,4 +46,15 @@ class ProjectResponse(ProjectBase):
     updated_at: Optional[datetime] = None
     
     class Config:
-        from_attributes = True 
+        from_attributes = True
+
+# Alias for the generic 'Project' import, typically a response model
+Project = ProjectResponse
+
+class ProjectInDB(ProjectResponse): # Or ProjectBase if more appropriate
+    """Schema representing a project as stored in the database."""
+    # Inherits all fields from ProjectResponse (which includes id, user_id, git_config etc.)
+    # If there are fields in the DB model not typically in ProjectResponse, add them here.
+    # For example, if git_config was stored differently or had more raw fields in DB:
+    # git_config_raw: Optional[Dict[str, Any]] = None 
+    pass 

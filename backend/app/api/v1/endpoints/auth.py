@@ -30,14 +30,14 @@ from app.core.security import (
     is_jti_blacklisted,
     JRL_PREFIX # If needed directly, though unlikely for auth.py
 )
-from app.schemas.auth import (
+from app.schemas.user import (
     UserCreate,
     UserResponse,
-    Token,
     PasswordResetRequest,
-    ResetPasswordPayload,
+    PasswordReset,  # Renamed from ResetPasswordPayload
     UserUpdate
 )
+from app.schemas.token import Token
 from app.core.config import settings
 import logging
 
@@ -189,7 +189,7 @@ async def login(
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
-        "user": UserResponse.from_orm(user) # Include user details
+        "user": UserResponse.model_validate(user) # Changed from from_orm to model_validate
     }
 
 
@@ -352,7 +352,7 @@ async def request_password_reset(
 
 @router.post("/reset-password")
 async def reset_password(
-    payload: ResetPasswordPayload, # Schema: { token: str, new_password: str }
+    payload: PasswordReset, # Changed from ResetPasswordPayload to PasswordReset
     db: AsyncSession = Depends(get_db)
 ):
     """Reset password using reset token."""
