@@ -70,6 +70,10 @@ interface AuthStateActions {
   verifyPasskeyRegistration: (credential: PublicKeyCredentialJSON) => Promise<User>; // Returns updated user
   listPasskeyDevices: () => Promise<PasskeyDevice[]>;
   deletePasskeyDevice: (passkeyId: string) => Promise<void>;
+
+  // Passkey login actions
+  getPasskeyLoginOptions: (email?: string) => Promise<any>; // Returns options for navigator.credentials.get()
+  verifyPasskeyLogin: (credential: PublicKeyCredentialJSON) => Promise<void>; // Handles login and sets auth state
 }
 
 // Combine fields and actions for the full state type
@@ -286,6 +290,39 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
       // After deletion, the component displaying the list should re-fetch.
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to delete passkey device', isLoading: false });
+      throw err;
+    }
+  },
+
+  // Passkey Login Implementations
+  getPasskeyLoginOptions: async (email?: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      // This endpoint does not strictly require auth, as it can be used for initial login.
+      const response = await authApi.post('/passkey/login-options', { email });
+      set({ isLoading: false });
+      return response.data.options; // Backend returns { options: { ... } }
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Failed to get passkey login options', isLoading: false });
+      throw err;
+    }
+  },
+  verifyPasskeyLogin: async (credential: PublicKeyCredentialJSON) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await authApi.post('/passkey/login-verify', credential);
+      const { user, access_token, refresh_token } = response.data; // Backend returns Token model
+      set({
+        user,
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null,
+        isHydrated: true, // Ensure hydration status is true after login
+      });
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Passkey login failed', isLoading: false });
       throw err;
     }
   },

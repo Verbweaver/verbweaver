@@ -1,7 +1,8 @@
 import httpx
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException, Depends, status
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+import secrets
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -23,22 +24,20 @@ GITHUB_USER_API_URL = "https://api.github.com/user"
 GITHUB_USER_EMAILS_API_URL = "https://api.github.com/user/emails" # To get private emails
 GITHUB_SCOPES = ["read:user", "user:email"]
 
-@router.get("/google/login", summary="Redirect to Google OAuth login", tags=["OAuth"]) # Added tags
+@router.get("/google/login", summary="Redirect to Google OAuth login", tags=["OAuth"])
 async def google_login(request: Request):
     if not settings.GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="Google OAuth not configured")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Google OAuth not configured")
     
-    # Construct the redirect_uri for the callback
-    # FastAPI request.url_for can be tricky with external redirects if not careful with base URL
-    # For OAuth, it's often safer to construct it fully or ensure FRONTEND_URL is accurate for this
-    # For now, assuming request.url_for works in your setup or is for the same domain.
     redirect_uri = str(request.url_for('google_callback'))
-
-    # Ensure redirect_uri is https if not in debug/localhost for production
-    # This logic should ideally be more robust or handled by URL scheme settings
     if not settings.DEBUG and not redirect_uri.startswith("https://localhost") and not redirect_uri.startswith("https://127.0.0.1"):
         if redirect_uri.startswith("http://"):
             redirect_uri = redirect_uri.replace("http://", "https://", 1)
+
+    # Generate and store state for CSRF protection
+    state = secrets.token_urlsafe(32)
+    request.session["oauth_state"] = state
+    request.session["oauth_provider"] = "google" # Store provider for callback state validation
 
     auth_url = (
         f"https://accounts.google.com/o/oauth2/v2/auth?"
@@ -47,13 +46,26 @@ async def google_login(request: Request):
         f"response_type=code&"
         f"scope={' '.join(GOOGLE_SCOPES)}&"
         f"access_type=offline&"
-        f"prompt=consent"
+        f"prompt=consent&"
+        f"state={state}"  # Add state to the auth URL
     )
-    return RedirectResponse(auth_url, status_code=307) # Use 307 for temporary redirect
+    return RedirectResponse(auth_url, status_code=307)
 
-@router.get("/google/callback", summary="Google OAuth callback", tags=["OAuth"]) # Added tags
-async def google_callback(request: Request, code: str, db: AsyncSession = Depends(get_db)):
+@router.get("/google/callback", summary="Google OAuth callback", tags=["OAuth"])
+async def google_callback(request: Request, code: str, state: str, db: AsyncSession = Depends(get_db)):
     print("Google OAuth callback initiated.")
+
+    # Validate state for CSRF protection
+    stored_state = request.session.pop("oauth_state", None)
+    stored_provider = request.session.pop("oauth_provider", None)
+    if not stored_state or stored_state != state or stored_provider != "google":
+        print(f"ERROR: Invalid OAuth state. Stored: {stored_state}, Received: {state}, Provider: {stored_provider}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Invalid state parameter. Possible CSRF attack or broken OAuth flow."
+        )
+    print("OAuth state validated successfully.")
+
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         print("ERROR: Google OAuth not configured on server.")
         raise HTTPException(status_code=500, detail="Google OAuth not configured")
@@ -174,35 +186,41 @@ async def google_callback(request: Request, code: str, db: AsyncSession = Depend
 @router.get("/github/login", summary="Redirect to GitHub OAuth login", tags=["OAuth"])
 async def github_login(request: Request):
     if not settings.GITHUB_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="GitHub OAuth not configured")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="GitHub OAuth not configured")
 
     redirect_uri = str(request.url_for('github_callback'))
     if not settings.DEBUG and not redirect_uri.startswith("https://localhost") and not redirect_uri.startswith("https://127.0.0.1"):
         if redirect_uri.startswith("http://"):
             redirect_uri = redirect_uri.replace("http://", "https://", 1)
     
-    # state = secrets.token_urlsafe(16) # Generate and store state for CSRF
-    # request.session["oauth_state"] = state # Example if using server-side sessions
+    # Generate and store state for CSRF protection
+    state = secrets.token_urlsafe(32)
+    request.session["oauth_state"] = state
+    request.session["oauth_provider"] = "github"
 
     auth_url = (
         f"https://github.com/login/oauth/authorize?"
         f"client_id={settings.GITHUB_CLIENT_ID}&"
         f"redirect_uri={redirect_uri}&"
         f"scope={'%20'.join(GITHUB_SCOPES)}&"
-        # f"state={state}" # Add state parameter
+        f"state={state}&"  # Add state parameter
         f"allow_signup=true"
     )
     return RedirectResponse(auth_url, status_code=307)
 
 @router.get("/github/callback", summary="GitHub OAuth callback", tags=["OAuth"])
-async def github_callback(request: Request, code: str, db: AsyncSession = Depends(get_db)):
+async def github_callback(request: Request, code: str, state: str, db: AsyncSession = Depends(get_db)):
+    # Validate state for CSRF protection
+    stored_state = request.session.pop("oauth_state", None)
+    stored_provider = request.session.pop("oauth_provider", None)
+    if not stored_state or stored_state != state or stored_provider != "github":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Invalid state parameter. Possible CSRF attack or broken OAuth flow."
+        )
+
     if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET:
         raise HTTPException(status_code=500, detail="GitHub OAuth not configured")
-
-    # state_received = request.query_params.get("state")
-    # stored_state = request.session.pop("oauth_state", None)
-    # if not state_received or state_received != stored_state:
-    #     raise HTTPException(status_code=403, detail="Invalid OAuth state. CSRF attack?")
 
     redirect_uri = str(request.url_for('github_callback'))
     if not settings.DEBUG and not redirect_uri.startswith("https://localhost") and not redirect_uri.startswith("https://127.0.0.1"):

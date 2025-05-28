@@ -4,6 +4,7 @@ Main FastAPI application for Verbweaver
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
@@ -38,6 +39,15 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Add SessionMiddleware for OAuth state management and other session needs
+# Ensure a strong, random secret_key is used, ideally from environment variables
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SESSION_SECRET_KEY if hasattr(settings, 'SESSION_SECRET_KEY') and settings.SESSION_SECRET_KEY else "super-secret-key-CHANGE-ME",
+    # SameSite="lax" by default, consider "strict" if applicable. HTTPS is recommended.
+    # https_only=not settings.DEBUG, # Enforce HTTPS for session cookies in production
 )
 
 # Include API router
