@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../services/auth';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, register, isLoading, error, clearError } = useAuthStore();
+  const location = useLocation();
+  const { login, register, isLoading, error, clearError, isAuthenticated, user, accessToken, refreshToken, _setHydrated } = useAuthStore();
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   
   const [formData, setFormData] = useState({
@@ -14,6 +15,33 @@ export default function Login() {
     confirmPassword: '',
     fullName: '',
   });
+
+  useEffect(() => {
+    if (location.hash) {
+      const params = new URLSearchParams(location.hash.substring(1));
+      const access_token = params.get('access_token');
+      const refresh_token = params.get('refresh_token');
+      const user_str = params.get('user');
+      
+      if (access_token && user_str) {
+        try {
+          const parsedUser = JSON.parse(decodeURIComponent(user_str));
+          useAuthStore.setState({
+            accessToken: access_token,
+            refreshToken: refresh_token,
+            user: parsedUser,
+            isAuthenticated: true,
+            isLoading: false,
+            error: null,
+            isHydrated: true,
+          });
+          navigate('/');
+        } catch (e) {
+          console.error("Error processing OAuth callback data:", e);
+        }
+      }
+    }
+  }, [location, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,12 +60,10 @@ export default function Login() {
           formData.fullName || undefined
         );
       } else {
-        // For login, username field can be either username or email
         await login(formData.username || formData.email, formData.password);
       }
       navigate('/');
     } catch (error) {
-      // Error is handled by the store
     }
   };
 
@@ -58,6 +84,14 @@ export default function Login() {
       confirmPassword: '',
       fullName: '',
     });
+  };
+
+  const handleGoogleLogin = () => {
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/google/login`;
+  };
+
+  const handleGitHubLogin = () => {
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/github/login`;
   };
 
   return (
@@ -94,7 +128,37 @@ export default function Login() {
           </p>
         </div>
         
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={isLoading}
+            className="w-full flex items-center justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#DB4437] hover:bg-[#C53D2E] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#DB4437] disabled:opacity-50"
+          >
+            Sign in with Google
+          </button>
+          <button
+            type="button"
+            onClick={handleGitHubLogin}
+            disabled={isLoading}
+            className="w-full flex items-center justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#333] hover:bg-[#1F1F1F] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#333] disabled:opacity-50"
+          >
+            Sign in with GitHub
+          </button>
+        </div>
+        
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+            <div className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-background text-muted-foreground">
+              Or continue with email
+            </span>
+          </div>
+        </div>
+        
+        <form className="space-y-6" onSubmit={handleSubmit}>
           {error && (
             <div className="rounded-md bg-destructive/10 p-4">
               <p className="text-sm text-destructive">{error}</p>
@@ -197,13 +261,18 @@ export default function Login() {
           </div>
 
           {!isRegisterMode && (
-            <div className="flex items-center justify-end text-sm">
-              <Link 
-                to="/request-password-reset" 
-                className="font-medium text-primary hover:text-primary/80"
-              >
-                Forgot your password?
-              </Link>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+              </div>
+
+              <div className="text-sm">
+                <Link
+                  to="/request-password-reset"
+                  className="font-medium text-primary hover:text-primary/80"
+                >
+                  Forgot your password?
+                </Link>
+              </div>
             </div>
           )}
 

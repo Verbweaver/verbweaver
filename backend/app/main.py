@@ -9,6 +9,7 @@ import uvicorn
 
 from app.core.config import settings
 from app.api.v1.api import api_router
+from app.api.v1.endpoints import oauth as oauth_router
 from app.db.init_db import init_db
 from app.database import engine
 from app.db.base import Base
@@ -39,6 +40,7 @@ app.add_middleware(
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(oauth_router.router, prefix=f"{settings.API_V1_STR}/auth", tags=["OAuth"])
 
 # Add WebSocket endpoint
 app.websocket("/ws/{project_id}")(websocket_endpoint)
