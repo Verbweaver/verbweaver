@@ -20,6 +20,9 @@ import secrets
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
+# oauth2_scheme_optional is a new optional OAuth2 scheme
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
@@ -114,6 +117,46 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user"
         )
+        
+    return user
+
+
+async def get_current_user_optional(
+    token: Optional[str] = Depends(oauth2_scheme_optional),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """Get current authenticated user from JWT token, if token is provided and valid. Returns None otherwise."""
+    if not token:
+        return None
+
+    # Special handling for desktop users
+    if token == "desktop-token":
+        result = await db.execute(select(User).filter(User.email == "desktop@verbweaver.local"))
+        desktop_user = result.scalar_one_or_none()
+        # Simplified: If desktop token is passed, assume desktop user context is intended.
+        # More robust checks could be added here if needed.
+        return desktop_user # Returns user or None if not found
+
+    try:
+        payload = decode_token(token) # decode_token can raise HTTPException or ValueError
+        user_id: str = payload.get("sub")
+        token_type: str = payload.get("type")
+        
+        if user_id is None or token_type != "access":
+            return None # Invalid token structure or type
+            
+    except (JWTError, ValidationError, ValueError, HTTPException):
+        # If decode_token raises HTTPException for expiration, or JWTError/ValueError for other issues
+        return None # Token is invalid, expired, or malformed
+    
+    try:
+        result = await db.execute(select(User).filter(User.id == user_id))
+        user = result.scalar_one_or_none()
+    except Exception: # Broad exception for database query issues
+        return None
+    
+    if user is None or not user.is_active:
+        return None # User not found or inactive
         
     return user
 

@@ -13,6 +13,7 @@ import Help from './pages/Help'
 import Login from './pages/Login'
 import RequestPasswordReset from './pages/RequestPasswordReset'
 import ResetPassword from './pages/ResetPassword'
+import SecuritySettingsPage from './pages/UserSettings/SecuritySettingsPage'
 import { useProjectStore } from './store/projectStore'
 import { useThemeStore } from './store/themeStore'
 import { useAuthStore } from './services/auth'
@@ -67,7 +68,9 @@ function App() {
         <Route path="threads" element={<Threads />} />
         <Route path="version" element={<Version />} />
         <Route path="compiler" element={<Compiler />} />
-        <Route path="settings" element={<Settings />} />
+        <Route path="settings" element={<Settings />}>
+          <Route path="security" element={<SecuritySettingsPage />} />
+        </Route>
         <Route path="help" element={<Help />} />
       </Route>
       <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />

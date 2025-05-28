@@ -22,11 +22,12 @@ from app.schemas import (
     PasskeyRegistrationOptionsRequest, PasskeyRegistrationOptionsResponse,
     PasskeyRegistrationVerificationRequest, PasskeyLoginOptionsRequest,
     PasskeyLoginOptionsResponse, PasskeyLoginVerificationRequest,
-    UserResponse, Token
+    UserResponse, Token, PasskeyInfo
 )
 from app.crud import user as crud_user, passkey as crud_passkey
 from app.core import security
 from app.models.user import User as UserModel
+from typing import List, Dict, Any, Optional
 
 router = APIRouter()
 
@@ -42,32 +43,63 @@ def get_expected_origin() -> str:
 @router.post("/passkey/register-options", response_model=PasskeyRegistrationOptionsResponse, tags=["Passkey"])
 async def passkey_register_options(
     request_data: PasskeyRegistrationOptionsRequest,
+    current_user_optional: Optional[UserModel] = Depends(security.get_current_user_optional), # Use optional current user
     db: AsyncSession = Depends(get_db)
 ):
-    user = await crud_user.get_user_by_email(db, email=request_data.email)
-    user_creation_flow = False
-    if not user:
-        user_creation_flow = True
-        if not request_data.display_name:
-             request_data.display_name = request_data.email.split('@')[0]
-        
-        user_in_create_dict = {
-            "email": request_data.email,
-            "name": request_data.display_name,
-            "provider": "email", # Start as email, will update to passkey upon successful registration
-            "is_active": True,
-            "is_verified": False, 
-            "hashed_password": None 
-        }
-        user = await crud_user.create_user_direct(db, obj_in=user_in_create_dict)
-        print(f"New user {user.email} created for passkey registration flow.")
+    user_email_to_use = request_data.email
+    user_display_name_to_use = request_data.display_name
+    user_id_for_passkey: Optional[str] = None
+    user_name_for_passkey: Optional[str] = None
+    user_object_for_options: Optional[UserModel] = None
 
-    user_handle_bytes = user.id.encode('utf-8')
+    user_creation_flow = False
+
+    if current_user_optional:
+        # User is already authenticated, use their details
+        user_object_for_options = current_user_optional
+        user_id_for_passkey = current_user_optional.id
+        user_email_to_use = current_user_optional.email
+        user_name_for_passkey = current_user_optional.name or current_user_optional.email
+        user_display_name_to_use = user_display_name_to_use or current_user_optional.name or current_user_optional.email
+        print(f"Authenticated user {user_email_to_use} is adding a new passkey.")
+    else:
+        # No authenticated user, proceed with email from request (new user registration or adding passkey by email)
+        existing_user_by_email = await crud_user.get_user_by_email(db, email=user_email_to_use)
+        if existing_user_by_email:
+            user_object_for_options = existing_user_by_email
+            user_id_for_passkey = existing_user_by_email.id
+            user_name_for_passkey = existing_user_by_email.name or existing_user_by_email.email
+            user_display_name_to_use = user_display_name_to_use or existing_user_by_email.name or existing_user_by_email.email
+            print(f"Existing user {user_email_to_use} found for passkey registration.")
+        else:
+            # Create a new user
+            user_creation_flow = True
+            effective_display_name = user_display_name_to_use or user_email_to_use.split('@')[0]
+            
+            user_in_create_dict = {
+                "email": user_email_to_use,
+                "name": effective_display_name, # Use the effective display name
+                "provider": "email", # Start as email, will update to passkey upon successful registration
+                "is_active": True,
+                "is_verified": False, 
+                "hashed_password": None 
+            }
+            created_user = await crud_user.create_user_direct(db, obj_in=user_in_create_dict)
+            user_object_for_options = created_user
+            user_id_for_passkey = created_user.id
+            user_name_for_passkey = created_user.name # This will be effective_display_name
+            user_display_name_to_use = effective_display_name # Ensure consistency
+            print(f"New user {created_user.email} created for passkey registration flow.")
+
+    if not user_id_for_passkey or not user_object_for_options:
+        raise HTTPException(status_code=500, detail="Could not determine user for passkey registration.")
+
+    user_handle_bytes = user_id_for_passkey.encode('utf-8')
     challenge_bytes = secrets.token_urlsafe(32).encode('utf-8')
     challenge_str = bytes_to_base64url(challenge_bytes) # py_webauthn returns challenge as bytes, convert for storage key
 
     existing_credentials_for_user = []
-    user_passkeys = await crud_passkey.get_passkeys_for_user(db, user_id=user.id)
+    user_passkeys = await crud_passkey.get_passkeys_for_user(db, user_id=user_id_for_passkey)
     for pk in user_passkeys:
         # py_webauthn expects credential ID as bytes for exclude_credentials
         existing_credentials_for_user.append(pk.credential_id) 
@@ -77,8 +109,8 @@ async def passkey_register_options(
             rp_id=get_rp_id(),
             rp_name=get_rp_name(),
             user_id=user_handle_bytes,
-            user_name=user.email, 
-            user_display_name=request_data.display_name or user.name or user.email,
+            user_name=user_name_for_passkey, # Use determined user_name_for_passkey
+            user_display_name=user_display_name_to_use, # Use determined user_display_name_to_use
             challenge=challenge_bytes, # Use the bytes version for the library
             exclude_credentials=[{
                 "type": "public-key", 
@@ -97,7 +129,11 @@ async def passkey_register_options(
 
     # Store challenge in Redis
     # Keyed by the base64url string version of the challenge
-    user_info_for_challenge = {"user_id": user.id, "email": user.email, "user_creation_flow": user_creation_flow}
+    user_info_for_challenge = {
+        "user_id": user_id_for_passkey, 
+        "email": user_email_to_use, 
+        "user_creation_flow": user_creation_flow
+    }
     await store_webauthn_challenge(challenge=challenge_str, user_info=user_info_for_challenge)
     
     # Convert options to dict for Pydantic model. DO NOT SEND CHALLENGE TO CLIENT.
@@ -337,7 +373,68 @@ async def passkey_login_verify(
         print(f"Passkey login verification failed: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Passkey login failed: {str(e)}")
     except Exception as e:
-        print(f"Unexpected error during passkey login verification: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        # Log the full error for server-side debugging
+        print(f"Unexpected error during passkey login verification: {type(e).__name__} - {str(e)}")
+        # Consider clearing challenge if it might still exist and this error is recoverable
+        # await clear_webauthn_challenge(client_challenge_b64url)
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during login verification.")
 
-# TODO: Add endpoints for managing passkeys (list, delete) by an authenticated user. 
+# --- Passkey Management (New Endpoints) ---
+
+@router.get("/passkey/devices", response_model=List[PasskeyInfo], tags=["Passkey Management"])
+async def list_user_passkeys(
+    current_user: UserModel = Depends(security.get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all passkeys registered by the currently authenticated user.
+    """
+    user_passkeys_db = await crud_passkey.get_passkeys_for_user(db, user_id=current_user.id)
+    
+    response_passkeys: List[PasskeyInfo] = []
+    for pk_db in user_passkeys_db:
+        response_passkeys.append(
+            PasskeyInfo(
+                id=pk_db.id, # This is the UserPasskey table's primary key
+                credential_id_display=crud_passkey.bytes_to_base64url(pk_db.credential_id)[:16] + "...", # Shortened
+                device_name=pk_db.device_name,
+                created_at=pk_db.created_at.isoformat(),
+                last_used_at=pk_db.last_used_at.isoformat() if pk_db.last_used_at else None
+            )
+        )
+    return response_passkeys
+
+@router.delete("/passkey/devices/{passkey_id}", status_code=204, tags=["Passkey Management"])
+async def delete_user_passkey(
+    passkey_id: str,
+    current_user: UserModel = Depends(security.get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete a specific passkey registered by the currently authenticated user.
+    The passkey_id is the primary key of the UserPasskey entry in the database.
+    """
+    deleted = await crud_passkey.delete_passkey(db, passkey_id=passkey_id, user_id=current_user.id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404, 
+            detail="Passkey not found or you do not have permission to delete it."
+        )
+    return None # FastAPI will return 204 No Content
+
+# Make sure PasskeyInfo is imported if not already
+# from app.schemas import PasskeyInfo # Check if already imported earlier
+# Might need List from typing
+# from typing import List # Check if already imported
+
+# Note: The /passkey/ prefix might be part of a larger router group.
+# If the main router includes this passkey router with /auth, then the paths become:
+# /auth/passkey/devices
+# /auth/passkey/devices/{passkey_id}
+# This should be fine as long as the frontend calls the correct full path.
+
+# Need to ensure PasskeyInfo schema can handle datetime conversion, or do it explicitly
+# For PasskeyInfo created_at and last_used_at:
+# Make sure these are correctly serialized to strings (e.g. ISO format) if Pydantic doesn't do it automatically from datetime.
+# The UserPasskeyModel has DateTime objects. The PasskeyInfo schema expects strings.
+# The .isoformat() calls handle this. 

@@ -64,6 +64,12 @@ interface AuthStateActions {
   _setHydrated: () => void;
   requestPasswordReset: (email: string) => Promise<void>;
   resetPassword: (token: string, newPassword: string) => Promise<void>;
+
+  // Passkey actions
+  getPasskeyRegistrationOptions: (email: string, displayName?: string) => Promise<any>; // Returns options for navigator.credentials.create()
+  verifyPasskeyRegistration: (credential: PublicKeyCredentialJSON) => Promise<User>; // Returns updated user
+  listPasskeyDevices: () => Promise<PasskeyDevice[]>;
+  deletePasskeyDevice: (passkeyId: string) => Promise<void>;
 }
 
 // Combine fields and actions for the full state type
@@ -194,14 +200,11 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
     if (isElectron) return console.log('Desktop user: requestPasswordReset N/A');
     set({ isLoading: true, error: null });
     try {
-      // Use authApi as this is an unauthenticated request initially
       await authApi.post('/auth/password-reset-request', { email });
-      // Backend sends a generic success message, no specific state change needed here on success other than isLoading
       set({ isLoading: false });
-      // Message to user is handled by the component
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to request password reset', isLoading: false });
-      throw err; // Re-throw for the component to catch if needed
+      throw err;
     }
   },
   resetPassword: async (token: string, newPassword: string) => {
@@ -210,11 +213,80 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
     try {
       await authApi.post('/auth/reset-password', { token, new_password: newPassword });
       set({ isLoading: false });
-      // On successful password reset, the user is still logged out.
-      // They will be redirected to login by the component.
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to reset password', isLoading: false });
-      throw err; // Re-throw for the component to catch
+      throw err;
+    }
+  },
+
+  // Passkey implementations
+  getPasskeyRegistrationOptions: async (email: string, displayName?: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      // If user is already logged in, the backend /passkey/register-options
+      // will use the authenticated user context.
+      // If not logged in, it will use the provided email (for new user or linking to existing by email).
+      // So, we can use `api` if authenticated to ensure the token is sent if available,
+      // or `authApi` if not, though the backend logic handles both cases based on token presence.
+      // For simplicity and to ensure token is sent if available:
+      const currentToken = get().accessToken;
+      const client = currentToken && !isElectron ? api : authApi;
+
+      const response = await client.post('/passkey/register-options', { email, display_name: displayName });
+      set({ isLoading: false });
+      return response.data.options; // The backend returns { options: { ... } }
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Failed to get passkey registration options', isLoading: false });
+      throw err;
+    }
+  },
+  verifyPasskeyRegistration: async (credential: PublicKeyCredentialJSON) => {
+    set({ isLoading: true, error: null });
+    try {
+      // Verification is typically part of an initial registration flow or adding a new key,
+      // and the backend links it to a user based on the challenge, so `authApi` is appropriate.
+      const response = await authApi.post('/passkey/register-verify', credential);
+      const user = response.data as User; // Backend returns the full UserResponse
+      
+      // If this was a new user registration via passkey, they might not be "logged in" yet
+      // in terms of having tokens in the store. The backend response for verify gives user details.
+      // For now, we just return the user details. The calling component might need to trigger a login
+      // or token retrieval if this was an initial signup.
+      // If an existing user added a passkey, their session is likely still valid.
+      // We could update the local user object if it's the current user.
+      if (get().user && get().user?.email === user.email) {
+        set({ user, isLoading: false }); // Update current user details if it matches
+      } else {
+        set({ isLoading: false });
+      }
+      return user;
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Passkey registration failed', isLoading: false });
+      throw err;
+    }
+  },
+  listPasskeyDevices: async () => {
+    if (isElectron) return []; // Passkey device management N/A for desktop user
+    set({ isLoading: true, error: null });
+    try {
+      const response = await api.get<PasskeyDevice[]>('/passkey/devices'); // Requires auth
+      set({ isLoading: false });
+      return response.data;
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Failed to list passkey devices', isLoading: false });
+      throw err;
+    }
+  },
+  deletePasskeyDevice: async (passkeyId: string) => {
+    if (isElectron) return; // Passkey device management N/A for desktop user
+    set({ isLoading: true, error: null });
+    try {
+      await api.delete(`/passkey/devices/${passkeyId}`); // Requires auth
+      set({ isLoading: false });
+      // After deletion, the component displaying the list should re-fetch.
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Failed to delete passkey device', isLoading: false });
+      throw err;
     }
   },
 });
@@ -280,3 +352,25 @@ const getInitialAuthStateCorrected = () => {
 //   // isHydrated is now part of getInitialAuthStateCorrected
 // ... rest of the store
 // }); 
+
+// --- Passkey Specific Types ---
+interface PublicKeyCredentialJSON {
+  id: string; // Base64URL
+  rawId: string; // Base64URL
+  type: 'public-key';
+  response: {
+    clientDataJSON: string; // Base64URL
+    attestationObject: string; // Base64URL
+    transports?: string[]; // Optional, based on authenticator
+  };
+  // clientExtensionResults?: AuthenticationExtensionsClientOutputs; // Not strictly needed for verification request body
+}
+
+export interface PasskeyDevice {
+  id: string; // DB ID of the passkey entry
+  credential_id_display: string; // Shortened, for display
+  device_name?: string;
+  created_at: string; // ISO date string
+  last_used_at?: string; // ISO date string
+}
+// --- End Passkey Specific Types --- 
