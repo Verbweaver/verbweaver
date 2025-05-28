@@ -1,316 +1,207 @@
-import { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, FileText, Folder } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import '../styles/markdown.css';
+import { DocFile } from '../../../desktop/src/preload';
+import { getApiUrl } from '@verbweaver/shared';
+import axios from 'axios';
+import React from 'react';
 
-interface DocFile {
-  name: string;
-  path: string;
-  type: 'file' | 'directory';
-  children?: DocFile[];
-}
-
-// Check if we're in Electron
+const API_URL = getApiUrl();
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
 export default function Help() {
   const [docFiles, setDocFiles] = useState<DocFile[]>([]);
-  const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
+  const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [docContent, setDocContent] = useState<string>('');
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Load documentation structure
-    loadDocumentationStructure();
+  const loadDocumentationStructure = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    setDocFiles([]);
+    try {
+      let files: DocFile[] = [];
+      if (isElectron && window.electronAPI?.listDocs) {
+        files = await window.electronAPI.listDocs();
+      } else {
+        const response = await axios.get<DocFile[]>(`${API_URL}/docs`);
+        files = response.data;
+      }
+      setDocFiles(files);
+      if (files.length > 0 && files[0].type === 'file') {
+        setSelectedDocPath(files[0].path);
+      } else if (files.length === 0) {
+        setError('No documentation files found.');
+      }
+    } catch (e: any) {
+      console.error('Failed to load documentation structure:', e);
+      const errorMsg = e.response?.data?.detail || e.message || 'Failed to load documentation structure.';
+      setError(errorMsg);
+    }
+    setIsLoading(false);
   }, []);
 
-  const loadDocumentationStructure = async () => {
-    // Create structure based on actual docs folder
-    const actualDocs: DocFile[] = [
-      {
-        name: 'Getting Started',
-        path: 'getting-started.md',
-        type: 'file'
-      },
-      {
-        name: 'Desktop Guide',
-        path: 'desktop-guide.md',
-        type: 'file'
-      },
-      {
-        name: 'Desktop Quick Reference',
-        path: 'desktop-quick-reference.md',
-        type: 'file'
-      },
-      {
-        name: 'Architecture',
-        path: 'architecture.md',
-        type: 'file'
-      },
-      {
-        name: 'API Reference',
-        path: 'api-reference.md',
-        type: 'file'
-      },
-      {
-        name: 'Security Checklist',
-        path: 'security-checklist.md',
-        type: 'file'
-      },
-      {
-        name: 'README',
-        path: '../README.md',
-        type: 'file'
-      }
-    ];
+  useEffect(() => {
+    loadDocumentationStructure();
+  }, [loadDocumentationStructure]);
 
-    setDocFiles(actualDocs);
-    
-    // Load the first document by default
-    if (actualDocs.length > 0) {
-      const firstFile = actualDocs[0];
-      if (firstFile.type === 'file') {
-        setSelectedDoc(firstFile.path);
-        loadDocContent(firstFile.path);
-      }
+  const loadDocContent = useCallback(async (docPath: string | null) => {
+    if (!docPath) {
+      setDocContent('');
+      return;
     }
-  };
-
-  const loadDocContent = async (docPath: string) => {
+    setIsLoading(true);
+    setError(null);
     try {
-      if (isElectron && window.electronAPI) {
-        // For Electron, read the actual file from the docs folder
-        // Need to go up from desktop folder to root docs folder
-        const docsPath = `../docs/${docPath}`;
-        const content = await window.electronAPI.readFile(docsPath);
-        setDocContent(content || 'Failed to load documentation content.');
+      let content = '';
+      if (isElectron && window.electronAPI?.readDocContent) {
+        content = await window.electronAPI.readDocContent(docPath);
       } else {
-        // For web version, we'd need to fetch from a docs API endpoint
-        // For now, show a message about desktop-only feature
-        setDocContent(`# ${docPath.replace('.md', '').replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-
-This documentation is available in the desktop version of Verbweaver.
-
-To view the full documentation, please use the desktop application.
-
-## Available Documentation
-
-The following documentation files are available in the desktop version:
-
-- Getting Started Guide
-- Desktop User Guide  
-- Desktop Quick Reference
-- Architecture Overview
-- API Reference
-- Security Checklist
-- Project README
-
----
-
-*Documentation viewing is optimized for the desktop application where files can be read directly from the local filesystem.*`);
+        const response = await axios.get(`${API_URL}/docs/${docPath}`, { responseType: 'text' });
+        content = response.data;
       }
-    } catch (error) {
-      console.error('Error loading documentation:', error);
-      setDocContent(`# Error Loading Documentation
-
-Failed to load the documentation file: ${docPath}
-
-Please ensure the documentation files are available in the docs folder.
-
-## Troubleshooting
-
-1. Check that the docs folder exists in your Verbweaver installation
-2. Verify that the documentation files are present
-3. Ensure you have proper file permissions
-
-If the problem persists, please check the application logs for more details.`);
+      setDocContent(content);
+    } catch (e: any) {
+      console.error(`Error loading documentation content for ${docPath}:`, e);
+      const errorMsg = e.response?.data?.detail || e.message || `Failed to load content for ${docPath}.`;
+      setError(errorMsg);
+      setDocContent('');
     }
-  };
+    setIsLoading(false);
+  }, []);
 
-  const toggleFolder = (path: string) => {
-    const newExpanded = new Set(expandedFolders);
-    if (newExpanded.has(path)) {
-      newExpanded.delete(path);
-    } else {
-      newExpanded.add(path);
+  useEffect(() => {
+    if (selectedDocPath) {
+      loadDocContent(selectedDocPath);
     }
-    setExpandedFolders(newExpanded);
-  };
+  }, [selectedDocPath, loadDocContent]);
 
-  const renderDocTree = (docs: DocFile[], level = 0) => {
-    return docs.map((doc) => (
-      <div key={doc.path} style={{ marginLeft: `${level * 16}px` }}>
-        {doc.type === 'directory' ? (
-          <div>
-            <button
-              onClick={() => toggleFolder(doc.path)}
-              className="flex items-center gap-2 py-1 px-2 hover:bg-accent rounded-md w-full text-left"
-            >
-              {expandedFolders.has(doc.path) ? (
-                <ChevronDown className="w-4 h-4" />
-              ) : (
-                <ChevronRight className="w-4 h-4" />
-              )}
-              <Folder className="w-4 h-4" />
-              <span className="text-sm">{doc.name}</span>
-            </button>
-            {expandedFolders.has(doc.path) && doc.children && (
-              <div className="ml-4">
-                {renderDocTree(doc.children, level + 1)}
-              </div>
-            )}
-          </div>
-        ) : (
-          <button
-            onClick={() => {
-              setSelectedDoc(doc.path);
-              loadDocContent(doc.path);
-            }}
-            className={`flex items-center gap-2 py-1 px-2 hover:bg-accent rounded-md w-full text-left ${
-              selectedDoc === doc.path ? 'bg-primary text-primary-foreground' : ''
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span className="text-sm">{doc.name}</span>
-          </button>
-        )}
-      </div>
-    ));
-  };
+  if (isLoading && docFiles.length === 0 && !error) {
+    return <div className="p-6 text-center">Loading documentation...</div>;
+  }
 
   return (
     <div className="h-full flex">
-      {/* Documentation Tree */}
-      <div className="w-80 border-r border-border bg-muted/30 p-4 overflow-y-auto">
+      <div className="w-64 md:w-80 border-r border-border bg-muted/30 p-4 overflow-y-auto flex-shrink-0">
         <h2 className="text-lg font-semibold mb-4">Documentation</h2>
+        {isLoading && docFiles.length === 0 && <p className="text-sm text-muted-foreground">Loading list...</p>}
+        {!isLoading && error && docFiles.length === 0 && (
+            <p className="text-sm text-red-500">{error}</p>
+        )}
+        {!isLoading && !error && docFiles.length === 0 && (
+            <p className="text-sm text-muted-foreground">No documents found.</p>
+        )}
         <div className="space-y-1">
-          {renderDocTree(docFiles)}
+          {docFiles.map((doc) => (
+            <button
+              key={doc.path}
+              onClick={() => setSelectedDocPath(doc.path)}
+              className={`flex items-center gap-2 py-1.5 px-2.5 hover:bg-accent rounded-md w-full text-left transition-colors duration-100 ease-in-out ${
+                selectedDocPath === doc.path ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title={doc.name}
+            >
+              <FileText className="w-4 h-4 flex-shrink-0" />
+              <span className="text-sm truncate">{doc.name}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Documentation Content */}
       <div className="flex-1 p-6 overflow-y-auto">
-        {docContent ? (
+        {isLoading && !docContent && (
+          <div className="flex justify-center items-center h-full">
+            <p className="text-muted-foreground">Loading content...</p>
+          </div>
+        )}
+        {!isLoading && error && !docContent && (
           <div className="prose prose-slate dark:prose-invert max-w-none">
+            <h2 className="text-red-600 font-semibold">Error Loading Document</h2>
+            <p className="text-red-500">{error}</p>
+          </div>
+        )}
+        {!isLoading && !error && docContent && (
+          <div className="prose prose-slate dark:prose-invert max-w-none prose-sm md:prose-base">
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
               rehypePlugins={[rehypeHighlight]}
-              components={{
-                // Custom link renderer to handle relative links
+              components={{ 
                 a: ({ node, href, children, ...props }) => {
-                  // Handle relative links
                   if (href && !href.startsWith('http') && !href.startsWith('#')) {
-                    return (
-                      <a
-                        {...props}
-                        href={href}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          // Handle internal navigation if needed
-                          console.log('Internal link clicked:', href);
-                        }}
-                        className="text-primary hover:underline cursor-pointer"
-                      >
-                        {children}
-                      </a>
-                    );
+                    const cleanedHref = href.replace(/^\.?\//, '');
+                    const targetFile = docFiles.find(f => f.path.toLowerCase() === cleanedHref.toLowerCase());
+                    if (targetFile) {
+                      return (
+                        <a
+                          {...props}
+                          href={targetFile.path}
+                          onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
+                            e.preventDefault();
+                            setSelectedDocPath(targetFile.path);
+                          }}
+                          className="text-primary hover:underline cursor-pointer"
+                        >
+                          {children}
+                        </a>
+                      );
+                    }
+                    console.warn('Could not find target for internal link:', href, 'Cleaned:', cleanedHref);
+                    return <span className="text-muted-foreground" title={`Unresolved link: ${href}`}>{children}</span>;
                   }
-                  // External links open in new tab
                   return (
-                    <a
-                      {...props}
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
+                    <a {...props} href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                       {children}
                     </a>
                   );
                 },
-                // Custom code block renderer
-                pre: ({ children, ...props }) => (
-                  <pre {...props} className="bg-muted p-4 rounded-lg overflow-x-auto">
-                    {children}
-                  </pre>
-                ),
-                // Custom inline code renderer
+                p: ({ children, ...props }) => {
+                  const hasBlockCode = React.Children.toArray(children).some(
+                    child =>
+                      React.isValidElement(child) &&
+                      child.type === 'code' &&
+                      !child.props.inline
+                  );
+                  const hasPre = React.Children.toArray(children).some(
+                    child =>
+                      React.isValidElement(child) &&
+                      child.type === 'pre'
+                  );
+                  if (hasBlockCode || hasPre) {
+                    return <>{children}</>;
+                  }
+                  return <p {...props}>{children}</p>;
+                },
                 code: ({ node, inline, className, children, ...props }: any) => {
                   if (inline) {
                     return (
-                      <code {...props} className="bg-muted px-1 py-0.5 rounded text-sm">
+                      <code {...props} className="bg-muted px-1 py-0.5 rounded text-sm font-normal">
                         {children}
                       </code>
                     );
                   }
-                  return <code {...props} className={className}>{children}</code>;
+                  return (
+                    <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-sm">
+                      <code {...props} className={className}>
+                        {children}
+                      </code>
+                    </pre>
+                  );
                 },
-                // Tables with proper styling
-                table: ({ children, ...props }) => (
-                  <div className="overflow-x-auto my-4">
-                    <table {...props} className="min-w-full divide-y divide-border">
-                      {children}
-                    </table>
-                  </div>
-                ),
-                th: ({ children, ...props }) => (
-                  <th {...props} className="px-4 py-2 bg-muted font-semibold text-left">
-                    {children}
-                  </th>
-                ),
-                td: ({ children, ...props }) => (
-                  <td {...props} className="px-4 py-2 border-t border-border">
-                    {children}
-                  </td>
-                ),
-                // Blockquotes with better styling
-                blockquote: ({ children, ...props }) => (
-                  <blockquote {...props} className="border-l-4 border-primary pl-4 my-4 italic">
-                    {children}
-                  </blockquote>
-                ),
-                // Lists with proper spacing
-                ul: ({ children, ...props }) => (
-                  <ul {...props} className="list-disc list-inside space-y-2 my-4">
-                    {children}
-                  </ul>
-                ),
-                ol: ({ children, ...props }) => (
-                  <ol {...props} className="list-decimal list-inside space-y-2 my-4">
-                    {children}
-                  </ol>
-                ),
-                // Headings with proper spacing
-                h1: ({ children, ...props }) => (
-                  <h1 {...props} className="text-3xl font-bold mt-8 mb-4">
-                    {children}
-                  </h1>
-                ),
-                h2: ({ children, ...props }) => (
-                  <h2 {...props} className="text-2xl font-semibold mt-6 mb-3">
-                    {children}
-                  </h2>
-                ),
-                h3: ({ children, ...props }) => (
-                  <h3 {...props} className="text-xl font-semibold mt-4 mb-2">
-                    {children}
-                  </h3>
-                ),
               }}
             >
               {docContent}
             </ReactMarkdown>
           </div>
-        ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            <div className="text-center">
-              <FileText className="w-12 h-12 mx-auto mb-4" />
-              <p>Select a documentation file to view its content</p>
+        )}
+        {!isLoading && !error && !docContent && (
+            <div className="flex justify-center items-center h-full">
+                <p className="text-muted-foreground">Select a document to view its content, or no content available.</p>
             </div>
-          </div>
         )}
       </div>
     </div>

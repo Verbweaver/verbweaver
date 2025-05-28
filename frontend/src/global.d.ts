@@ -1,4 +1,13 @@
 declare global {
+  // Define DocFile interface here as well, or import from a shared types location if possible
+  // For now, defining it directly for simplicity, ensure it matches preload.ts
+  interface DocFile {
+    name: string;
+    path: string;
+    type: 'file' | 'directory';
+    children?: DocFile[];
+  }
+
   interface Window {
     electronAPI?: {
       // File operations
@@ -63,6 +72,10 @@ declare global {
       onMenuNewProject: (callback: () => void) => () => void;
       onMenuOpenProject: (callback: () => void) => () => void;
       onMenuSettings: (callback: () => void) => () => void;
+
+      // For Help View (ensure these match preload.ts ElectronAPI interface)
+      listDocs: () => Promise<DocFile[]>;
+      readDocContent: (fileName: string) => Promise<string>;
     };
   }
 }

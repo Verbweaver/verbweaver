@@ -4,7 +4,7 @@ Main API router
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, projects, git, editor, graph, tasks, compiler
+from app.api.v1.endpoints import auth, users, projects, git, editor, graph, tasks, compiler, oauth, passkey, docs
 
 api_router = APIRouter()
 
@@ -22,4 +22,7 @@ api_router.include_router(git.router, prefix="/git", tags=["git"])
 api_router.include_router(editor.router, prefix="/editor", tags=["editor"])
 api_router.include_router(graph.router, prefix="/graph", tags=["graph"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
-api_router.include_router(compiler.router, prefix="/compiler", tags=["compiler"]) 
+api_router.include_router(compiler.router, prefix="/compiler", tags=["compiler"])
+api_router.include_router(oauth.router, prefix="/oauth", tags=["oauth"])
+api_router.include_router(passkey.router, prefix="/passkey", tags=["passkey"])
+api_router.include_router(docs.router, prefix="/docs", tags=["documentation"]) 

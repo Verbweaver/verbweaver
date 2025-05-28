@@ -162,6 +162,7 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
       formData.append('username', username); formData.append('password', password);
       const response = await authApi.post('/auth/login', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       const { user, access_token, refresh_token } = response.data;
+      console.log('User data from backend login:', user);
       set({ user, accessToken: access_token, refreshToken: refresh_token, isAuthenticated: true, isLoading: false });
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Login failed', isLoading: false });

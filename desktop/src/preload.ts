@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
 // Define types for the API
+export interface DocFile {
+  name: string;
+  path: string; // filename for docs, relative path for general case
+  type: 'file' | 'directory';
+  children?: DocFile[];
+}
+
 export interface ElectronAPI {
   // File operations
   openFile: () => Promise<{ canceled: boolean; filePaths: string[] }>;
@@ -64,11 +71,15 @@ export interface ElectronAPI {
   onMenuNewProject: (callback: () => void) => () => void;
   onMenuOpenProject: (callback: () => void) => () => void;
   onMenuSettings: (callback: () => void) => () => void;
+  
+  // For Help View
+  listDocs: () => Promise<DocFile[]>;
+  readDocContent: (fileName: string) => Promise<string>;
 }
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
-contextBridge.exposeInMainWorld('electronAPI', {
+const electronAPI: ElectronAPI = {
   // File operations
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
@@ -154,5 +165,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = () => callback();
     ipcRenderer.on('menu-settings', handler);
     return () => ipcRenderer.removeListener('menu-settings', handler);
+  },
+  
+  // For Help View
+  listDocs: () => ipcRenderer.invoke('list-docs'),
+  readDocContent: (fileName: string) => ipcRenderer.invoke('read-doc-content', fileName)
+};
+
+// Securely expose the API to the renderer process
+if (process.contextIsolated) {
+  try {
+    contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+  } catch (error) {
+    console.error('Failed to expose electronAPI to the renderer process:', error);
   }
-} as ElectronAPI); 
+} else {
+  // For environments where contextIsolation is false (less secure, not recommended)
+  // @ts-ignore
+  window.electronAPI = electronAPI;
+} 
