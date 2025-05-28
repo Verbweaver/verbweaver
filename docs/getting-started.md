@@ -184,6 +184,31 @@ docker-compose up -d
 # API: http://localhost:8000
 ```
 
+## Advanced Authentication Setup
+
+Verbweaver supports several advanced authentication methods for the web application, providing enhanced security and user convenience.
+
+### OAuth 2.0 (Google & GitHub)
+
+For detailed instructions on setting up OAuth 2.0 with Google and GitHub, please refer to the dedicated documentation:
+
+-   [OAuth Setup Guide](./oauth-setup.md)
+
+This guide covers creating API credentials with Google Cloud Console and GitHub Developer Settings, configuring the necessary environment variables, and understanding the OAuth flow within Verbweaver.
+
+### Passkey (WebAuthn) Authentication
+
+Passkeys (based on the WebAuthn standard) allow users to sign in using biometric sensors (like fingerprints or facial recognition), mobile devices, or hardware security keys, instead of traditional passwords. This method is generally more secure and user-friendly.
+
+To enable and configure Passkey authentication for your Verbweaver server, please refer to the following guide:
+
+-   [Passkey (WebAuthn) Setup Guide](./passkey-setup.md)
+
+This guide includes:
+-   Prerequisites, such as setting up a Redis instance.
+-   Required backend environment variable configurations (`WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_EXPECTED_ORIGIN`, `REDIS_URL`).
+-   Detailed steps for database migrations using Alembic to add the `user_passkeys` table.
+
 ## Desktop Application Features
 
 The desktop version includes:

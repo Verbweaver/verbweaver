@@ -1,31 +1,34 @@
 import secrets
-from fastapi import APIRouter, Request, HTTPException, Depends, Body
+import json # For storing dicts in Redis
+from fastapi import APIRouter, Request, HTTPException, Depends, Body # Removed Body as challenge comes from clientDataJSON
 from sqlalchemy.ext.asyncio import AsyncSession
 import webauthn as wna # py_webauthn library
 from webauthn.helpers.structs import (
     RegistrationCredential, AuthenticatorSelectionCriteria, ResidentKeyRequirement, UserVerificationRequirement,
-    PublicKeyCredentialCreationOptions, PublicKeyCredentialRequestOptions, AuthenticationCredential
+    PublicKeyCredentialCreationOptions, PublicKeyCredentialRequestOptions, AuthenticationCredential,
+    AttestationFormat
 )
 from webauthn.helpers.exceptions import WebAuthnException
+from webauthn.helpers import base64url_to_bytes, bytes_to_base64url # Use library's helpers
 
 from app.core.config import settings
 from app.db.session import get_db
+from app.db.redis_client import (
+    store_webauthn_challenge, 
+    retrieve_webauthn_challenge_data,
+    clear_webauthn_challenge # For cleanup on error
+)
 from app.schemas import (
     PasskeyRegistrationOptionsRequest, PasskeyRegistrationOptionsResponse,
     PasskeyRegistrationVerificationRequest, PasskeyLoginOptionsRequest,
     PasskeyLoginOptionsResponse, PasskeyLoginVerificationRequest,
-    UserResponse, Token # For returning login success
+    UserResponse, Token
 )
 from app.crud import user as crud_user, passkey as crud_passkey
 from app.core import security
-from app.models.user import User as UserModel # For type hint
+from app.models.user import User as UserModel
 
 router = APIRouter()
-
-# Temporary storage for challenges (NOT PRODUCTION SAFE - use server-side session/cache)
-# This is a simplified approach for now. In production, challenges must be stored securely server-side
-# and associated with the user's session to prevent replay attacks and ensure atomicity.
-challenge_storage: Dict[str, str] = {}
 
 def get_rp_id() -> str:
     return settings.WEBAUTHN_RP_ID
@@ -42,161 +45,145 @@ async def passkey_register_options(
     db: AsyncSession = Depends(get_db)
 ):
     user = await crud_user.get_user_by_email(db, email=request_data.email)
+    user_creation_flow = False
     if not user:
-        # Option: Create user here if they don't exist, or require existing user
-        # For now, assume user must exist or be created via a separate step before passkey registration
-        # Or, if display_name is provided, we could create a new user.
-        # Let's try creating if not exists, assuming email is unique identifier.
+        user_creation_flow = True
         if not request_data.display_name:
              request_data.display_name = request_data.email.split('@')[0]
         
-        user_in_create = {
+        user_in_create_dict = {
             "email": request_data.email,
             "name": request_data.display_name,
-            "provider": "passkey", # Or keep as email and add passkey later
+            "provider": "email", # Start as email, will update to passkey upon successful registration
             "is_active": True,
-            "is_verified": False, # Passkey registration doesn't verify email by itself
+            "is_verified": False, 
             "hashed_password": None 
         }
-        user = await crud_user.create_user_direct(db, obj_in=user_in_create)
-        print(f"New user {user.email} created for passkey registration.")
+        user = await crud_user.create_user_direct(db, obj_in=user_in_create_dict)
+        print(f"New user {user.email} created for passkey registration flow.")
 
-    # Generate registration options
-    # User handle should be a stable, non-personally identifiable, unique ID for the user.
-    # Using user.id (string UUID) directly as bytes.
     user_handle_bytes = user.id.encode('utf-8')
+    challenge_bytes = secrets.token_urlsafe(32).encode('utf-8')
+    challenge_str = bytes_to_base64url(challenge_bytes) # py_webauthn returns challenge as bytes, convert for storage key
 
-    # Get existing passkeys for this user to potentially exclude them
-    existing_credentials = []
+    existing_credentials_for_user = []
     user_passkeys = await crud_passkey.get_passkeys_for_user(db, user_id=user.id)
     for pk in user_passkeys:
-        existing_credentials.append(pk.credential_id) # Already bytes
+        # py_webauthn expects credential ID as bytes for exclude_credentials
+        existing_credentials_for_user.append(pk.credential_id) 
 
     try:
         options: PublicKeyCredentialCreationOptions = wna.generate_registration_options(
             rp_id=get_rp_id(),
             rp_name=get_rp_name(),
-            user_id=user_handle_bytes, # Must be bytes
-            user_name=user.email, # Typically username, using email for uniqueness
+            user_id=user_handle_bytes,
+            user_name=user.email, 
             user_display_name=request_data.display_name or user.name or user.email,
-            challenge=secrets.token_urlsafe(32).encode('utf-8'), # Generate a new challenge (bytes)
-            exclude_credentials=[{"type": "public-key", "id": cred_id} for cred_id in existing_credentials],
+            challenge=challenge_bytes, # Use the bytes version for the library
+            exclude_credentials=[{
+                "type": "public-key", 
+                "id": cred_id_bytes
+            } for cred_id_bytes in existing_credentials_for_user],
             authenticator_selection=AuthenticatorSelectionCriteria(
-                resident_key=ResidentKeyRequirement.PREFERRED, # Discoverable credential preferred
+                resident_key=ResidentKeyRequirement.PREFERRED,
                 user_verification=UserVerificationRequirement.PREFERRED
             ),
-            timeout=settings.WEBAUTHN_CHALLENGE_TIMEOUT_SECONDS * 1000, # ms
-            attestation=None # "direct", "indirect", "none", "enterprise"
+            timeout=settings.WEBAUTHN_CHALLENGE_TIMEOUT_SECONDS * 1000,
+            attestation=AttestationFormat.NONE # Default to 'none' for simplicity, can be configured
         )
     except WebAuthnException as e:
         print(f"WebAuthn library error during registration options: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating passkey registration options: {str(e)}")
 
-    # Convert options to dict for Pydantic model and store challenge (simplified)
-    options_dict = options.to_dict()
-    current_challenge = options.challenge.decode('utf-8') # Store as string
-    # TODO: Securely store challenge server-side, associated with session/user.
-    # For now, returning it. The client MUST send this back for verification.
-    challenge_storage[user.email] = current_challenge # Extremely simplified and insecure temp storage
+    # Store challenge in Redis
+    # Keyed by the base64url string version of the challenge
+    user_info_for_challenge = {"user_id": user.id, "email": user.email, "user_creation_flow": user_creation_flow}
+    await store_webauthn_challenge(challenge=challenge_str, user_info=user_info_for_challenge)
     
-    return PasskeyRegistrationOptionsResponse(options=options_dict, current_challenge=current_challenge)
+    # Convert options to dict for Pydantic model. DO NOT SEND CHALLENGE TO CLIENT.
+    options_dict = options.to_dict()
+    return PasskeyRegistrationOptionsResponse(options=options_dict)
 
 @router.post("/passkey/register-verify", response_model=UserResponse, tags=["Passkey"])
 async def passkey_register_verify(
     request_data: PasskeyRegistrationVerificationRequest,
-    original_challenge_from_client: str = Body(...), # Client must send back the challenge
+    # original_challenge_from_client: str = Body(...), # REMOVED
     db: AsyncSession = Depends(get_db)
 ):
-    # Retrieve the securely stored challenge for the current session/user
-    # This is where the insecure temporary storage is problematic.
-    # Assume we get email from an authenticated session or a hidden field if user is known.
-    # For now, we need a way to link this verification back to the user who initiated it.
-    # This part needs careful thought in a real app with sessions.
-    # Let's assume the client also sends the email of the user who is registering.
-    user_email_from_client = Body(None) # This is a placeholder for how to get the user email.
-                                       # This would typically come from an authenticated session or JWT identifying the user.
-                                       # If user is not logged in, we might need to get it from initial options request.
-
-    # For demonstration, trying to retrieve challenge using user_handle from clientDataJSON
-    # This is also not ideal without secure session linking.
     try:
+        # Extract challenge from clientDataJSON - this is base64url encoded by the browser/authenticator
         client_data = wna.helpers.decode_client_data_json(request_data.response['clientDataJSON'])
-        retrieved_challenge = client_data.challenge
-        # The challenge from client_data_json is base64url. Our stored one might be plain string.
-        # Need consistency or decode the one from client_data_json if library expects bytes.
+        client_challenge_b64url = client_data.challenge # This is the challenge string (base64url)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid clientDataJSON: {str(e)}")
-    
-    # THIS IS THE INSECURE PART for challenge retrieval:
-    # We need to find the user based on something in the request_data or a session.
-    # The `userHandle` in `authenticatorData` *might* be the user.id if we set it so.
-    # Let's try to parse authenticatorData to get user handle.
-    user_id_from_auth_data: Optional[str] = None
-    try:
-        auth_data_bytes = wna.helpers.base64url_to_bytes(request_data.response['authenticatorData'])
-        parsed_auth_data = wna.helpers.parse_authenticator_data(auth_data_bytes)
-        if parsed_auth_data.user_id:
-            user_id_from_auth_data = parsed_auth_data.user_id.decode('utf-8')
-    except Exception:
-        pass # Could not parse or no user_id
 
-    if not user_id_from_auth_data:
-        raise HTTPException(status_code=400, detail="User identifier not found in authenticator data.")
+    # Retrieve challenge data from Redis using the challenge string from clientDataJSON
+    challenge_user_info = await retrieve_webauthn_challenge_data(client_challenge_b64url)
+    if not challenge_user_info:
+        raise HTTPException(status_code=400, detail="Passkey registration challenge not found, expired, or already used. Please try again.")
 
-    user = await crud_user.get_user_by_id(db, user_id=user_id_from_auth_data)
+    user_id_from_challenge = challenge_user_info.get("user_id")
+    if not user_id_from_challenge:
+        await clear_webauthn_challenge(client_challenge_b64url) # Clean up if malformed
+        raise HTTPException(status_code=500, detail="User information missing from challenge data.")
+
+    user = await crud_user.get_user_by_id(db, user_id=user_id_from_challenge)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found for passkey registration.")
-
-    # Retrieve the challenge (INSECURE temporary method)
-    stored_challenge_str = challenge_storage.pop(user.email, None)
-    if not stored_challenge_str:
-        raise HTTPException(status_code=400, detail="Passkey registration challenge not found or expired. Please try again.")
+        # This case should ideally not happen if challenge data was stored correctly
+        await clear_webauthn_challenge(client_challenge_b64url)
+        raise HTTPException(status_code=404, detail="User associated with passkey registration not found.")
 
     try:
         registration_cred = RegistrationCredential(
-            id=request_data.credential_id, # raw_id might be more appropriate for library if it expects base64url string for ID
-            raw_id=crud_passkey.base64url_to_bytes(request_data.raw_id),
+            id=request_data.credential_id, 
+            raw_id=base64url_to_bytes(request_data.raw_id),
             type=request_data.type,
             response={
                 "attestationObject": request_data.response['attestationObject'],
                 "clientDataJSON": request_data.response['clientDataJSON']
             }
         )
+        
+        # The `py_webauthn` library expects the challenge as bytes.
+        # The challenge from clientDataJSON is base64url, so decode it.
+        expected_challenge_bytes = base64url_to_bytes(client_challenge_b64url)
 
         verified_credential = wna.verify_registration_response(
             credential=registration_cred,
-            expected_challenge=stored_challenge_str.encode('utf-8'), # Library expects bytes
+            expected_challenge=expected_challenge_bytes, 
             expected_origin=get_expected_origin(),
             expected_rp_id=get_rp_id(),
-            require_user_verification=True # Match what was in options if possible
+            require_user_verification=settings.WEBAUTHN_RP_NAME != "localhost" # More strict for non-localhost
         )
 
-        # Store the new passkey
         new_passkey = await crud_passkey.create_user_passkey(
             db=db,
             user_id=user.id,
-            credential_id=verified_credential.credential_id, # Bytes from library
-            public_key=verified_credential.public_key, # Bytes from library
+            credential_id=verified_credential.credential_id,
+            public_key=verified_credential.public_key,
             sign_count=verified_credential.sign_count,
-            transports=request_data.response.get("transports") # If client sends it
-            # device_name can be set later by user or derived if possible
+            transports=registration_cred.response.get("transports") # from client if available
         )
-        print(f"Passkey registered successfully for user {user.email}, credential ID (bytes): {verified_credential.credential_id}")
+        print(f"Passkey registered successfully for user {user.email}, DB ID: {new_passkey.id}")
 
-        # Update user provider if not already passkey, or if it was just created.
-        if user.provider != "passkey" or not user.is_verified:
-             await crud_user.update_user_internal(db, db_obj=user, obj_in={"provider": "passkey", "is_verified": True})
-
+        # Update user provider and verification status
+        update_data = {"provider": "passkey", "is_verified": True}
+        # If user was created in this flow, their display name might also be set from passkey display name
+        if challenge_user_info.get("user_creation_flow") and not user.name and verified_credential.user_display_name:
+            update_data["name"] = verified_credential.user_display_name
+        
+        user = await crud_user.update_user_internal(db, db_obj=user, obj_in=update_data)
         return UserResponse.model_validate(user)
 
     except WebAuthnException as e:
         print(f"Passkey registration verification failed: {str(e)}")
-        # Attempt to put challenge back if verification failed mid-way (still insecure)
-        challenge_storage[user.email] = stored_challenge_str 
+        # Note: challenge data is auto-deleted by retrieve_webauthn_challenge_data on first successful get
+        # If it failed before retrieval or if retrieval failed, it might still be in Redis or already gone.
         raise HTTPException(status_code=400, detail=f"Passkey verification failed: {str(e)}")
     except Exception as e:
         print(f"Unexpected error during passkey registration verification: {str(e)}")
-        challenge_storage[user.email] = stored_challenge_str # Try to put back
+        # Consider clearing challenge if it might still exist and this error is recoverable
+        # await clear_webauthn_challenge(client_challenge_b64url) 
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 @router.post("/passkey/login-options", response_model=PasskeyLoginOptionsResponse, tags=["Passkey"])
@@ -204,109 +191,138 @@ async def passkey_login_options(
     request_data: PasskeyLoginOptionsRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    user_id_bytes: Optional[bytes] = None
-    allowed_credentials: List[Dict[str, Any]] = []
+    user_id_for_challenge: Optional[str] = None
+    user_email_for_challenge: Optional[str] = None
+    allowed_credentials_for_lib: List[Dict[str, Any]] = []
+    
+    challenge_bytes = secrets.token_urlsafe(32).encode('utf-8')
+    challenge_str = bytes_to_base64url(challenge_bytes)
 
     if request_data.email:
         user = await crud_user.get_user_by_email(db, email=request_data.email)
         if user:
-            user_id_bytes = user.id.encode('utf-8')
+            user_id_for_challenge = user.id
+            user_email_for_challenge = user.email
             user_passkeys = await crud_passkey.get_passkeys_for_user(db, user_id=user.id)
             for pk in user_passkeys:
-                allowed_credentials.append({"type": "public-key", "id": pk.credential_id}) # id is bytes
-        else:
-            # User not found by email, proceed with discoverable credential (resident key) request
-            pass 
-    else:
-        # No email provided, rely on discoverable credentials
-        pass
+                allowed_credentials_for_lib.append({"type": "public-key", "id": pk.credential_id}) # bytes
+    
+    # If no email or user not found by email, rely on discoverable credentials (resident keys)
+    # In this case, user_id_for_challenge and user_email_for_challenge will remain None.
+    # The challenge will be stored with a generic marker or just the challenge itself as key.
 
     try:
         options: PublicKeyCredentialRequestOptions = wna.generate_authentication_options(
             rp_id=get_rp_id(),
-            challenge=secrets.token_urlsafe(32).encode('utf-8'), # Bytes
-            allow_credentials=allowed_credentials if allowed_credentials else None, # None means any passkey for this RP_ID
+            challenge=challenge_bytes,
+            allow_credentials=allowed_credentials_for_lib if allowed_credentials_for_lib else None, 
             user_verification=UserVerificationRequirement.PREFERRED,
-            timeout=settings.WEBAUTHN_CHALLENGE_TIMEOUT_SECONDS * 1000 # ms
+            timeout=settings.WEBAUTHN_CHALLENGE_TIMEOUT_SECONDS * 1000
         )
     except WebAuthnException as e:
         print(f"WebAuthn library error during login options: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating passkey login options: {str(e)}")
 
-    options_dict = options.to_dict()
-    current_challenge = options.challenge.decode('utf-8') # Store as string
-    # TODO: Securely store challenge (see registration options)
-    # Storing challenge based on email if user found, otherwise a generic key (problematic)
-    challenge_key = request_data.email if request_data.email and user else "__PASSKEY_LOGIN_NO_USER__"
-    challenge_storage[challenge_key] = current_challenge
+    user_info_for_challenge = {
+        "user_id": user_id_for_challenge, # Can be None for discoverable credential flow
+        "email": user_email_for_challenge # Can be None
+    }
+    await store_webauthn_challenge(challenge=challenge_str, user_info=user_info_for_challenge)
     
-    return PasskeyLoginOptionsResponse(options=options_dict, current_challenge=current_challenge)
+    options_dict = options.to_dict()
+    return PasskeyLoginOptionsResponse(options=options_dict)
 
 @router.post("/passkey/login-verify", response_model=Token, tags=["Passkey"])
 async def passkey_login_verify(
     request_data: PasskeyLoginVerificationRequest,
-    original_challenge_from_client: str = Body(...),
+    # original_challenge_from_client: str = Body(...), # REMOVED
     db: AsyncSession = Depends(get_db)
 ):
-    credential_id_bytes = crud_passkey.base64url_to_bytes(request_data.raw_id)
+    try:
+        client_data = wna.helpers.decode_client_data_json(request_data.response['clientDataJSON'])
+        client_challenge_b64url = client_data.challenge
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid clientDataJSON: {str(e)}")
+
+    challenge_user_info = await retrieve_webauthn_challenge_data(client_challenge_b64url)
+    if not challenge_user_info: # Also handles used/expired challenges
+        raise HTTPException(status_code=400, detail="Passkey login challenge not found, expired, or already used. Please try again.")
+
+    # The UserHandle from the authenticator response might contain the user_id if it's a discoverable credential
+    # and it was stored during registration (py_webauthn stores it as user.id.encode('utf-8')).
+    user_handle_b64url = request_data.response.get('userHandle')
+    user_id_from_user_handle: Optional[str] = None
+    if user_handle_b64url:
+        try:
+            user_id_from_user_handle = base64url_to_bytes(user_handle_b64url).decode('utf-8')
+        except Exception:
+            pass # Invalid user handle format
     
-    # Find user by credential ID
-    # user = await crud_passkey.get_user_by_passkey_credential_id(db, credential_id=credential_id_bytes)
-    # The library's verify_authentication_response needs the stored credential, not the user directly.
+    credential_id_bytes = base64url_to_bytes(request_data.raw_id)
     stored_credential = await crud_passkey.get_passkey_by_credential_id(db, credential_id=credential_id_bytes)
 
     if not stored_credential:
         raise HTTPException(status_code=404, detail="Passkey not recognized or not registered.")
+    
+    # Determine the user ID: from stored_credential (most reliable), then user_handle, then challenge_user_info
+    user_id_to_load = stored_credential.user_id
+    if user_id_from_user_handle and user_id_from_user_handle != user_id_to_load:
+        # This is a mismatch, could be an issue or an attempt to use someone else's userHandle.
+        # Prioritize the ID linked to the credential itself.
+        print(f"Warning: User handle {user_id_from_user_handle} differs from credential's user_id {user_id_to_load}")
+    
+    # If it was a discoverable credential flow, challenge_user_info["user_id"] would be None.
+    # We must rely on the user_id from the stored_credential or user_handle.
+    if not user_id_to_load and user_id_from_user_handle:
+        user_id_to_load = user_id_from_user_handle
+    elif not user_id_to_load and challenge_user_info.get("user_id"):
+        # Fallback if user_id was in challenge (e.g. email hint provided) but not directly from credential userHandle
+        user_id_to_load = challenge_user_info.get("user_id")
 
-    user = await crud_user.get_user_by_id(db, user_id=stored_credential.user_id)
+    if not user_id_to_load:
+        raise HTTPException(status_code=400, detail="Could not identify user for passkey login.")
+
+    user = await crud_user.get_user_by_id(db, user_id=user_id_to_load)
     if not user:
-        # Should not happen if passkey has a valid user_id
         raise HTTPException(status_code=404, detail="User associated with passkey not found.")
-
-    # Retrieve challenge (INSECURE temporary method)
-    challenge_key = user.email # Assuming user was found via passkey
-    stored_challenge_str = challenge_storage.pop(challenge_key, None)
-    # If challenge was for "__PASSKEY_LOGIN_NO_USER__" because it was a discoverable credential flow:
-    if not stored_challenge_str:
-        stored_challenge_str = challenge_storage.pop("__PASSKEY_LOGIN_NO_USER__", None)
-
-    if not stored_challenge_str:
-        raise HTTPException(status_code=400, detail="Passkey login challenge not found or expired. Please try again.")
+    
+    # Final check: if user_id from challenge had a value, it should match the found user's ID
+    if challenge_user_info.get("user_id") and challenge_user_info["user_id"] != user.id:
+        raise HTTPException(status_code=400, detail="User mismatch during passkey login.")
 
     try:
         auth_cred = AuthenticationCredential(
-            id=request_data.credential_id, # or raw_id for base64url
-            raw_id=crud_passkey.base64url_to_bytes(request_data.raw_id),
+            id=request_data.credential_id, 
+            raw_id=credential_id_bytes, # Already bytes
             type=request_data.type,
             response={
                 "authenticatorData": request_data.response['authenticatorData'],
                 "clientDataJSON": request_data.response['clientDataJSON'],
                 "signature": request_data.response['signature'],
-                "userHandle": request_data.response.get('userHandle') # May be None
+                "userHandle": request_data.response.get('userHandle') 
             }
         )
+        
+        expected_challenge_bytes = base64url_to_bytes(client_challenge_b64url)
 
         new_sign_count = wna.verify_authentication_response(
             credential=auth_cred,
-            stored_credential=wna.helpers.structs.PublicKeyCredentialDescriptor(
-                id=stored_credential.credential_id, # Bytes
-                type="public-key"
-            ),
-            expected_challenge=stored_challenge_str.encode('utf-8'), # Bytes
+            # For stored_credential, library needs it in PublicKeyCredentialDescriptor format.
+            # The `py_webauthn` library internally uses credential_id (bytes) and public_key (bytes) from the DB record.
+            # We provide what it expects based on its examples/source if it doesn't fetch directly via user_id.
+            # The library's own type hints for verify_authentication_response show it needs `credential_public_key` and `credential_current_sign_count`,
+            # which means we must pass the `public_key` and `sign_count` from our `stored_credential` record.
+            expected_challenge=expected_challenge_bytes,
             expected_rp_id=get_rp_id(),
             expected_origin=get_expected_origin(),
-            credential_public_key=stored_credential.public_key, # Bytes
-            credential_current_sign_count=stored_credential.sign_count,
-            require_user_verification=True # Or match your policy
+            credential_public_key=stored_credential.public_key, # Bytes from DB
+            credential_current_sign_count=stored_credential.sign_count, # Int from DB
+            require_user_verification=settings.WEBAUTHN_RP_NAME != "localhost" # More strict for non-localhost
         )
 
-        # Update sign count and last used for the passkey
         await crud_passkey.update_passkey_sign_count(db, passkey_id=stored_credential.id, new_sign_count=new_sign_count)
-        
-        # Update user's last login
         await crud_user.update_last_login(db, user_id=user.id)
 
-        # Generate JWT tokens for the user
         access_token = security.create_access_token(subject=str(user.id))
         refresh_token = security.create_refresh_token(subject=str(user.id))
 
@@ -314,16 +330,14 @@ async def passkey_login_verify(
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
-            user=UserResponse.model_validate(user).model_dump() # Include user details
+            user=UserResponse.model_validate(user).model_dump()
         )
 
     except WebAuthnException as e:
         print(f"Passkey login verification failed: {str(e)}")
-        challenge_storage[challenge_key] = stored_challenge_str # Try to put back
         raise HTTPException(status_code=400, detail=f"Passkey login failed: {str(e)}")
     except Exception as e:
         print(f"Unexpected error during passkey login verification: {str(e)}")
-        challenge_storage[challenge_key] = stored_challenge_str # Try to put back
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 # TODO: Add endpoints for managing passkeys (list, delete) by an authenticated user. 

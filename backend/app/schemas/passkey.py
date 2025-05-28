@@ -20,7 +20,6 @@ class PasskeyRegistrationOptionsResponse(BaseModel):
     # attestation: Optional[str] = None
     # authenticatorSelection: Optional[Dict[str, Any]] = None
     options: Dict[str, Any] # The actual options dictionary from the library
-    current_challenge: str # Store the challenge to verify against later
 
 class PasskeyRegistrationVerificationRequest(BaseModel):
     # This structure needs to match what navigator.credentials.create() resolves with,
@@ -31,7 +30,7 @@ class PasskeyRegistrationVerificationRequest(BaseModel):
     type: str
     response: Dict[str, str] # Contains attestationObject and clientDataJSON (base64url encoded)
     # client_extension_results: Optional[Dict[str, Any]] = Field(alias="clientExtensionResults", default_factory=dict)
-    # current_challenge: str # The challenge that was originally sent to the client
+    # options: Dict[str, Any] # REMOVING - This was mistakenly added. Client sends credential, not options.
 
 class PasskeyDevice(BaseModel):
     credential_id: str # Base64URL encoded version for frontend display/management
@@ -39,6 +38,9 @@ class PasskeyDevice(BaseModel):
     created_at: str
     last_used_at: Optional[str] = None
     # transports: Optional[List[str]] = None
+    response: Dict[str, str] # Contains authenticatorData, clientDataJSON, signature, userHandle (base64url encoded)
+    # client_extension_results: Optional[Dict[str, Any]] = Field(alias="clientExtensionResults", default_factory=dict)
+    # options: Dict[str, Any] # REMOVING - This was mistakenly added. Client sends credential, not options.
 
 class UserPasskeysResponse(BaseModel):
     passkeys: List[PasskeyDevice]
@@ -55,7 +57,6 @@ class PasskeyLoginOptionsResponse(BaseModel):
     # rpId: Optional[str] = None
     # allowCredentials: Optional[List[Dict[str, Any]]] = None
     options: Dict[str, Any] # The actual options dictionary from the library
-    current_challenge: str # Store the challenge to verify against later
 
 class PasskeyLoginVerificationRequest(BaseModel):
     # Matches PublicKeyCredential object from navigator.credentials.get()
@@ -65,7 +66,7 @@ class PasskeyLoginVerificationRequest(BaseModel):
     type: str
     response: Dict[str, str] # Contains authenticatorData, clientDataJSON, signature, userHandle (base64url encoded)
     # client_extension_results: Optional[Dict[str, Any]] = Field(alias="clientExtensionResults", default_factory=dict)
-    # current_challenge: str
+    # options: Dict[str, Any] # REMOVING - This was mistakenly added. Client sends credential, not options.
 
 # General Passkey response for frontend display
 class PasskeyInfo(BaseModel):

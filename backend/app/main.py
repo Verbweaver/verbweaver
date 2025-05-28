@@ -15,6 +15,7 @@ from app.db.init_db import init_db
 from app.database import engine
 from app.db.base import Base
 from app.websocket import websocket_endpoint
+from app.db.redis_client import get_redis_client, close_redis_client
 
 
 # Create database tables
@@ -54,12 +55,24 @@ app.websocket("/ws/{project_id}")(websocket_endpoint)
 @app.on_event("startup")
 async def startup_event():
     """Initialize the application on startup"""
-    # Initialize database
     await init_db()
+    if settings.REDIS_URL:
+        try:
+            get_redis_client()
+            print("Successfully connected to Redis.")
+        except ConnectionError as e:
+            print(f"Failed to connect to Redis on startup: {e}")
     
-    # Create projects directory if it doesn't exist
     import os
     os.makedirs(settings.GIT_PROJECTS_ROOT, exist_ok=True)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up application resources on shutdown"""
+    if settings.REDIS_URL:
+        await close_redis_client()
+        print("Redis client connection closed.")
 
 
 @app.get("/")

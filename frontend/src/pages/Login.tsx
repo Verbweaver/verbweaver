@@ -117,7 +117,7 @@ export default function Login() {
         throw new Error(errData.detail || 'Failed to get passkey login options');
       }
       const optionsData = await optionsResponse.json();
-      const { options: rawOptions, current_challenge } = optionsData;
+      const { options: rawOptions } = optionsData; // current_challenge is no longer sent
 
       // 2. Convert challenge and allowedCredentials IDs from base64url to ArrayBuffer
       const publicKeyCredentialRequestOptions = {
@@ -154,8 +154,8 @@ export default function Login() {
       const verifyResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/v1/auth/passkey/login-verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // The backend expects original_challenge_from_client
-        body: JSON.stringify({ ...verificationData, original_challenge_from_client: current_challenge }), 
+                  // original_challenge_from_client is no longer sent
+                  body: JSON.stringify(verificationData), 
       });
 
       if (!verifyResponse.ok) {
