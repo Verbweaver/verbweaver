@@ -25,7 +25,10 @@ from app.core.security import (
     generate_reset_token,
     ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
     MAX_LOGIN_ATTEMPTS, LOCKOUT_DURATION_MINUTES,
-    RESET_TOKEN_EXPIRE_MINUTES # Define this constant
+    RESET_TOKEN_EXPIRE_MINUTES, # Define this constant
+    add_jti_to_blacklist, 
+    is_jti_blacklisted,
+    JRL_PREFIX # If needed directly, though unlikely for auth.py
 )
 from app.schemas.auth import (
     UserCreate,
@@ -191,46 +194,74 @@ async def login(
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(
-    refresh_token_payload: str,
+async def refresh_token_endpoint(
+    request: Request, # Changed variable name from refresh_token_payload to request
     db: AsyncSession = Depends(get_db)
 ):
-    """Refresh access token using refresh token."""
+    """Refresh access token using refresh token. Implements rolling refresh tokens."""
+    body = await request.json()
+    refresh_token_payload_str = body.get("refresh_token")
+
+    if not refresh_token_payload_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Refresh token not provided in body"
+        )
+
     try:
-        payload = decode_token(refresh_token_payload)
-        user_id = payload.get("sub")
-        token_type = payload.get("type")
-        
-        if token_type != "refresh":
+        payload = decode_token(refresh_token_payload_str) # decode_token handles expiry/format
+        user_id: str = payload.get("sub")
+        token_type: str = payload.get("type")
+        jti: str = payload.get("jti")
+        exp: int = payload.get("exp") # Expiration timestamp
+
+        if not all([user_id, token_type == "refresh", jti, exp]):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token structure")
+
+        # Check if this refresh token's JTI is already blacklisted (meaning it was already used or revoked)
+        if await is_jti_blacklisted(jti):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid token type"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has been revoked or already used."
             )
         
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalars().first()
 
         if not user or not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid user"
-            )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user for refresh token")
         
+        # Blacklist the used refresh token JTI. 
+        # Its expiry in Redis should be its original expiry to prevent premature removal if clock skew exists,
+        # or simply the original token's lifetime.
+        original_exp_datetime = datetime.utcfromtimestamp(exp)
+        # If token is somehow not expired yet (decode_token should catch this), calculate remaining time.
+        # Otherwise, use a short sensible duration for the blacklist entry if already past original exp.
+        remaining_lifetime = original_exp_datetime - datetime.utcnow()
+        if remaining_lifetime.total_seconds() <= 0:
+            # If used after expiry (should not happen if decode_token is correct), blacklist for a short default period.
+            remaining_lifetime = timedelta(minutes=5) 
+        
+        await add_jti_to_blacklist(jti, remaining_lifetime)
+
+        # Issue new tokens
         new_access_token = create_access_token(subject=user.id)
-        # Optionally issue a new refresh token (rolling refresh tokens)
-        # new_refresh_token = create_refresh_token(data={"sub": user.id, "type": "refresh"})
+        new_refresh_token = create_refresh_token(subject=user.id) # New JTI will be in this one
+        
         return {
             "access_token": new_access_token,
-            "refresh_token": refresh_token_payload, # or new_refresh_token
-            "token_type": "bearer"
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer",
+            "user": UserResponse.model_validate(user) # Return user object for frontend convenience
         }
         
+    except HTTPException as e: # Re-raise HTTPExceptions from decode_token or blacklist check
+        raise e
     except Exception as e:
-        logger.error(f"Error refreshing token: {e}")
+        logger.error(f"Error refreshing token: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid refresh token: {e}",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail=f"Invalid refresh token processing: {str(e)}",
         )
 
 
@@ -244,12 +275,46 @@ async def get_current_user_info(
 
 @router.post("/logout")
 async def logout(
-    current_user: User = Depends(get_current_user)
+    request: Request,
+    current_user: User = Depends(get_current_user) # Ensures user is authenticated
 ):
-    """Logout current user."""
-    # TODO: Implement token blacklisting if needed
-    # For now, just return success as the client should discard the token
-    return {"message": "Successfully logged out"}
+    """Logout current user by blacklisting their current access token."""
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+
+    if not token:
+        # This should ideally not happen if get_current_user worked, but as a safeguard.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No token found to logout.")
+
+    try:
+        payload = decode_token(token) # decode_token itself doesn't check blacklist for this purpose
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+
+        if not jti or not exp:
+            logger.warning(f"Attempted logout with token missing JTI or EXP for user {current_user.email}")
+            # Don't fail outright, but log it. The token is unusable anyway if get_current_user passed.
+            return {"message": "Logout process initiated. Token structure issue noted."}
+
+        # Add JTI to blacklist with its remaining lifetime
+        expires_delta = datetime.utcfromtimestamp(exp) - datetime.utcnow()
+        if expires_delta.total_seconds() > 0:
+            await add_jti_to_blacklist(jti, expires_delta)
+            logger.info(f"Access token JTI {jti} for user {current_user.email} blacklisted for logout.")
+        else:
+            logger.info(f"Access token JTI {jti} for user {current_user.email} already expired. No blacklist action needed.")
+
+        return {"message": "Successfully logged out"}
+    
+    except HTTPException as e: # From decode_token (e.g. malformed, but not expired if get_current_user passed it)
+        logger.error(f"Error during logout token processing for user {current_user.email}: {e.detail}")
+        # If token is invalid, effectively logged out. Maybe return success with warning.
+        return {"message": "Logout processed with token validation issue."}
+    except Exception as e:
+        logger.error(f"Unexpected error during logout for user {current_user.email}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error during logout.")
 
 
 @router.post("/password-reset-request")

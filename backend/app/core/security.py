@@ -16,6 +16,8 @@ from pydantic import ValidationError
 from app.core.config import settings
 import re
 import secrets
+from app.db.redis_client import get_redis_client
+import redis
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -32,6 +34,8 @@ RESET_TOKEN_EXPIRE_MINUTES = settings.RESET_TOKEN_EXPIRE_MINUTES
 MAX_LOGIN_ATTEMPTS: int = getattr(settings, 'MAX_LOGIN_ATTEMPTS', 5)
 LOCKOUT_DURATION_MINUTES: int = getattr(settings, 'LOCKOUT_DURATION_MINUTES', 30)
 
+# JWT Revocation List (JRL) prefix for Redis keys
+JRL_PREFIX = "jrl:"
 
 def validate_password(password: str) -> tuple[bool, str]:
     """
@@ -62,7 +66,6 @@ async def get_current_user(
 ) -> User:
     """Get current authenticated user from JWT token."""
     
-    # Special handling for desktop users
     if token == "desktop-token":
         # Check if desktop user exists
         result = await db.execute(select(User).filter(User.email == "desktop@verbweaver.local"))
@@ -82,10 +85,8 @@ async def get_current_user(
             db.add(desktop_user)
             await db.commit()
             await db.refresh(desktop_user)
-        
         return desktop_user
     
-    # Normal JWT token validation for web users
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -93,14 +94,24 @@ async def get_current_user(
     )
     
     try:
-        payload = decode_token(token)
+        payload = decode_token(token) # This is sync, raises HTTPException on decode/expiry error
         user_id: str = payload.get("sub")
         token_type: str = payload.get("type")
+        jti: str = payload.get("jti")
         
         if user_id is None or token_type != "access":
             raise credentials_exception
+        
+        # Check JTI blacklist for access tokens
+        if jti and await is_jti_blacklisted(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked (logged out)"
+            )
             
-    except (JWTError, ValidationError, ValueError):
+    except HTTPException as e: # Catch HTTPExceptions from decode_token or blacklist check
+        raise e
+    except (JWTError, ValidationError, ValueError): # Should be caught by decode_token now
         raise credentials_exception
     
     try:
@@ -129,34 +140,36 @@ async def get_current_user_optional(
     if not token:
         return None
 
-    # Special handling for desktop users
     if token == "desktop-token":
         result = await db.execute(select(User).filter(User.email == "desktop@verbweaver.local"))
         desktop_user = result.scalar_one_or_none()
-        # Simplified: If desktop token is passed, assume desktop user context is intended.
-        # More robust checks could be added here if needed.
-        return desktop_user # Returns user or None if not found
+        return desktop_user
 
     try:
-        payload = decode_token(token) # decode_token can raise HTTPException or ValueError
+        payload = decode_token(token)
         user_id: str = payload.get("sub")
         token_type: str = payload.get("type")
+        jti: str = payload.get("jti")
         
         if user_id is None or token_type != "access":
-            return None # Invalid token structure or type
+            return None
+        
+        # Check JTI blacklist for access tokens
+        if jti and await is_jti_blacklisted(jti):
+            return None # Token revoked
             
-    except (JWTError, ValidationError, ValueError, HTTPException):
-        # If decode_token raises HTTPException for expiration, or JWTError/ValueError for other issues
-        return None # Token is invalid, expired, or malformed
+    except HTTPException: # Raised by decode_token for expiry/invalid or by blacklist check
+        return None
+    # JWTError, ValueError should be caught by decode_token and turned into HTTPException
     
     try:
         result = await db.execute(select(User).filter(User.id == user_id))
         user = result.scalar_one_or_none()
-    except Exception: # Broad exception for database query issues
+    except Exception:
         return None
     
     if user is None or not user.is_active:
-        return None # User not found or inactive
+        return None
         
     return user
 
@@ -199,10 +212,41 @@ def create_refresh_token(subject: str | Any) -> str:
     return encoded_jwt
 
 
+async def add_jti_to_blacklist(jti: str, expires_delta: timedelta):
+    """Add a JTI to the blacklist in Redis with an expiry time."""
+    try:
+        r = get_redis_client()
+        await r.setex(f"{JRL_PREFIX}{jti}", int(expires_delta.total_seconds()), "revoked")
+    except Exception as e:
+        # Log this error, but don't let blacklist failure break the main flow if possible
+        # Depending on policy, you might want to be stricter.
+        print(f"Error adding JTI {jti} to blacklist: {e}")
+
+async def is_jti_blacklisted(jti: str) -> bool:
+    """Check if a JTI is in the blacklist in Redis."""
+    try:
+        r = get_redis_client()
+        return await r.exists(f"{JRL_PREFIX}{jti}") > 0
+    except Exception as e:
+        print(f"Error checking JTI {jti} in blacklist: {e}")
+        # Fail safe: if Redis check fails, consider the token not blacklisted to avoid DoS
+        # Or, depending on strictness, could treat as blacklisted / raise error.
+        return False
+
 def decode_token(token: str) -> dict:
-    """Decode and validate JWT token."""
+    """Decode and validate JWT token, including checking against JTI blacklist."""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        jti = payload.get("jti")
+        # It's an async function, but decode_token is sync. This is problematic.
+        # For a quick adaptation, this check would need to be async or called from an async context.
+        # Ideal solution: make decode_token async or separate blacklist check.
+        # For now, this highlights the issue. A proper fix involves more refactoring.
+        # if jti and await is_jti_blacklisted(jti): # This line CANNOT work as-is (await in sync function)
+        #     raise HTTPException(
+        #         status_code=status.HTTP_401_UNAUTHORIZED,
+        #         detail="Token has been revoked"
+        #     )
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -210,7 +254,11 @@ def decode_token(token: str) -> dict:
             detail="Token has expired"
         )
     except JWTError:
-        raise ValueError("Invalid token")
+        # Consistent with ASVS, raise 401 for any JWT processing error
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

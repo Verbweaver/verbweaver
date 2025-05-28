@@ -182,19 +182,41 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
   },
   logout: async () => {
     if (isElectron) return console.log('Desktop user: logout N/A');
-    const token = get().accessToken;
-    if (token) try { await api.post('/auth/logout'); } catch (e) { console.error('Logout API call failed', e); }
+    const token = get().accessToken; // Get current access token to allow backend to blacklist it
+    if (token) { // Only call API if token exists
+        try { 
+            // No need to pass the token in body, backend extracts from header via get_current_user dependency
+            await api.post('/auth/logout'); 
+        } catch (e) { 
+            console.error('Logout API call failed', e); 
+            // Even if API fails, client-side logout should proceed
+        }
+    }
     set({ ...initialWebState, isHydrated: get().isHydrated }); // Reset, keep hydration status
   },
   refreshAccessToken: async () => {
     if (isElectron) return console.log('Desktop user: refresh N/A');
     const refreshTokenVal = get().refreshToken;
-    if (!refreshTokenVal) throw new Error('No refresh token');
+    if (!refreshTokenVal) {
+        set({ ...initialWebState, isAuthenticated: false, isHydrated: get().isHydrated }); // Ensure logout state if no refresh token
+        throw new Error('No refresh token available');
+    }
     try {
+      // Send refresh token in the request body as per backend update
       const response = await authApi.post('/auth/refresh', { refresh_token: refreshTokenVal });
-      set({ accessToken: response.data.access_token, refreshToken: response.data.refresh_token });
+      // The backend now returns the new refresh_token in the response along with access_token and user
+      set({ 
+        accessToken: response.data.access_token,
+        refreshToken: response.data.refresh_token, // Update with the new refresh token
+        user: response.data.user, // Update user details if backend sends them
+        isAuthenticated: true, // Should remain true
+        isLoading: false, // Reset loading state
+        error: null // Clear any previous errors
+      });
     } catch (err) {
-      set({ ...initialWebState, isAuthenticated: false, isHydrated: get().isHydrated }); // Reset on failure, keep hydration
+      console.error("Token refresh failed:", err);
+      // On failure, logout the user fully by resetting state
+      set({ ...initialWebState, isAuthenticated: false, isHydrated: get().isHydrated }); 
       throw err;
     }
   },
