@@ -12,10 +12,11 @@ interface NodeContextMenuProps {
   onCreateNode: (type: string, position?: { x: number; y: number }) => void
   onDeleteNode: (nodeId: string) => void
   onCreateChildNode?: (parentPath: string) => void
+  onEditNode?: (nodeId: string) => void
   onClose: () => void
 }
 
-function NodeContextMenu({ x, y, nodeId, isFolder, onCreateNode, onDeleteNode, onCreateChildNode, onClose }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, isFolder, onCreateNode, onDeleteNode, onCreateChildNode, onEditNode, onClose }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -143,6 +144,7 @@ function NodeContextMenu({ x, y, nodeId, isFolder, onCreateNode, onDeleteNode, o
           <button
             onClick={() => {
               // TODO: Open in editor
+              onEditNode && onEditNode(nodeId)
               onClose()
             }}
             className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"

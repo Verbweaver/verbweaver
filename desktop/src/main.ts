@@ -160,7 +160,13 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
         PYTHONUNBUFFERED: '1',
         DATABASE_URL: `sqlite+aiosqlite:///${join(app.getPath('userData'), 'verbweaver.db')}`,
         SECRET_KEY: store.get('secretKey', 'default-secret-key-change-in-production') as string,
-        BACKEND_CORS_ORIGINS: `http://localhost:3000,http://localhost:${port},file://`
+        BACKEND_CORS_ORIGINS: JSON.stringify([
+          'http://localhost:3000',
+          'http://localhost:3001',
+          `http://localhost:${port}`,
+          `http://127.0.0.1:${port}`,
+          'file://'
+        ])
       },
       shell: process.platform === 'win32'
     });

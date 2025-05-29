@@ -1,21 +1,26 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { X } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
+import { useNodeStore } from '../../store/nodeStore'
 import { format } from 'date-fns'
-import { TaskStatus } from '@verbweaver/shared'
+import { TaskState, TaskStatus, MarkdownMetadata } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 
 interface CreateTaskModalProps {
-  projectId: string
+  projectId?: string
   defaultStatus: string
   onClose: () => void
 }
 
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+
 function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalProps) {
   const { createTask } = useTaskStore()
+  const { createNode } = useNodeStore()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium')
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
   const [dueDate, setDueDate] = useState('')
   const [assignee, setAssignee] = useState('')
   const [tags, setTags] = useState('')
@@ -31,18 +36,51 @@ function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalP
 
     setIsSubmitting(true)
     try {
-      await createTask(parseInt(projectId), {
-        title,
-        description,
-        status: defaultStatus as TaskStatus,
-        priority: priority as any,
-        assignee,
-        tags: [],
-        dueDate: dueDate ? new Date(dueDate) : undefined
-      })
-      onClose()
+      if (isElectron) {
+        // In Electron mode, create a node with task metadata
+        const metadata: Partial<MarkdownMetadata> = {
+          title,
+          description,
+          tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+          task: {
+            status: defaultStatus as TaskState,
+            priority: priority as 'low' | 'medium' | 'high',
+            assignee: assignee || undefined,
+            dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+            completedDate: undefined
+          }
+        }
+        
+        await createNode('nodes', title, 'file', metadata, `# ${title}\n\n${description || ''}`)
+        toast.success('Task created')
+        onClose()
+      } else if (projectId) {
+        // Web mode - use the existing task store
+        // Convert TaskState to TaskStatus
+        const statusMap: Record<string, TaskStatus> = {
+          'todo': TaskStatus.TODO,
+          'in-progress': TaskStatus.IN_PROGRESS,
+          'review': TaskStatus.REVIEW,
+          'done': TaskStatus.DONE,
+          'archived': TaskStatus.DONE // map archived to done
+        }
+        
+        await createTask(parseInt(projectId), {
+          title,
+          description,
+          status: statusMap[defaultStatus] || TaskStatus.TODO,
+          priority: priority as any,
+          assignee,
+          tags: [],
+          dueDate: dueDate ? new Date(dueDate) : undefined
+        })
+        onClose()
+      } else {
+        toast.error('No project context available')
+      }
     } catch (error) {
-      // Error handling is done in the store
+      console.error('Failed to create task:', error)
+      toast.error('Failed to create task')
     } finally {
       setIsSubmitting(false)
     }
@@ -100,7 +138,6 @@ function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalP
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
-                <option value="urgent">Urgent</option>
               </select>
             </div>
 
@@ -160,4 +197,4 @@ function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalP
   )
 }
 
-export default CreateTaskModal 
+export default CreateTaskModal

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import ReactFlow, {
   Node,
   Edge,
@@ -34,6 +35,7 @@ const nodeTypes: NodeTypes = {
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
 
 function GraphView() {
+  const navigate = useNavigate()
   const { currentProject, currentProjectPath } = useProjectStore()
   const { nodes: verbweaverNodes, loadNodes, updateNode, createNode, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
   
@@ -251,23 +253,37 @@ function GraphView() {
   // Handle folder creation
   const handleCreateFolder = useCallback(
     async (folderName: string) => {
-      if (!folderName || !currentProject) return
+      if (!folderName) return
       
       try {
-        const response = await apiClient.post(`/projects/${currentProject?.id}/folders`, {
-          parent_path: 'nodes',
-          folder_name: folderName
-        })
-        
-        if (response.status !== 200) throw new Error('Failed to create folder')
-        
-        await loadNodes()
-        toast.success('Folder created')
+        if (isElectron && currentProjectPath && window.electronAPI) {
+          // In Electron mode, create a folder by creating a hidden file inside it
+          // This will automatically create the directory structure
+          const dummyFilePath = `nodes/${folderName}/.gitkeep`
+          const absolutePath = `${currentProjectPath}/${dummyFilePath}`.replace(/\/+/g, '/')
+          await window.electronAPI.writeFile(absolutePath, '')
+          await loadNodes()
+          toast.success('Folder created')
+        } else if (!isElectron && currentProject?.id) {
+          // Web mode - use API
+          const response = await apiClient.post(`/projects/${currentProject.id}/folders`, {
+            parent_path: 'nodes',
+            folder_name: folderName
+          })
+          
+          if (response.status !== 200) throw new Error('Failed to create folder')
+          
+          await loadNodes()
+          toast.success('Folder created')
+        } else {
+          toast.error('No project context available')
+        }
       } catch (error) {
+        console.error('Failed to create folder:', error)
         toast.error('Failed to create folder')
       }
     },
-    [currentProject, loadNodes]
+    [currentProject, currentProjectPath, loadNodes]
   )
 
   // Handle creating child node in folder
@@ -375,6 +391,16 @@ function GraphView() {
       setContextMenu(null)
     },
     [deleteNode]
+  )
+
+  // Handle editing node
+  const handleEditNode = useCallback(
+    (nodeId: string) => {
+      // Navigate to editor with the file path
+      navigate(`/editor/${encodeURIComponent(nodeId)}`)
+      setContextMenu(null)
+    },
+    [navigate]
   )
 
   // Handle deleting edge
@@ -489,6 +515,7 @@ function GraphView() {
           isFolder={contextMenu.isFolder}
           onCreateNode={handleCreateNode}
           onDeleteNode={handleDeleteNode}
+          onEditNode={handleEditNode}
           onCreateChildNode={handleCreateChildNode}
           onClose={() => setContextMenu(null)}
         />

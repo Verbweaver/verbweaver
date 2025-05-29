@@ -278,7 +278,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
 
     const sanitizedName = sanitizeFilename(name);
     const filename = sanitizedName.endsWith('.md') ? sanitizedName : `${sanitizedName}.md`;
-    const fullPath = parentPath ? `${parentPath}/${filename}` : filename;
+    const relativePath = parentPath ? `${parentPath}/${filename}` : filename;
     
     const metadata: MarkdownMetadata = {
       id: generateId(),
@@ -293,20 +293,22 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     const fileContent = stringifyMarkdownWithFrontMatter(metadata, content);
     
     try {
-      if (isElectron && window.electronAPI) {
-        await window.electronAPI.writeFile(fullPath, fileContent);
-      } else {
+      if (isElectron && window.electronAPI && currentProjectPath) {
+        // Build absolute path for Electron
+        const absolutePath = joinPaths(currentProjectPath, relativePath);
+        await window.electronAPI.writeFile(absolutePath, fileContent);
+      } else if (!isElectron) {
         // Web API call
         await fetch(`/api/projects/${useProjectStore.getState().currentProject?.id}/nodes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: fullPath, metadata, content })
+          body: JSON.stringify({ path: relativePath, metadata, content })
         });
       }
       
       // Create the node object
       const node: VerbweaverNode = {
-        path: fullPath,
+        path: relativePath,
         name: filename,
         isDirectory: false,
         isMarkdown: true,
@@ -320,7 +322,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       
       // Update the store
       set(state => ({
-        nodes: new Map(state.nodes).set(fullPath, node)
+        nodes: new Map(state.nodes).set(relativePath, node)
       }));
       
       toast.success(`Created ${metadata.title}`);
@@ -332,6 +334,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   updateNode: async (path: string, updates: { metadata?: Partial<MarkdownMetadata>, content?: string }) => {
+    const { currentProjectPath } = useProjectStore.getState();
     const node = get().nodes.get(path);
     if (!node) throw new Error('Node not found');
     
@@ -347,9 +350,11 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       const fileContent = stringifyMarkdownWithFrontMatter(updatedMetadata, updatedContent);
       
       try {
-        if (isElectron && window.electronAPI) {
-          await window.electronAPI.writeFile(path, fileContent);
-        } else {
+        if (isElectron && window.electronAPI && currentProjectPath) {
+          // Build absolute path for Electron
+          const absolutePath = path.startsWith(currentProjectPath) ? path : joinPaths(currentProjectPath, path);
+          await window.electronAPI.writeFile(absolutePath, fileContent);
+        } else if (!isElectron) {
           await fetch(`/api/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -381,9 +386,11 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       const metadataContent = stringifyMarkdownWithFrontMatter(updatedMetadata, '');
       
       try {
-        if (isElectron && window.electronAPI) {
-          await window.electronAPI.writeFile(metadataPath, metadataContent);
-        } else {
+        if (isElectron && window.electronAPI && currentProjectPath) {
+          // Build absolute path for Electron
+          const absoluteMetadataPath = joinPaths(currentProjectPath, metadataPath);
+          await window.electronAPI.writeFile(absoluteMetadataPath, metadataContent);
+        } else if (!isElectron) {
           await fetch(`/api/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}/metadata`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -412,16 +419,21 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   deleteNode: async (path: string) => {
+    const { currentProjectPath } = useProjectStore.getState();
+    
     try {
-      if (isElectron && window.electronAPI) {
-        await window.electronAPI.deleteFile(path);
+      if (isElectron && window.electronAPI && currentProjectPath) {
+        // Build absolute path for Electron
+        const absolutePath = path.startsWith(currentProjectPath) ? path : joinPaths(currentProjectPath, path);
+        await window.electronAPI.deleteFile(absolutePath);
         // Also try to delete metadata file if it exists
         try {
-          await window.electronAPI.deleteFile(`${path}.metadata.md`);
+          const absoluteMetadataPath = joinPaths(currentProjectPath, `${path}.metadata.md`);
+          await window.electronAPI.deleteFile(absoluteMetadataPath);
         } catch (e) {
           // Ignore error if metadata file doesn't exist
         }
-      } else {
+      } else if (!isElectron) {
         await fetch(`/api/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}`, {
           method: 'DELETE'
         });
