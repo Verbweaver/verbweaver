@@ -50,6 +50,13 @@ function GraphView() {
   const projectId = currentProject?.id?.toString()
   useWebSocket(projectId)
 
+  // Load nodes when component mounts or project changes
+  useEffect(() => {
+    if (currentProject) {
+      loadNodes()
+    }
+  }, [currentProject, loadNodes])
+
   // Load and convert nodes when project changes or nodes update
   useEffect(() => {
     if (currentProject) {
@@ -57,15 +64,45 @@ function GraphView() {
       const flowNodes: Node[] = []
       const flowEdges: Edge[] = []
       
+      // Check if we need to add a virtual nodes folder
+      const hasNodesContent = Array.from(verbweaverNodes.keys()).some(path => path.startsWith('nodes/'))
+      if (hasNodesContent && !verbweaverNodes.has('nodes')) {
+        // Add virtual root nodes folder
+        flowNodes.push({
+          id: 'nodes',
+          type: 'custom',
+          position: { x: 250, y: 50 },
+          data: {
+            label: 'nodes',
+            type: 'folder',
+            metadata: { title: 'nodes', type: 'folder' },
+            hasTask: false,
+            taskStatus: undefined,
+            isDirectory: true,
+            isMarkdown: false,
+          },
+        })
+      }
+      
       verbweaverNodes.forEach((node) => {
+        // Skip the nodes folder itself if it exists in the map
+        if (node.path === 'nodes') {
+          // Use existing position if available
+          const existingNode = flowNodes.find(n => n.id === 'nodes')
+          if (existingNode && node.metadata.position) {
+            existingNode.position = node.metadata.position
+          }
+          return
+        }
+        
         // Create flow node
         flowNodes.push({
           id: node.path,
           type: 'custom',
           position: node.metadata.position || { x: Math.random() * 500, y: Math.random() * 500 },
           data: {
-            label: node.metadata.title,
-            type: node.metadata.type,
+            label: node.metadata.title || node.name,
+            type: node.isDirectory ? 'folder' : (node.metadata.type || 'document'),
             metadata: node.metadata,
             hasTask: node.hasTask,
             taskStatus: node.taskStatus,
@@ -75,10 +112,17 @@ function GraphView() {
         })
         
         // Create hard link edges (parent-child)
-        if (node.hardLinks.parent) {
+        let parentPath = node.hardLinks.parent
+        
+        // Fix parent path for items directly in nodes folder
+        if (node.path.startsWith('nodes/') && !node.path.substring(6).includes('/')) {
+          parentPath = 'nodes'
+        }
+        
+        if (parentPath) {
           flowEdges.push({
-            id: `hard-${node.hardLinks.parent}-${node.path}`,
-            source: node.hardLinks.parent,
+            id: `hard-${parentPath}-${node.path}`,
+            source: parentPath,
             target: node.path,
             type: 'straight',
             style: { stroke: '#6b7280', strokeWidth: 2 },

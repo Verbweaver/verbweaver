@@ -112,9 +112,11 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
     return null;
   }
 
-  const name = filePath.split('/').pop() || '';
+  // Normalize the file path to use forward slashes
+  const normalizedPath = filePath.replace(/\\/g, '/');
+  const name = normalizedPath.split('/').pop() || '';
   const isMarkdown = name.endsWith('.md');
-  const metadataPath = isMarkdown ? filePath : `${filePath}.metadata.md`;
+  const metadataPath = isMarkdown ? normalizedPath : `${normalizedPath}.metadata.md`;
   
   let metadata: MarkdownMetadata = {
     id: generateId(),
@@ -126,9 +128,9 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
   
   try {
     // Resolve absolute paths for file operations
-    const absolutePath = filePath.startsWith(currentProjectPath) 
-      ? filePath 
-      : joinPaths(currentProjectPath, filePath);
+    const absolutePath = normalizedPath.startsWith(currentProjectPath) 
+      ? normalizedPath 
+      : joinPaths(currentProjectPath, normalizedPath);
     
     const absoluteMetadataPath = metadataPath.startsWith(currentProjectPath)
       ? metadataPath
@@ -151,27 +153,27 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
       }
     }
   } catch (error) {
-    console.error(`Failed to read file ${filePath}:`, error);
+    console.error(`Failed to read file ${normalizedPath}:`, error);
   }
   
-  // Build hard links
-  const parent = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : null;
+  // Build hard links - properly calculate parent
+  const parent = normalizedPath.includes('/') ? normalizedPath.substring(0, normalizedPath.lastIndexOf('/')) : null;
   let children: string[] = [];
   
   if (isDirectory) {
     try {
-      const absoluteDirPath = filePath.startsWith(currentProjectPath)
-        ? filePath
-        : joinPaths(currentProjectPath, filePath);
+      const absoluteDirPath = normalizedPath.startsWith(currentProjectPath)
+        ? normalizedPath
+        : joinPaths(currentProjectPath, normalizedPath);
       const dirContents = await window.electronAPI.readDirectory(absoluteDirPath);
-      children = dirContents.map(item => joinPaths(filePath, item.name));
+      children = dirContents.map(item => joinPaths(normalizedPath, item.name).replace(/\\/g, '/'));
     } catch (error) {
-      console.error(`Failed to read directory ${filePath}:`, error);
+      console.error(`Failed to read directory ${normalizedPath}:`, error);
     }
   }
   
   return {
-    path: filePath,
+    path: normalizedPath,
     name,
     isDirectory,
     isMarkdown,
@@ -196,21 +198,33 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       return;
     }
 
+    console.log('[NodeStore] Loading nodes for project:', currentProjectPath || currentProject?.id);
     set({ isLoading: true, error: null });
 
     try {
       if (isElectron && currentProjectPath && window.electronAPI) {
         // Electron: Read files from filesystem
         const files = await window.electronAPI.readProjectFiles(currentProjectPath);
+        console.log('[NodeStore] All files found:', files.map(f => f.path));
         const nodes = new Map<string, VerbweaverNode>();
         
         for (const file of files) {
+          // Only process files within the nodes/ directory
+          // Normalize path separators for cross-platform compatibility
+          const normalizedPath = file.path.replace(/\\/g, '/');
+          if (!normalizedPath.startsWith('nodes/') && normalizedPath !== 'nodes') {
+            console.log('[NodeStore] Skipping file outside nodes/:', file.path);
+            continue;
+          }
+          
+          console.log('[NodeStore] Processing node file:', file.path);
           const node = await loadNodeFromFile(file.path, file.isDirectory);
           if (node) {
             nodes.set(node.path, node);
           }
         }
         
+        console.log('[NodeStore] Loaded nodes:', Array.from(nodes.keys()));
         set({ nodes, isLoading: false });
       } else if (currentProject) {
         // Web: Fetch from API

@@ -511,7 +511,8 @@ function setupIpcHandlers() {
           // Skip hidden files and common directories
           if (item.name.startsWith('.') || item.name === 'node_modules') continue;
           
-          const itemPath = path.join(relativePath, item.name);
+          // Normalize path to always use forward slashes
+          const itemPath = path.join(relativePath, item.name).replace(/\\/g, '/');
           files.push({
             path: itemPath,
             isDirectory: item.isDirectory()
@@ -772,10 +773,15 @@ task:
     async function processDirectory(currentDir: string, relativeBaseDir: string) {
       const entries = await fs.readdir(currentDir, { withFileTypes: true });
       for (const entry of entries) {
+        // Skip hidden files and special directories
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+
         const fullEntryPath = path.join(currentDir, entry.name);
-        const relativeEntryPath = path.join(relativeBaseDir, entry.name).replace(/\\/g, '/'); // Normalize to forward slashes for ID
+        // Make path relative to nodes directory for the graph
+        const relativeEntryPath = path.join(relativeBaseDir, entry.name).replace(/\\/g, '/');
 
         if (entry.isDirectory()) {
+          // Only process the directory if it's within nodes
           await processDirectory(fullEntryPath, relativeEntryPath);
         } else if (entry.isFile() && entry.name.endsWith('.md')) {
           try {
@@ -784,30 +790,33 @@ task:
             
             const nodeName = frontmatter.title || entry.name.replace(/\.md$/, '');
             const nodeType = frontmatter.type || 'document';
-            const nodePosition = frontmatter.position || undefined; // {x, y} or undefined
+            const nodePosition = frontmatter.position || undefined;
 
             graphNodes.push({
-              id: relativeEntryPath, 
+              id: relativeEntryPath,
               label: nodeName,
               type: nodeType,
               position: nodePosition,
-              data: frontmatter, // Send only frontmatter as 'data' for clarity, content is separate if needed by client
-              filePath: fullEntryPath 
+              data: frontmatter,
+              filePath: fullEntryPath,
+              created: frontmatter.created || new Date().toISOString(),
+              modified: frontmatter.modified || new Date().toISOString(),
+              tags: frontmatter.tags || [],
+              status: frontmatter.status
             });
 
             // Edge extraction from frontmatter.links
             if (frontmatter.links && Array.isArray(frontmatter.links)) {
               frontmatter.links.forEach((linkTarget: string) => {
                 if (linkTarget && typeof linkTarget === 'string') {
-                  // Ensure targetNodeId is normalized (e.g. relative path from nodes dir)
-                  // This assumes linkTarget is already a valid node ID (relative path)
                   const targetNodeId = linkTarget.replace(/\\/g, '/');
                   const edgeId = `fm-${relativeEntryPath}-${targetNodeId}`.replace(/[^a-zA-Z0-9-_]/g, '-');
                   graphEdges.push({
                     id: edgeId,
                     source: relativeEntryPath,
-                    target: targetNodeId, 
-                    label: frontmatter.linkLabel || 'links to' // Allow custom label from FM
+                    target: targetNodeId,
+                    type: 'soft',
+                    label: frontmatter.linkLabel || 'links to'
                   });
                 }
               });
@@ -818,24 +827,21 @@ task:
             let match;
             while ((match = wikilinkRegex.exec(mdContent)) !== null) {
               const linkContent = match[1];
-              // For now, assume linkContent is a filename like 'target-node.md' or 'folder/target-node.md'
-              // relative to the 'nodes' directory.
-              // More complex resolution (e.g., by title) would require a pre-scan of all nodes.
               let targetNodeId = linkContent;
               if (!targetNodeId.endsWith('.md')) {
-                targetNodeId += '.md'; // Assume it's a node name, append .md
+                targetNodeId += '.md';
               }
-              targetNodeId = targetNodeId.replace(/\\/g, '/'); // Normalize
+              targetNodeId = targetNodeId.replace(/\\/g, '/');
               
-              // Basic check to avoid self-loops from this simple regex pass, though graph might allow them.
               if (relativeEntryPath !== targetNodeId) {
-                  const edgeId = `wiki-${relativeEntryPath}-${targetNodeId}`.replace(/[^a-zA-Z0-9-_]/g, '-');
-                  graphEdges.push({
-                    id: edgeId,
-                    source: relativeEntryPath,
-                    target: targetNodeId,
-                    label: 'wikilink'
-                  });
+                const edgeId = `wiki-${relativeEntryPath}-${targetNodeId}`.replace(/[^a-zA-Z0-9-_]/g, '-');
+                graphEdges.push({
+                  id: edgeId,
+                  source: relativeEntryPath,
+                  target: targetNodeId,
+                  type: 'soft',
+                  label: 'wikilink'
+                });
               }
             }
 
@@ -847,6 +853,7 @@ task:
     }
 
     try {
+      // Start processing from the nodes directory with empty relative base
       await processDirectory(nodesDir, '');
       console.log(`[graph:loadData] Loaded ${graphNodes.length} nodes and ${graphEdges.length} edges.`);
       return { nodes: graphNodes, edges: graphEdges };
@@ -931,11 +938,16 @@ task:
       throw new Error('No project path set. Cannot create node from template.');
     }
 
-    // Ensure newParentRelativePath doesn't start with 'nodes/' as it's already relative to nodes dir
+    // Ensure newParentRelativePath is relative to nodes directory
     const cleanParentPath = newParentRelativePath.replace(/^nodes\/?/, '');
     
     const nodesDir = path.join(projectPath, 'nodes');
     const newNodesParentDir = path.join(nodesDir, cleanParentPath);
+    
+    // Create nodes directory and parent directory if they don't exist
+    if (!existsSync(nodesDir)) {
+      await fs.mkdir(nodesDir, { recursive: true });
+    }
     if (!existsSync(newNodesParentDir)) {
       await fs.mkdir(newNodesParentDir, { recursive: true });
     }
@@ -952,26 +964,48 @@ task:
     const now = new Date().toISOString();
     const finalNewNodeName = newNodeName || templateFrontmatter.title || 'Untitled Node from Template';
     
-    const newNodeFrontmatter:any = {
+    interface NodeFrontmatter {
+      id: string;
+      title: string;
+      type?: string;
+      created: string;
+      modified: string;
+      description?: string;
+      position?: { x: number; y: number };
+      tags?: string[];
+      status?: string;
+      [key: string]: any; // Allow other properties from template
+    }
+
+    const newNodeFrontmatter: NodeFrontmatter = {
       ...templateFrontmatter, // Start with template's metadata
-      id: `node-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // Simple unique ID
+      id: `node-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       title: finalNewNodeName,
       created: now,
       modified: now,
       ...(initialMetadata || {}), // Apply overrides and additions like position
     };
-    // Ensure critical fields from template are not overridden by empty initialMetadata
-    if (initialMetadata && initialMetadata.title === undefined && templateFrontmatter.title) newNodeFrontmatter.title = templateFrontmatter.title;
-    if (initialMetadata && initialMetadata.type === undefined && templateFrontmatter.type) newNodeFrontmatter.type = templateFrontmatter.type;
+
+    // Ensure we don't lose the user-provided title
+    // Only use template title if no new name was provided
+    if (!newNodeName && templateFrontmatter.title) {
+      newNodeFrontmatter.title = templateFrontmatter.title;
+    } else if (newNodeName) {
+      newNodeFrontmatter.title = newNodeName;
+    }
+    
+    // Ensure type from template is preserved if not overridden
+    if (initialMetadata && initialMetadata.type === undefined && templateFrontmatter.type) {
+      newNodeFrontmatter.type = templateFrontmatter.type;
+    }
 
     // 3. Process template content (replace placeholders)
     let newNodeMarkdownContent = templateMarkdownContent || '';
     newNodeMarkdownContent = newNodeMarkdownContent.replace(/\{title\}/g, newNodeFrontmatter.title);
-    // Add more placeholder replacements if needed, e.g., {description}
     if (newNodeFrontmatter.description) {
       newNodeMarkdownContent = newNodeMarkdownContent.replace(/\{description\}/g, newNodeFrontmatter.description);
     } else {
-      newNodeMarkdownContent = newNodeMarkdownContent.replace(/\{description\}/g, ''); // remove placeholder if no description
+      newNodeMarkdownContent = newNodeMarkdownContent.replace(/\{description\}/g, '');
     }
 
     // 4. Determine new node's file path (ensure unique name)
@@ -991,21 +1025,17 @@ task:
     try {
       await fs.writeFile(newFilePathAbsolute, newFileContent, 'utf8');
       
-      // Create relative path correctly - should be relative to project root
-      // If in root nodes dir, just use nodes/filename.md
-      // If in subdirectory, use nodes/subdir/filename.md
-      const finalRelativePath = cleanParentPath 
-        ? path.join('nodes', cleanParentPath, newFilename).replace(/\\/g, '/')
-        : path.join('nodes', newFilename).replace(/\\/g, '/');
-
+      // Create relative path correctly - should be relative to nodes directory
+      const relativeToNodesDir = path.relative(nodesDir, newFilePathAbsolute).replace(/\\/g, '/');
+      
       return {
-        id: finalRelativePath, // Use relative path as ID, consistent with graph:loadData
+        id: relativeToNodesDir,
         label: newNodeFrontmatter.title,
         title: newNodeFrontmatter.title,
         type: newNodeFrontmatter.type || 'document',
         position: newNodeFrontmatter.position,
         data: newNodeFrontmatter,
-        filePath: newFilePathAbsolute, // Absolute path
+        filePath: newFilePathAbsolute,
         created: newNodeFrontmatter.created,
         modified: newNodeFrontmatter.modified,
         tags: newNodeFrontmatter.tags || [],
