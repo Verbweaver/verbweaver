@@ -13,10 +13,10 @@ import ReactFlow, {
   MarkerType,
 } from 'react-flow-renderer'
 import { useProjectStore } from '../store/projectStore'
-import { useGraphStore } from '../store/graphStore'
+import { useNodeStore } from '../store/nodeStore'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
-import { GraphNode, GraphEdge, NODE_TYPES } from '@verbweaver/shared'
+import { VerbweaverNode, NODE_TYPES } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 
 // Define custom node types
@@ -26,81 +26,112 @@ const nodeTypes: NodeTypes = {
 
 function GraphView() {
   const { currentProject } = useProjectStore()
-  const { loadGraph, saveNodePosition, createNode, deleteNode, createEdge, deleteEdge } = useGraphStore()
+  const { nodes: verbweaverNodes, loadNodes, updateNode, createNode, deleteNode, createSoftLink } = useNodeStore()
   
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string } | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
 
-  // Load graph data when project changes
+  // Load and convert nodes when project changes
   useEffect(() => {
     if (currentProject) {
-      loadGraph(currentProject.id).then(({ nodes: graphNodes, edges: graphEdges }) => {
-        // Convert GraphNode to React Flow Node
-        const flowNodes = graphNodes.map((node: GraphNode) => ({
-          id: node.id,
-          type: 'custom',
-          position: node.position || { x: Math.random() * 500, y: Math.random() * 500 },
-          data: {
-            label: node.title,
-            type: node.type,
-            metadata: node.metadata,
-          },
-        }))
+      loadNodes().then(() => {
+        // Convert VerbweaverNodes to React Flow nodes and edges
+        const flowNodes: Node[] = []
+        const flowEdges: Edge[] = []
         
-        // Convert GraphEdge to React Flow Edge
-        const flowEdges = graphEdges.map((edge: GraphEdge) => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          type: edge.type === 'hard' ? 'straight' : 'smoothstep',
-          animated: edge.style?.animated,
-          style: edge.style,
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-          },
-          label: edge.label,
-        }))
+        verbweaverNodes.forEach((node) => {
+          // Create flow node
+          flowNodes.push({
+            id: node.path,
+            type: 'custom',
+            position: node.metadata.position || { x: Math.random() * 500, y: Math.random() * 500 },
+            data: {
+              label: node.metadata.title,
+              type: node.metadata.type,
+              metadata: node.metadata,
+              hasTask: node.hasTask,
+              taskStatus: node.taskStatus,
+            },
+          })
+          
+          // Create hard link edges (parent-child)
+          if (node.hardLinks.parent) {
+            flowEdges.push({
+              id: `hard-${node.hardLinks.parent}-${node.path}`,
+              source: node.hardLinks.parent,
+              target: node.path,
+              type: 'straight',
+              style: { stroke: '#6b7280', strokeWidth: 2 },
+              markerEnd: {
+                type: MarkerType.ArrowClosed,
+              },
+              label: 'contains',
+            })
+          }
+          
+          // Create soft link edges
+          node.softLinks.forEach((targetId) => {
+            // Find target node by ID
+            const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
+            if (targetNode) {
+              flowEdges.push({
+                id: `soft-${node.path}-${targetNode.path}`,
+                source: node.path,
+                target: targetNode.path,
+                type: 'smoothstep',
+                animated: true,
+                style: { stroke: '#3b82f6', strokeWidth: 2 },
+                markerEnd: {
+                  type: MarkerType.ArrowClosed,
+                },
+              })
+            }
+          })
+        })
         
         setNodes(flowNodes)
         setEdges(flowEdges)
       })
     }
-  }, [currentProject, loadGraph, setNodes, setEdges])
+  }, [currentProject, loadNodes, verbweaverNodes, setNodes, setEdges])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
     (_: any, node: Node) => {
-      if (currentProject) {
-        saveNodePosition(currentProject.id, node.id, node.position)
-      }
+      updateNode(node.id, {
+        metadata: { position: node.position }
+      }).catch(() => {
+        toast.error('Failed to save node position')
+      })
     },
-    [currentProject, saveNodePosition]
+    [updateNode]
   )
 
   // Handle new connections
   const onConnect = useCallback(
     (params: Connection) => {
-      if (!currentProject || !params.source || !params.target) return
+      if (!params.source || !params.target) return
       
-      const newEdge: GraphEdge = {
-        id: `${params.source}-${params.target}`,
-        source: params.source,
-        target: params.target,
-        type: 'soft',
-      }
-      
-      createEdge(currentProject.id, newEdge)
+      createSoftLink(params.source, params.target)
         .then(() => {
-          setEdges((eds) => addEdge(params, eds))
-          toast.success('Connection created')
+          setEdges((eds) => addEdge({
+            ...params,
+            type: 'smoothstep',
+            animated: true,
+            style: { stroke: '#3b82f6', strokeWidth: 2 },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+            },
+          }, eds))
+          toast.success('Link created')
         })
         .catch(() => {
-          toast.error('Failed to create connection')
+          toast.error('Failed to create link')
         })
     },
-    [currentProject, createEdge, setEdges]
+    [createSoftLink, setEdges]
   )
 
   // Handle context menu
@@ -137,61 +168,52 @@ function GraphView() {
   // Handle creating new node
   const handleCreateNode = useCallback(
     async (type: string, position?: { x: number; y: number }) => {
-      if (!currentProject) return
-      
-      const newNode: GraphNode = {
-        id: `node-${Date.now()}`,
-        type: type as any,
-        title: `New ${type}`,
-        metadata: {
-          id: `node-${Date.now()}`,
-          title: `New ${type}`,
-          type: type as any,
-          created: new Date().toISOString(),
-        },
-        position: position || { x: 250, y: 250 },
-      }
+      const title = prompt(`Enter name for new ${type}:`)
+      if (!title) return
       
       try {
-        await createNode(currentProject.id, newNode)
+        const parentPath = '' // Root level by default
+        const newNode = await createNode(parentPath, title, type as any, {
+          position: position || { x: 250, y: 250 }
+        })
+        
+        // Add to flow
         const flowNode: Node = {
-          id: newNode.id,
+          id: newNode.path,
           type: 'custom',
-          position: newNode.position!,
+          position: newNode.metadata.position!,
           data: {
-            label: newNode.title,
-            type: newNode.type,
+            label: newNode.metadata.title,
+            type: newNode.metadata.type,
             metadata: newNode.metadata,
+            hasTask: newNode.hasTask,
+            taskStatus: newNode.taskStatus,
           },
         }
         setNodes((nds) => [...nds, flowNode])
-        toast.success('Node created')
       } catch (error) {
         toast.error('Failed to create node')
       }
       
       setContextMenu(null)
     },
-    [currentProject, createNode, setNodes]
+    [createNode, setNodes]
   )
 
   // Handle deleting node
   const handleDeleteNode = useCallback(
     async (nodeId: string) => {
-      if (!currentProject) return
-      
       try {
-        await deleteNode(currentProject.id, nodeId)
+        await deleteNode(nodeId)
         setNodes((nds) => nds.filter((n) => n.id !== nodeId))
         setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
-        toast.success('Node deleted')
       } catch (error) {
         toast.error('Failed to delete node')
       }
       
       setContextMenu(null)
     },
-    [currentProject, deleteNode, setNodes, setEdges]
+    [deleteNode, setNodes, setEdges]
   )
 
   // Handle node click

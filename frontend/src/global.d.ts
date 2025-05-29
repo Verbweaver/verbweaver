@@ -17,11 +17,19 @@ declare global {
       readFile: (filePath: string) => Promise<string>;
       writeFile: (filePath: string, content: string) => Promise<void>;
       readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
+      deleteFile: (filePath: string) => Promise<void>;
+      readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
       
       // Project operations
-      createProject: (name: string, path: string) => Promise<void>;
+      createProject: (name: string, path: string) => Promise<string>;
       openProject: (path: string) => Promise<void>;
       getRecentProjects: () => Promise<string[]>;
+      
+      // Graph operations
+      updateNodeMetadata: (filePath: string, metadataChanges: Record<string, any>) => Promise<void>;
+      loadGraphData: () => Promise<{ nodes: any[], edges: any[] }>;
+      createNodeFile: (initialNodeData: Partial<any>) => Promise<any | null>;
+      deleteNodeFile: (relativeFilePath: string) => Promise<void>;
       
       // Git operations
       gitInit: (projectPath: string) => Promise<void>;
@@ -76,6 +84,10 @@ declare global {
       // For Help View (ensure these match preload.ts ElectronAPI interface)
       listDocs: () => Promise<DocFile[]>;
       readDocContent: (fileName: string) => Promise<string>;
+      
+      // File watching
+      watchProject?: (callback: (event: any) => void) => void;
+      unwatchProject?: () => void;
     };
   }
 }

@@ -1,109 +1,60 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from typing import List, Optional
 import os
-import aiofiles
-from pathlib import Path
 
 from app.database import get_db
 from app.models import User, Project
 from app.core.security import get_current_user
-from app.core.config import settings
+from app.services.node_service import NodeService
 from pydantic import BaseModel
 
 router = APIRouter()
 
 
-class FileNode(BaseModel):
-    name: str
+class FileCreate(BaseModel):
     path: str
-    type: str  # 'file' or 'directory'
-    children: Optional[List['FileNode']] = None
+    name: str
+    content: str = ""
+    metadata: Optional[dict] = None
+
+
+class FileUpdate(BaseModel):
+    content: Optional[str] = None
+    metadata: Optional[dict] = None
 
 
 class FileContent(BaseModel):
-    content: str
-
-
-class FileSave(BaseModel):
     path: str
+    name: str
     content: str
+    metadata: dict
+    is_directory: bool
+    is_markdown: bool
 
 
-def get_project_path(project_id: int) -> Path:
-    """Get the filesystem path for a project."""
-    return Path(settings.PROJECTS_DIR) / f"project_{project_id}"
-
-
-def build_file_tree(root_path: Path, relative_to: Path) -> List[FileNode]:
-    """Build a file tree structure from a directory."""
-    items = []
-    
-    for item in sorted(root_path.iterdir()):
-        if item.name.startswith('.'):
-            continue  # Skip hidden files
-            
-        relative_path = str(item.relative_to(relative_to))
-        
-        if item.is_dir():
-            children = build_file_tree(item, relative_to)
-            items.append(FileNode(
-                name=item.name,
-                path=relative_path,
-                type='directory',
-                children=children
-            ))
-        else:
-            items.append(FileNode(
-                name=item.name,
-                path=relative_path,
-                type='file'
-            ))
-    
-    return items
-
-
-@router.get("/projects/{project_id}/files", response_model=List[FileNode])
-async def get_file_tree(
-    project_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get the file tree for a project."""
-    # Check project access
-    project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.user_id == current_user.id
-    ).first()
-    
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
-        )
-    
-    project_path = get_project_path(project_id)
-    
-    if not project_path.exists():
-        return []
-    
-    return build_file_tree(project_path, project_path)
+class DirectoryContent(BaseModel):
+    path: str
+    items: List[dict]
 
 
 @router.get("/projects/{project_id}/files/{file_path:path}")
-async def get_file_content(
+async def read_file(
     project_id: int,
     file_path: str,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    """Get the content of a file."""
+    """Read a file's content."""
     # Check project access
-    project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.user_id == current_user.id
-    ).first()
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id
+        )
+    )
+    project = result.scalar_one_or_none()
     
     if not project:
         raise HTTPException(
@@ -111,91 +62,121 @@ async def get_file_content(
             detail="Project not found"
         )
     
-    project_path = get_project_path(project_id)
-    full_path = project_path / file_path
-    
-    # Security: ensure the path is within the project directory
+    # Read file using NodeService
+    node_service = NodeService(project)
     try:
-        full_path.resolve().relative_to(project_path.resolve())
-    except ValueError:
+        node = await node_service.read_node(file_path)
+        if not node:
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        if node["isDirectory"]:
+            # Return directory contents
+            children = []
+            for child_path in node["hardLinks"]["children"]:
+                child_node = await node_service.read_node(child_path)
+                if child_node:
+                    children.append({
+                        "path": child_node["path"],
+                        "name": child_node["name"],
+                        "type": "directory" if child_node["isDirectory"] else "file",
+                        "metadata": child_node["metadata"]
+                    })
+            
+            return DirectoryContent(
+                path=file_path,
+                items=children
+            )
+        else:
+            # Return file content
+            return FileContent(
+                path=node["path"],
+                name=node["name"],
+                content=node.get("content", ""),
+                metadata=node["metadata"],
+                is_directory=False,
+                is_markdown=node["isMarkdown"]
+            )
+    except FileNotFoundError as e:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.put("/projects/{project_id}/files/{file_path:path}")
+async def write_file(
+    project_id: int,
+    file_path: str,
+    file_update: FileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Write/update a file's content."""
+    # Check project access
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
         )
     
-    if not full_path.exists():
+    # Update file using NodeService
+    node_service = NodeService(project)
+    try:
+        updated_node = await node_service.update_node(
+            path=file_path,
+            metadata_updates=file_update.metadata,
+            content=file_update.content
+        )
+        
+        return FileContent(
+            path=updated_node["path"],
+            name=updated_node["name"],
+            content=updated_node.get("content", ""),
+            metadata=updated_node["metadata"],
+            is_directory=updated_node["isDirectory"],
+            is_markdown=updated_node["isMarkdown"]
+        )
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found"
         )
-    
-    if not full_path.is_file():
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Path is not a file"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
-    
-    async with aiofiles.open(full_path, 'r') as f:
-        content = await f.read()
-    
-    return FileContent(content=content)
 
 
-@router.post("/projects/{project_id}/files/save")
-async def save_file(
-    project_id: int,
-    file_data: FileSave,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Save a file."""
-    # Check project access
-    project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.user_id == current_user.id
-    ).first()
-    
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
-        )
-    
-    project_path = get_project_path(project_id)
-    full_path = project_path / file_data.path
-    
-    # Security: ensure the path is within the project directory
-    try:
-        full_path.resolve().relative_to(project_path.resolve())
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-    
-    # Create parent directories if they don't exist
-    full_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    async with aiofiles.open(full_path, 'w') as f:
-        await f.write(file_data.content)
-    
-    return {"message": "File saved successfully", "path": file_data.path}
-
-
-@router.post("/projects/{project_id}/files/create")
+@router.post("/projects/{project_id}/files")
 async def create_file(
     project_id: int,
-    file_path: str,
-    is_directory: bool = False,
+    file_create: FileCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    """Create a new file or directory."""
+    """Create a new file."""
     # Check project access
-    project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.user_id == current_user.id
-    ).first()
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id
+        )
+    )
+    project = result.scalar_one_or_none()
     
     if not project:
         raise HTTPException(
@@ -203,31 +184,40 @@ async def create_file(
             detail="Project not found"
         )
     
-    project_path = get_project_path(project_id)
-    full_path = project_path / file_path
+    # Extract parent path from full path
+    parent_path = os.path.dirname(file_create.path)
+    if parent_path == ".":
+        parent_path = ""
     
-    # Security: ensure the path is within the project directory
+    # Create file using NodeService
+    node_service = NodeService(project)
     try:
-        full_path.resolve().relative_to(project_path.resolve())
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
+        # Determine node type from metadata or default to "file"
+        node_type = "file"
+        if file_create.metadata and "type" in file_create.metadata:
+            node_type = file_create.metadata["type"]
+        
+        created_node = await node_service.create_node(
+            parent_path=parent_path,
+            name=file_create.name,
+            node_type=node_type,
+            initial_metadata=file_create.metadata,
+            initial_content=file_create.content
         )
-    
-    if full_path.exists():
+        
+        return FileContent(
+            path=created_node["path"],
+            name=created_node["name"],
+            content=created_node.get("content", ""),
+            metadata=created_node["metadata"],
+            is_directory=created_node["isDirectory"],
+            is_markdown=created_node["isMarkdown"]
+        )
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File or directory already exists"
+            detail=str(e)
         )
-    
-    if is_directory:
-        full_path.mkdir(parents=True, exist_ok=True)
-    else:
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.touch()
-    
-    return {"message": "Created successfully", "path": file_path}
 
 
 @router.delete("/projects/{project_id}/files/{file_path:path}")
@@ -235,14 +225,17 @@ async def delete_file(
     project_id: int,
     file_path: str,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    """Delete a file or directory."""
+    """Delete a file."""
     # Check project access
-    project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.user_id == current_user.id
-    ).first()
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id
+        )
+    )
+    project = result.scalar_one_or_none()
     
     if not project:
         raise HTTPException(
@@ -250,28 +243,116 @@ async def delete_file(
             detail="Project not found"
         )
     
-    project_path = get_project_path(project_id)
-    full_path = project_path / file_path
-    
-    # Security: ensure the path is within the project directory
+    # Delete file using NodeService
+    node_service = NodeService(project)
     try:
-        full_path.resolve().relative_to(project_path.resolve())
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-    
-    if not full_path.exists():
+        await node_service.delete_node(file_path)
+        return {"message": "File deleted successfully", "path": file_path}
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="File or directory not found"
+            detail="File not found"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/projects/{project_id}/tree")
+async def get_file_tree(
+    project_id: int,
+    path: str = "",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the file tree structure for a project."""
+    # Check project access
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
         )
     
-    if full_path.is_dir():
-        import shutil
-        shutil.rmtree(full_path)
-    else:
-        full_path.unlink()
+    # Get all nodes
+    node_service = NodeService(project)
+    all_nodes = await node_service.list_nodes(path)
     
-    return {"message": "Deleted successfully", "path": file_path} 
+    # Build tree structure
+    def build_tree(nodes, parent_path=""):
+        tree = []
+        for node in nodes:
+            # Only include direct children of parent_path
+            node_parent = node["hardLinks"]["parent"] or ""
+            if node_parent == parent_path:
+                item = {
+                    "path": node["path"],
+                    "name": node["name"],
+                    "type": "directory" if node["isDirectory"] else "file",
+                    "metadata": node["metadata"]
+                }
+                
+                if node["isDirectory"]:
+                    # Recursively build children
+                    item["children"] = build_tree(nodes, node["path"])
+                
+                tree.append(item)
+        
+        return sorted(tree, key=lambda x: (x["type"] != "directory", x["name"].lower()))
+    
+    tree = build_tree(all_nodes, path)
+    return {"tree": tree}
+
+
+@router.post("/projects/{project_id}/search")
+async def search_files(
+    project_id: int,
+    query: str,
+    file_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Search for files in the project."""
+    # Check project access
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Search using NodeService
+    node_service = NodeService(project)
+    results = await node_service.search_nodes(
+        query=query,
+        node_type=file_type
+    )
+    
+    # Format results
+    formatted_results = []
+    for node in results:
+        formatted_results.append({
+            "path": node["path"],
+            "name": node["name"],
+            "type": "directory" if node["isDirectory"] else "file",
+            "metadata": node["metadata"],
+            "content_preview": node.get("content", "")[:200] if node.get("content") else None
+        })
+    
+    return {"results": formatted_results, "count": len(formatted_results)} 

@@ -1,70 +1,54 @@
 # Verbweaver Documentation
 
-Welcome to the Verbweaver documentation! This guide will help you understand, use, and contribute to Verbweaver.
+Welcome to the Verbweaver documentation! This directory contains comprehensive guides and references for developers and users.
 
 ## Table of Contents
 
-1. [Getting Started](getting-started.md)
-2. [User Guide](user-guide/README.md)
-3. [Architecture](architecture.md)
-4. [API Reference](api/README.md)
-5. [Development Guide](development.md)
-6. [Deployment](deployment.md)
-7. [Contributing](CONTRIBUTING.md)
+### Getting Started
+- [Getting Started Guide](getting-started.md) - Quick start guide for new users
+- [Architecture Overview](architecture.md) - System architecture and design decisions
+- [API Reference](api-reference.md) - Complete API documentation
 
-## What is Verbweaver?
+### Implementation Details
+- [Unified Model Implementation](unified-model-implementation.md) - How nodes, tasks, and files are unified
 
-Verbweaver is a revolutionary writing and design platform that thinks in relationships (graphs). It's designed for:
+### Desktop Application
+- [Desktop Guide](desktop-guide.md) - Complete guide for the desktop application
+- [Desktop Quick Reference](desktop-quick-reference.md) - Quick reference for desktop features
 
-- **Writers**: Organize your stories, characters, and worlds in interconnected nodes
-- **Developers**: Track documentation, design docs, and technical specifications
-- **Teams**: Collaborate on projects with full version control and task management
-- **Anyone**: Who thinks in relationships and wants to organize their ideas
+### Authentication & Security
+- [OAuth Setup](oauth-setup.md) - Configure OAuth providers (Google, GitHub)
+- [Passkey Setup](passkey-setup.md) - WebAuthn/Passkey implementation guide
+- [Security Checklist](security-checklist.md) - Security best practices
 
-## Key Concepts
+## Documentation Structure
 
-### Nodes
-Every piece of content in Verbweaver is a node. A node can be:
-- A markdown file with your content
-- A task to track work
-- A chapter, scene, or character in your story
-- Documentation for your project
-- Any file in your Git repository
+Each document follows a consistent structure:
+1. **Overview** - Brief introduction to the topic
+2. **Prerequisites** - What you need before starting
+3. **Step-by-step Instructions** - Detailed walkthrough
+4. **Troubleshooting** - Common issues and solutions
+5. **References** - Additional resources
 
-### Edges (Links)
-Nodes are connected by edges, which represent relationships:
-- **Hard links**: Structural relationships (e.g., directory contains files)
-- **Soft links**: Content relationships you define
-- **Dependencies**: Task relationships
-- **References**: Citations and cross-references
+## Contributing to Documentation
 
-### Projects
-Each project in Verbweaver is backed by a Git repository, giving you:
-- Full version control
-- Collaboration capabilities
-- Offline access
-- Integration with existing workflows
-
-### Views
-Verbweaver provides multiple views to work with your content:
-- **Graph View**: Visualize relationships
-- **Editor View**: Write and edit content
-- **Threads View**: Manage tasks
-- **Version Control View**: Track changes
-- **Compiler View**: Export your work
-
-## Quick Start
-
-1. **Install Verbweaver** (see [Getting Started](getting-started.md))
-2. **Create a Project** backed by a Git repository
-3. **Add Content** using the Editor view
-4. **Link Ideas** in the Graph view
-5. **Track Progress** with Tasks
-6. **Export** your work using the Compiler
+When adding new documentation:
+1. Follow the existing format and structure
+2. Include code examples where relevant
+3. Add screenshots for UI-related guides
+4. Update this README with links to new documents
+5. Keep language clear and concise
 
 ## Need Help?
 
-- Check the [User Guide](user-guide/README.md) for detailed instructions
-- Read the [API Reference](api/README.md) for technical details
-- Join our community discussions
-- Report issues on GitHub 
+If you can't find what you're looking for:
+1. Check the [API Reference](api-reference.md)
+2. Search existing [GitHub Issues](https://github.com/verbweaver/verbweaver/issues)
+3. Join our [Discord Community](https://discord.gg/verbweaver)
+4. Create a new issue with the `documentation` label
+
+## Quick Links
+
+- [Main README](../README.md)
+- [Contributing Guide](../CONTRIBUTING.md)
+- [License](../LICENSE) 

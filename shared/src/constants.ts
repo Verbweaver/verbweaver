@@ -53,6 +53,7 @@ export const TASK_STATES = {
 // Node types
 export const NODE_TYPES = {
   FILE: 'file',
+  FOLDER: 'folder',
   DIRECTORY: 'directory',
   TASK: 'task',
   NOTE: 'note',

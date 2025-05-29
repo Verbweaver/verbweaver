@@ -1,6 +1,8 @@
 import React from 'react';
 import { create } from 'zustand';
 import { WebSocketEventType, getWsUrl } from '@verbweaver/shared';
+import { useNodeStore } from '../store/nodeStore';
+import toast from 'react-hot-toast';
 
 interface WebSocketState {
   socket: WebSocket | null;
@@ -51,12 +53,6 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
     ws.onopen = () => {
       console.log('WebSocket connected');
       set({ socket: ws, isConnected: true, connectionError: null });
-      
-      // Send initial join event
-      ws.send(JSON.stringify({
-        type: WebSocketEventType.USER_JOIN,
-        data: { projectId }
-      }));
     };
 
     ws.onclose = () => {
@@ -99,17 +95,61 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
 
 // Handle incoming WebSocket messages
 function handleWebSocketMessage(message: any) {
-  const { type, data } = message;
+  const { type, data, event, path, timestamp } = message;
 
   switch (type) {
+    case 'connection':
+      console.log('WebSocket connection status:', data);
+      break;
+      
+    case 'file_change':
+      console.log('File change detected:', event, path);
+      // Reload nodes when files change
+      const nodeStore = useNodeStore.getState();
+      nodeStore.loadNodes().then(() => {
+        // Show a subtle notification
+        if (event === 'modified') {
+          toast.success(`File updated: ${path.split('/').pop()}`, {
+            duration: 2000,
+            position: 'bottom-right'
+          });
+        } else if (event === 'created') {
+          toast.success(`File created: ${path.split('/').pop()}`, {
+            duration: 2000,
+            position: 'bottom-right'
+          });
+        } else if (event === 'deleted') {
+          toast.error(`File deleted: ${path.split('/').pop()}`, {
+            duration: 2000,
+            position: 'bottom-right'
+          });
+        }
+      });
+      break;
+      
+    case 'refresh_required':
+      console.log('Refresh required');
+      // Reload all data
+      const store = useNodeStore.getState();
+      store.loadNodes();
+      break;
+      
+    case 'pong':
+      // Response to ping, connection is alive
+      break;
+      
+    case 'error':
+      console.error('WebSocket error:', data);
+      toast.error(data.message || 'WebSocket error occurred');
+      break;
+      
+    // Legacy event types (for backwards compatibility)
     case WebSocketEventType.USER_JOIN:
       console.log('User joined:', data);
-      // Update UI to show new user
       break;
       
     case WebSocketEventType.USER_LEAVE:
       console.log('User left:', data);
-      // Update UI to remove user
       break;
       
     case WebSocketEventType.CURSOR_MOVE:
@@ -118,42 +158,40 @@ function handleWebSocketMessage(message: any) {
       
     case WebSocketEventType.NODE_CREATE:
       // Add new node to graph
+      useNodeStore.getState().loadNodes();
       break;
       
     case WebSocketEventType.NODE_UPDATE:
       // Update existing node
+      useNodeStore.getState().loadNodes();
       break;
       
     case WebSocketEventType.NODE_DELETE:
       // Remove node from graph
+      useNodeStore.getState().loadNodes();
       break;
       
     case WebSocketEventType.EDGE_CREATE:
       // Add new edge to graph
+      useNodeStore.getState().loadNodes();
       break;
       
     case WebSocketEventType.EDGE_DELETE:
       // Remove edge from graph
+      useNodeStore.getState().loadNodes();
       break;
       
     case WebSocketEventType.FILE_UPDATE:
       // Update file content
+      useNodeStore.getState().loadNodes();
       break;
       
     case WebSocketEventType.TASK_CREATE:
-      // Add new task
-      break;
-      
     case WebSocketEventType.TASK_UPDATE:
-      // Update existing task
-      break;
-      
     case WebSocketEventType.TASK_MOVE:
-      // Move task to different column
-      break;
-      
     case WebSocketEventType.TASK_DELETE:
-      // Remove task
+      // Reload nodes since tasks are nodes
+      useNodeStore.getState().loadNodes();
       break;
       
     case WebSocketEventType.COMMENT_CREATE:
@@ -181,9 +219,18 @@ export function useWebSocket(projectId?: string) {
   React.useEffect(() => {
     if (projectId) {
       connect(projectId);
-      return () => disconnect();
+      
+      // Set up ping interval to keep connection alive
+      const pingInterval = setInterval(() => {
+        send({ type: 'ping' });
+      }, 30000); // Ping every 30 seconds
+      
+      return () => {
+        clearInterval(pingInterval);
+        disconnect();
+      };
     }
-  }, [projectId, connect, disconnect]);
+  }, [projectId, connect, disconnect, send]);
 
   return { send, isConnected };
 } 

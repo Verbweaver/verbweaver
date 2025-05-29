@@ -16,9 +16,11 @@ export interface ElectronAPI {
   readFile: (filePath: string) => Promise<string>;
   writeFile: (filePath: string, content: string) => Promise<void>;
   readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
+  deleteFile: (filePath: string) => Promise<void>;
+  readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
   
   // Project operations
-  createProject: (name: string, path: string) => Promise<void>;
+  createProject: (name: string, path: string) => Promise<string>;
   openProject: (path: string) => Promise<void>;
   getRecentProjects: () => Promise<string[]>;
   
@@ -75,6 +77,16 @@ export interface ElectronAPI {
   // For Help View
   listDocs: () => Promise<DocFile[]>;
   readDocContent: (fileName: string) => Promise<string>;
+  
+  // File watching
+  watchProject: (callback: (event: any) => void) => void;
+  unwatchProject: () => void;
+  
+  // Graph operations (new)
+  updateNodeMetadata: (filePath: string, metadataChanges: Record<string, any>) => Promise<void>;
+  loadGraphData: () => Promise<{ nodes: any[], edges: any[] }>;
+  createNodeFile: (initialNodeData: Partial<any>) => Promise<any | null>;
+  deleteNodeFile: (relativeFilePath: string) => Promise<void>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -87,10 +99,12 @@ const electronAPI: ElectronAPI = {
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
   readDirectory: (dirPath: string) => ipcRenderer.invoke('fs:readDirectory', dirPath),
+  deleteFile: (filePath: string) => ipcRenderer.invoke('fs:deleteFile', filePath),
+  readProjectFiles: (projectPath: string) => ipcRenderer.invoke('fs:readProjectFiles', projectPath),
   
   // Project operations
-  createProject: (name: string, path: string) => ipcRenderer.invoke('project:create', name, path),
-  openProject: (path: string) => ipcRenderer.invoke('project:open', path),
+  createProject: (name: string, path: string): Promise<string> => ipcRenderer.invoke('project:create', name, path),
+  openProject: (path: string): Promise<void> => ipcRenderer.invoke('project:open', path),
   getRecentProjects: () => ipcRenderer.invoke('project:getRecent'),
   
   // Git operations
@@ -168,8 +182,23 @@ const electronAPI: ElectronAPI = {
   },
   
   // For Help View
-  listDocs: () => ipcRenderer.invoke('list-docs'),
-  readDocContent: (fileName: string) => ipcRenderer.invoke('read-doc-content', fileName)
+  listDocs: () => ipcRenderer.invoke('docs:list'),
+  readDocContent: (fileName: string) => ipcRenderer.invoke('docs:read', fileName),
+  
+  // File watching
+  watchProject: (callback: (event: any) => void) => {
+    ipcRenderer.on('file:changed', callback);
+  },
+  
+  unwatchProject: () => {
+    ipcRenderer.removeAllListeners('file:changed');
+  },
+  
+  // Graph operations (new)
+  updateNodeMetadata: (filePath: string, metadataChanges: Record<string, any>) => ipcRenderer.invoke('graph:updateNodeMetadata', filePath, metadataChanges),
+  loadGraphData: () => ipcRenderer.invoke('graph:loadData'),
+  createNodeFile: (initialNodeData: Partial<any>) => ipcRenderer.invoke('graph:createNodeFile', initialNodeData),
+  deleteNodeFile: (relativeFilePath: string) => ipcRenderer.invoke('graph:deleteNodeFile', relativeFilePath),
 };
 
 // Securely expose the API to the renderer process

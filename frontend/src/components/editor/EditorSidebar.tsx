@@ -47,11 +47,11 @@ function EditorSidebar() {
         // Convert to FileNode format and filter for relevant directories/files
         const tree: FileNode[] = rootItems
           .filter(item => {
-            // Show specific directories and markdown files
+            // Show specific directories and markdown files at the root of the project
             if (item.type === 'directory') {
-              return ['nodes', 'tasks', 'docs', 'templates'].includes(item.name)
+              return ['nodes', 'docs', 'templates'].includes(item.name); // Removed 'tasks'
             }
-            return item.name.endsWith('.md')
+            return item.name.endsWith('.md'); // Also show root markdown files (like README.md)
           })
           .map(item => ({
             id: item.path,

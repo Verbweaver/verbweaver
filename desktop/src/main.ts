@@ -14,6 +14,29 @@ import { spawn, ChildProcess } from 'child_process';
 import { autoUpdater } from 'electron-updater';
 import Store from 'electron-store';
 import * as net from 'net';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+import matter from 'gray-matter';
+
+// Helper function to generate a slug for filenames (simple version)
+function slugify(text: string): string {
+  if (!text) return 'untitled';
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-') // Replace spaces with -
+    .replace(/[^\w-]+/g, '') // Remove all non-word chars
+    .replace(/--+/g, '-'); // Replace multiple - with single -
+}
+
+// Define DocFile interface
+interface DocFile {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  children?: DocFile[];
+}
 
 // Initialize electron store with encryption
 const store = new Store({
@@ -400,33 +423,22 @@ function setupIpcHandlers() {
     return result;
   });
 
-  ipcMain.handle('fs:readDirectory', async (_, dirPath: string) => {
+  ipcMain.handle('fs:readDirectory', async (_event, dirPath: string) => {
     try {
-      const { readdir, stat } = require('fs/promises');
-      const entries = await readdir(dirPath);
+      const projectPath = store.get('currentProjectPath');
+      if (!projectPath) throw new Error('No project path set');
       
-      const items = await Promise.all(
-        entries.map(async (entry: string) => {
-          const fullPath = join(dirPath, entry);
-          try {
-            const stats = await stat(fullPath);
-            return {
-              name: entry,
-              path: fullPath,
-              type: stats.isDirectory() ? 'directory' : 'file',
-              // Don't read children here - let the UI request them when expanded
-            };
-          } catch (error) {
-            // Skip files we can't read
-            return null;
-          }
-        })
-      );
+      const fullPath = path.isAbsolute(dirPath) ? dirPath : path.join(projectPath as string, dirPath);
+      const items = await fs.readdir(fullPath, { withFileTypes: true });
       
-      // Filter out null entries and hidden files/folders (starting with .)
-      return items.filter(item => item && !item.name.startsWith('.'));
+      return items.map(item => ({
+        name: item.name,
+        path: path.join(dirPath, item.name),
+        type: item.isDirectory() ? 'directory' : 'file'
+      }));
     } catch (error) {
-      throw new Error(`Failed to read directory: ${error}`);
+      console.error('Failed to read directory:', error);
+      throw error;
     }
   });
 
@@ -475,6 +487,50 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.handle('fs:deleteFile', async (_event, filePath: string) => {
+    try {
+      const projectPath = store.get('currentProjectPath');
+      if (!projectPath) throw new Error('No project path set');
+      
+      const fullPath = path.isAbsolute(filePath) ? filePath : path.join(projectPath as string, filePath);
+      await fs.unlink(fullPath);
+    } catch (error) {
+      console.error('Failed to delete file:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('fs:readProjectFiles', async (_event, projectPath: string) => {
+    try {
+      const files: Array<{ path: string; isDirectory: boolean }> = [];
+      
+      async function readDir(dirPath: string, relativePath: string = '') {
+        const items = await fs.readdir(dirPath, { withFileTypes: true });
+        
+        for (const item of items) {
+          // Skip hidden files and common directories
+          if (item.name.startsWith('.') || item.name === 'node_modules') continue;
+          
+          const itemPath = path.join(relativePath, item.name);
+          files.push({
+            path: itemPath,
+            isDirectory: item.isDirectory()
+          });
+          
+          if (item.isDirectory()) {
+            await readDir(path.join(dirPath, item.name), itemPath);
+          }
+        }
+      }
+      
+      await readDir(projectPath);
+      return files;
+    } catch (error) {
+      console.error('Failed to read project files:', error);
+      throw error;
+    }
+  });
+
   // Project operations
   ipcMain.handle('project:create', async (_, projectName: string, projectPath: string) => {
     try {
@@ -488,13 +544,13 @@ function setupIpcHandlers() {
       const docsDir = join(projectPath, 'docs');
       const templatesDir = join(projectPath, 'templates');
       const nodesDir = join(projectPath, 'nodes');
-      const tasksDir = join(projectPath, 'tasks');
+      // const tasksDir = join(projectPath, 'tasks'); // REMOVED
       
       await mkdir(verbweaverDir, { recursive: true });
       await mkdir(docsDir, { recursive: true });
       await mkdir(templatesDir, { recursive: true });
-      await mkdir(nodesDir, { recursive: true });
-      await mkdir(tasksDir, { recursive: true });
+      await mkdir(nodesDir, { recursive: true }); // Ensure nodesDir is created
+      // await mkdir(tasksDir, { recursive: true }); // REMOVED
       
       // Create project configuration file
       const projectConfig = {
@@ -521,22 +577,23 @@ This is a Verbweaver project for ${projectName}.
 ## Getting Started
 
 This project uses Verbweaver to organize ideas, tasks, and content using a graph-based approach.
+All content nodes (which can also be managed as tasks) are stored as Markdown files in the \`nodes/\` directory.
+Task-specific information (like status, due date) is stored in the metadata (frontmatter) of these files.
 
 ### Project Structure
 
-- \`nodes/\` - Contains the content nodes (Markdown files)
-- \`tasks/\` - Contains task-related content
-- \`docs/\` - Project documentation
-- \`templates/\` - Reusable templates
-- \`.verbweaver/\` - Verbweaver configuration and metadata
+- \`nodes/\` - Contains all content nodes and task items (Markdown files).
+- \`docs/\` - Project documentation.
+- \`templates/\` - Reusable templates for content or graph appearance.
+- \`.verbweaver/\` - Verbweaver configuration and metadata for this project.
 
 ### Views
 
-- **Graph** - Visual representation of relationships between content
-- **Editor** - Edit content and create new nodes
-- **Threads** - Task management and project tracking
-- **Version Control** - Git integration for tracking changes
-- **Compiler** - Export content to various formats
+- **Graph** - Visual representation of relationships between content in \`nodes/\`.
+- **Editor** - Edit content and metadata of files in \`nodes/\`.
+- **Threads** - Task management view that operates on items in \`nodes/\` based on their metadata.
+- **Version Control** - Git integration for tracking changes.
+- **Compiler** - Export content to various formats.
 
 ## Version Control
 
@@ -560,12 +617,12 @@ This project is backed by Git for version control. All changes are tracked and y
             resolve(code);
           } else {
             console.warn('Git init failed, continuing without git');
-            resolve(code);
+            resolve(code); // Resolve even if git init fails, to not block project creation
           }
         });
         gitInit.on('error', (error: Error) => {
           console.warn('Git not available:', error);
-          resolve(null);
+          resolve(null); // Resolve even if git is not available
         });
       });
       
@@ -578,30 +635,35 @@ This project is backed by Git for version control. All changes are tracked and y
         
         await new Promise((resolve) => {
           gitAdd.on('close', resolve);
-          gitAdd.on('error', resolve);
+          gitAdd.on('error', resolve); // Resolve even on error
         });
         
-        const gitCommit = spawn('git', ['commit', '-m', `"${message}"`, '--'], { 
+        const commitMessage = 'Initial commit'; // Add default commit message
+        const gitCommit = spawn('git', ['commit', '-m', `"${commitMessage}"`, '--'], { 
           cwd: projectPath,
           shell: true 
         });
         
         await new Promise((resolve) => {
           gitCommit.on('close', resolve);
-          gitCommit.on('error', resolve);
+          gitCommit.on('error', resolve); // Resolve even on error
         });
       } catch (error) {
         console.warn('Git commit failed:', error);
       }
       
-      // Add to recent projects
-      const recentProjects = store.get('recentProjects', []) as string[];
-      const updatedProjects = [projectPath, ...recentProjects.filter(p => p !== projectPath)].slice(0, 10);
-      store.set('recentProjects', updatedProjects);
+      // Set current project path in electron-store for the main process
+      store.set('currentProjectPath', projectPath);
       
-      mainWindow?.webContents.send('project:opened', projectPath);
+      // Add to recent projects (also in electron-store)
+      const recentProjects = store.get('recentProjects', []) as string[];
+      const updatedRecentProjects = [projectPath, ...recentProjects.filter(p => p !== projectPath)].slice(0, 10);
+      store.set('recentProjects', updatedRecentProjects);
+
+      return projectPath; // Return the project path to the renderer
     } catch (error) {
-      throw new Error(`Failed to create project: ${error}`);
+      console.error('Failed to create project:', error);
+      throw error; // Re-throw to be caught by the renderer
     }
   });
 
@@ -611,19 +673,256 @@ This project is backed by Git for version control. All changes are tracked and y
         throw new Error('Project path does not exist');
       }
       
+      // Set current project path in electron-store for the main process
+      store.set('currentProjectPath', projectPath);
+
       // Add to recent projects
       const recentProjects = store.get('recentProjects', []) as string[];
       const updatedProjects = [projectPath, ...recentProjects.filter(p => p !== projectPath)].slice(0, 10);
       store.set('recentProjects', updatedProjects);
       
+      // Notify renderer that project is opened so it can update its state
       mainWindow?.webContents.send('project:opened', projectPath);
+      // No explicit return value needed here as renderer handles UI update based on event
     } catch (error) {
-      throw new Error(`Failed to open project: ${error}`);
+      console.error('Failed to open project:', error);
+      throw error; // Re-throw to be caught by the renderer
     }
   });
 
   ipcMain.handle('project:getRecent', async () => {
     return store.get('recentProjects', []) as string[];
+  });
+
+  // Graph operations (new)
+  ipcMain.handle('graph:updateNodeMetadata', async (_, filePath: string, metadataChanges: Record<string, any>) => {
+    try {
+      const projectPath = store.get('currentProjectPath') as string | undefined;
+      if (!projectPath) {
+        throw new Error('No project path set. Cannot determine absolute file path.');
+      }
+
+      // Ensure filePath is absolute. If it's relative, it should be relative to the project root.
+      const absoluteFilePath = path.isAbsolute(filePath) ? filePath : path.join(projectPath, filePath);
+
+      if (!existsSync(absoluteFilePath)) {
+        throw new Error(`File not found: ${absoluteFilePath}`);
+      }
+
+      const fileContent = await fs.readFile(absoluteFilePath, 'utf8');
+      const { data: frontmatter, content: markdownContent } = matter(fileContent);
+
+      // Merge the changes into the existing frontmatter
+      // For node position, metadataChanges would be { position: { x, y } }
+      // A deep merge might be better if metadataChanges can be more complex
+      const updatedFrontmatter = { ...frontmatter, ...metadataChanges };
+
+      const newFileContent = matter.stringify(markdownContent, updatedFrontmatter);
+      await fs.writeFile(absoluteFilePath, newFileContent, 'utf8');
+      
+      // Optionally, notify the renderer that the file has changed, if a generic file watcher isn't already doing this.
+      // mainWindow?.webContents.send('file:changed', absoluteFilePath);
+
+    } catch (error) {
+      console.error(`Failed to update node metadata for ${filePath}:`, error);
+      throw error; // Re-throw to be caught by the renderer
+    }
+  });
+
+  ipcMain.handle('graph:loadData', async () => {
+    const projectPath = store.get('currentProjectPath') as string | undefined;
+    if (!projectPath) {
+      console.error('[graph:loadData] No project path set.');
+      throw new Error('No project path set. Cannot load graph data.');
+    }
+
+    const nodesDir = path.join(projectPath, 'nodes');
+    const graphNodes: any[] = []; // Type later with Shared GraphNode
+    const graphEdges: any[] = []; // Type later with Shared GraphEdge
+
+    if (!existsSync(nodesDir)) {
+      console.warn(`[graph:loadData] Nodes directory does not exist: ${nodesDir}`);
+      return { nodes: [], edges: [] }; // Return empty if nodes dir doesn't exist
+    }
+
+    async function processDirectory(currentDir: string, relativeBaseDir: string) {
+      const entries = await fs.readdir(currentDir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullEntryPath = path.join(currentDir, entry.name);
+        const relativeEntryPath = path.join(relativeBaseDir, entry.name).replace(/\\/g, '/'); // Normalize to forward slashes for ID
+
+        if (entry.isDirectory()) {
+          await processDirectory(fullEntryPath, relativeEntryPath);
+        } else if (entry.isFile() && entry.name.endsWith('.md')) {
+          try {
+            const fileContent = await fs.readFile(fullEntryPath, 'utf8');
+            const { data: frontmatter, content: mdContent } = matter(fileContent);
+            
+            const nodeName = frontmatter.title || entry.name.replace(/\.md$/, '');
+            const nodeType = frontmatter.type || 'document';
+            const nodePosition = frontmatter.position || undefined; // {x, y} or undefined
+
+            graphNodes.push({
+              id: relativeEntryPath, 
+              label: nodeName,
+              type: nodeType,
+              position: nodePosition,
+              data: frontmatter, // Send only frontmatter as 'data' for clarity, content is separate if needed by client
+              filePath: fullEntryPath 
+            });
+
+            // Edge extraction from frontmatter.links
+            if (frontmatter.links && Array.isArray(frontmatter.links)) {
+              frontmatter.links.forEach((linkTarget: string) => {
+                if (linkTarget && typeof linkTarget === 'string') {
+                  // Ensure targetNodeId is normalized (e.g. relative path from nodes dir)
+                  // This assumes linkTarget is already a valid node ID (relative path)
+                  const targetNodeId = linkTarget.replace(/\\/g, '/');
+                  const edgeId = `fm-${relativeEntryPath}-${targetNodeId}`.replace(/[^a-zA-Z0-9-_]/g, '-');
+                  graphEdges.push({
+                    id: edgeId,
+                    source: relativeEntryPath,
+                    target: targetNodeId, 
+                    label: frontmatter.linkLabel || 'links to' // Allow custom label from FM
+                  });
+                }
+              });
+            }
+
+            // Edge extraction from [[wikilinks]] in mdContent
+            const wikilinkRegex = /\[\[([^\]\]]+)\]\]/g;
+            let match;
+            while ((match = wikilinkRegex.exec(mdContent)) !== null) {
+              const linkContent = match[1];
+              // For now, assume linkContent is a filename like 'target-node.md' or 'folder/target-node.md'
+              // relative to the 'nodes' directory.
+              // More complex resolution (e.g., by title) would require a pre-scan of all nodes.
+              let targetNodeId = linkContent;
+              if (!targetNodeId.endsWith('.md')) {
+                targetNodeId += '.md'; // Assume it's a node name, append .md
+              }
+              targetNodeId = targetNodeId.replace(/\\/g, '/'); // Normalize
+              
+              // Basic check to avoid self-loops from this simple regex pass, though graph might allow them.
+              if (relativeEntryPath !== targetNodeId) {
+                  const edgeId = `wiki-${relativeEntryPath}-${targetNodeId}`.replace(/[^a-zA-Z0-9-_]/g, '-');
+                  graphEdges.push({
+                    id: edgeId,
+                    source: relativeEntryPath,
+                    target: targetNodeId,
+                    label: 'wikilink'
+                  });
+              }
+            }
+
+          } catch (err) {
+            console.error(`[graph:loadData] Error processing file ${fullEntryPath}:`, err);
+          }
+        }
+      }
+    }
+
+    try {
+      await processDirectory(nodesDir, '');
+      console.log(`[graph:loadData] Loaded ${graphNodes.length} nodes and ${graphEdges.length} edges.`);
+      return { nodes: graphNodes, edges: graphEdges };
+    } catch (error) {
+      console.error('[graph:loadData] Failed to load graph data:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('graph:createNodeFile', async (_, initialNodeData: Partial<any>) => {
+    const projectPath = store.get('currentProjectPath') as string | undefined;
+    if (!projectPath) {
+      throw new Error('No project path set. Cannot create node file.');
+    }
+    const nodesDir = path.join(projectPath, 'nodes');
+    if (!existsSync(nodesDir)) {
+      await fs.mkdir(nodesDir, { recursive: true }); // Ensure nodes directory exists
+    }
+
+    const desiredLabel = initialNodeData?.label || initialNodeData?.title || 'Untitled Node';
+    let baseFilename = slugify(desiredLabel);
+    let filename = `${baseFilename}.md`;
+    let counter = 1;
+    let filePath = path.join(nodesDir, filename);
+
+    // Ensure filename is unique
+    while (existsSync(filePath)) {
+      filename = `${baseFilename}-${counter}.md`;
+      filePath = path.join(nodesDir, filename);
+      counter++;
+    }
+
+    const now = new Date().toISOString();
+    const frontmatter: any = {
+      title: desiredLabel,
+      type: initialNodeData?.type || 'document',
+      created: now,
+      modified: now,
+      tags: initialNodeData?.tags || [],
+      ...(initialNodeData?.data || {}), // Merge other initial data/metadata
+      ...(initialNodeData?.metadata || {}), // Accommodate if metadata is passed separately
+    };
+
+    // If position is provided, add it to frontmatter
+    if (initialNodeData?.position) {
+      frontmatter.position = initialNodeData.position;
+    }
+    // Remove label from frontmatter if it was just used for filename/title
+    delete frontmatter.label; 
+
+    const fileContent = matter.stringify('\n# Overview\n\nStart writing your content here...\n', frontmatter);
+
+    try {
+      await fs.writeFile(filePath, fileContent, 'utf8');
+      
+      const relativePath = path.join('nodes', filename).replace(/\\/g, '/');
+      
+      // Return a structure consistent with what loadGraphData items look like
+      return {
+        id: relativePath,
+        label: frontmatter.title,
+        title: frontmatter.title,
+        type: frontmatter.type,
+        position: frontmatter.position, // Will be undefined if not set
+        data: frontmatter, // This is the full frontmatter, frontend maps to node.metadata
+        filePath: filePath, // Absolute path
+        // Include other fields consistent with GraphNode for the frontend store
+        created: frontmatter.created,
+        modified: frontmatter.modified,
+        tags: frontmatter.tags,
+        status: frontmatter.status, // if provided in initialNodeData
+      };
+    } catch (error) {
+      console.error(`Failed to create node file ${filename}:`, error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('graph:deleteNodeFile', async (_, relativeFilePath: string) => {
+    const projectPath = store.get('currentProjectPath') as string | undefined;
+    if (!projectPath) {
+      throw new Error('No project path set. Cannot delete node file.');
+    }
+
+    // The relativeFilePath is expected to be relative to the project root, 
+    // typically starting with 'nodes/', e.g., 'nodes/my-file.md'
+    const absoluteFilePath = path.join(projectPath, relativeFilePath);
+
+    try {
+      if (!existsSync(absoluteFilePath)) {
+        // If file doesn't exist, it might have been already deleted. Log and succeed.
+        console.warn(`[graph:deleteNodeFile] File not found, possibly already deleted: ${absoluteFilePath}`);
+        return; // Consider this a success for idempotent deletion
+      }
+      await fs.unlink(absoluteFilePath);
+      console.log(`[graph:deleteNodeFile] Deleted file: ${absoluteFilePath}`);
+    } catch (error) {
+      console.error(`Failed to delete node file ${absoluteFilePath}:`, error);
+      throw error; // Re-throw to be caught by the renderer
+    }
   });
 
   // Git operations (stubs for now - would integrate with simple-git)
@@ -1106,6 +1405,67 @@ This project is backed by Git for version control. All changes are tracked and y
 
   ipcMain.handle('get-app-version', async () => {
     return app.getVersion();
+  });
+
+  // Helper function to list docs recursively
+  async function listDocsRecursive(dirPath: string): Promise<DocFile[]> {
+    const items = await fs.readdir(dirPath, { withFileTypes: true });
+    const result: DocFile[] = [];
+    
+    for (const item of items) {
+      if (item.name.startsWith('.')) continue; // Skip hidden files
+      
+      const fullPath = path.join(dirPath, item.name);
+      const relativePath = path.relative(path.join(app.getAppPath(), '..', 'docs'), fullPath);
+      
+      if (item.isDirectory()) {
+        const children = await listDocsRecursive(fullPath);
+        result.push({
+          name: item.name,
+          path: relativePath,
+          type: 'directory',
+          children
+        });
+      } else if (item.name.endsWith('.md')) {
+        result.push({
+          name: item.name,
+          path: relativePath,
+          type: 'file'
+        });
+      }
+    }
+    
+    return result;
+  }
+
+  // Docs handlers - update these to match the new names
+  ipcMain.handle('docs:list', async () => {
+    try {
+      const docsPath = path.join(app.getAppPath(), '..', 'docs');
+      console.log(`Listing docs from: ${docsPath}`);
+      
+      const result = await listDocsRecursive(docsPath);
+      console.log(`Found ${JSON.stringify(result, null, 2)} docs`);
+      return result;
+    } catch (error) {
+      console.error('Failed to list docs:', error);
+      throw error;
+    }
+  });
+  
+  ipcMain.handle('docs:read', async (_event, fileName: string) => {
+    try {
+      // Resolve the path relative to the app's location
+      const docsPath = path.join(app.getAppPath(), '..', 'docs');
+      const filePath = path.join(docsPath, fileName);
+      console.log(`[main] Reading doc file: ${filePath}`);
+      
+      const content = await fs.readFile(filePath, 'utf-8');
+      return content;
+    } catch (error) {
+      console.error('Failed to read doc file:', error);
+      throw error;
+    }
   });
 }
 

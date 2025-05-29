@@ -1,46 +1,65 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd'
 import { Plus, MoreHorizontal, Calendar, User } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
-import { useTaskStore } from '../store/taskStore'
-import { TASK_STATES, TaskStatus } from '@verbweaver/shared'
+import { useNodeStore } from '../store/nodeStore'
+import { VerbweaverNode, TaskState } from '@verbweaver/shared'
 import TaskCard from '../components/tasks/TaskCard'
 import CreateTaskModal from '../components/tasks/CreateTaskModal'
 import clsx from 'clsx'
 
 const columns = [
-  { id: TASK_STATES.TODO, title: 'To Do', color: 'bg-gray-500' },
-  { id: TASK_STATES.IN_PROGRESS, title: 'In Progress', color: 'bg-blue-500' },
-  { id: TASK_STATES.REVIEW, title: 'Review', color: 'bg-amber-500' },
-  { id: TASK_STATES.DONE, title: 'Done', color: 'bg-green-500' },
+  { id: 'todo' as TaskState, title: 'To Do', color: 'bg-gray-500' },
+  { id: 'in-progress' as TaskState, title: 'In Progress', color: 'bg-blue-500' },
+  { id: 'review' as TaskState, title: 'Review', color: 'bg-amber-500' },
+  { id: 'done' as TaskState, title: 'Done', color: 'bg-green-500' },
 ]
 
 function ThreadsView() {
   const { currentProject } = useProjectStore()
-  const { tasks, loadTasks, updateTaskStatus, isLoading } = useTaskStore()
+  const { nodes, loadNodes, updateTaskStatus, isLoading } = useNodeStore()
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [selectedColumn, setSelectedColumn] = useState<string | null>(null)
+  const [selectedColumn, setSelectedColumn] = useState<TaskState | null>(null)
 
   useEffect(() => {
     if (currentProject) {
-      loadTasks(parseInt(currentProject.id))
+      loadNodes()
     }
-  }, [currentProject, loadTasks])
+  }, [currentProject, loadNodes])
+
+  // Get all nodes that have tasks, grouped by status
+  const tasksByStatus = useMemo(() => {
+    const result: Record<TaskState, VerbweaverNode[]> = {
+      'todo': [],
+      'in-progress': [],
+      'review': [],
+      'done': [],
+      'archived': []
+    }
+    
+    nodes.forEach(node => {
+      if (node.hasTask && node.taskStatus) {
+        result[node.taskStatus].push(node)
+      }
+    })
+    
+    return result
+  }, [nodes])
 
   const handleDragEnd = (result: DropResult) => {
     if (!result.destination || !currentProject) return
 
-    const taskId = result.draggableId
-    const newStatus = result.destination.droppableId as TaskStatus
+    const nodePath = result.draggableId
+    const newStatus = result.destination.droppableId as TaskState
 
-    updateTaskStatus(parseInt(currentProject.id), taskId, newStatus)
+    updateTaskStatus(nodePath, newStatus)
   }
 
-  const getTasksByStatus = (status: string) => {
-    return tasks[status as keyof typeof tasks] || []
+  const getTasksByStatus = (status: TaskState) => {
+    return tasksByStatus[status] || []
   }
 
-  const handleCreateTask = (columnId: string) => {
+  const handleCreateTask = (columnId: TaskState) => {
     setSelectedColumn(columnId)
     setIsCreateModalOpen(true)
   }
@@ -71,7 +90,7 @@ function ThreadsView() {
           </div>
           
           <button
-            onClick={() => handleCreateTask(TASK_STATES.TODO)}
+            onClick={() => handleCreateTask('todo')}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
           >
             <Plus className="w-4 h-4" />
@@ -124,10 +143,10 @@ function ThreadsView() {
                             snapshot.isDraggingOver && 'bg-accent/20'
                           )}
                         >
-                          {getTasksByStatus(column.id).map((task, index) => (
+                          {getTasksByStatus(column.id).map((node, index) => (
                             <Draggable
-                              key={task.id}
-                              draggableId={task.id}
+                              key={node.path}
+                              draggableId={node.path}
                               index={index}
                             >
                               {(provided, snapshot) => (
@@ -138,7 +157,7 @@ function ThreadsView() {
                                   style={provided.draggableProps.style}
                                 >
                                   <TaskCard
-                                    task={task}
+                                    node={node}
                                     isDragging={snapshot.isDragging}
                                   />
                                 </div>
@@ -160,8 +179,7 @@ function ThreadsView() {
       {/* Create Task Modal */}
       {isCreateModalOpen && (
         <CreateTaskModal
-          projectId={currentProject.id}
-          defaultStatus={selectedColumn || TASK_STATES.TODO}
+          defaultStatus={selectedColumn || 'todo'}
           onClose={() => {
             setIsCreateModalOpen(false)
             setSelectedColumn(null)
