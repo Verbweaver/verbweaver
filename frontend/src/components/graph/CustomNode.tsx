@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { Handle, Position } from 'react-flow-renderer'
 import { NODE_TYPES } from '@verbweaver/shared'
-import { FileText, User, MapPin, CheckCircle, Package, Folder } from 'lucide-react'
+import { FileText, User, MapPin, CheckCircle, Package, Folder, FolderOpen } from 'lucide-react'
 import clsx from 'clsx'
 
 interface CustomNodeProps {
@@ -9,11 +9,17 @@ interface CustomNodeProps {
     label: string
     type: string
     metadata?: any
+    isDirectory?: boolean
   }
   selected?: boolean
 }
 
-const getIcon = (type: string) => {
+const getIcon = (type: string, isDirectory?: boolean) => {
+  // Check if it's a directory/folder first
+  if (isDirectory || type === 'folder') {
+    return FolderOpen
+  }
+  
   switch (type) {
     case NODE_TYPES.CHAPTER:
       return FileText
@@ -24,13 +30,18 @@ const getIcon = (type: string) => {
     case NODE_TYPES.TASK:
       return CheckCircle
     case NODE_TYPES.DIRECTORY:
-      return Folder
+      return FolderOpen
     default:
-      return Package
+      return FileText
   }
 }
 
-const getNodeColor = (type: string) => {
+const getNodeColor = (type: string, isDirectory?: boolean) => {
+  // Check if it's a directory/folder first
+  if (isDirectory || type === 'folder') {
+    return 'bg-amber-600'
+  }
+  
   switch (type) {
     case NODE_TYPES.CHAPTER:
       return 'bg-blue-500'
@@ -41,15 +52,15 @@ const getNodeColor = (type: string) => {
     case NODE_TYPES.TASK:
       return 'bg-purple-500'
     case NODE_TYPES.DIRECTORY:
-      return 'bg-gray-500'
+      return 'bg-amber-600'
     default:
       return 'bg-gray-400'
   }
 }
 
 function CustomNode({ data, selected }: CustomNodeProps) {
-  const Icon = getIcon(data.type)
-  const colorClass = getNodeColor(data.type)
+  const Icon = getIcon(data.type, data.isDirectory)
+  const colorClass = getNodeColor(data.type, data.isDirectory)
 
   return (
     <div

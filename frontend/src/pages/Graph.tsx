@@ -66,9 +66,31 @@ function GraphView() {
       const flowNodes: Node[] = []
       const flowEdges: Edge[] = []
       
+      // First, process all nodes from the store
+      verbweaverNodes.forEach((node) => {
+        // Create flow node for all nodes, including 'nodes' folder if it exists
+        flowNodes.push({
+          id: node.path,
+          type: 'custom',
+          position: node.metadata.position || { x: Math.random() * 500, y: Math.random() * 500 },
+          data: {
+            label: node.metadata.title || node.name,
+            type: node.isDirectory ? 'folder' : (node.metadata.type || 'document'),
+            metadata: node.metadata,
+            hasTask: node.hasTask,
+            taskStatus: node.taskStatus,
+            isDirectory: node.isDirectory,
+            isMarkdown: node.isMarkdown,
+          },
+        })
+      })
+      
       // Check if we need to add a virtual nodes folder
+      // Only add if there's content in nodes/ AND we don't already have a 'nodes' node
       const hasNodesContent = Array.from(verbweaverNodes.keys()).some(path => path.startsWith('nodes/'))
-      if (hasNodesContent && !verbweaverNodes.has('nodes')) {
+      const hasNodesFolder = flowNodes.some(node => node.id === 'nodes')
+      
+      if (hasNodesContent && !hasNodesFolder) {
         // Add virtual root nodes folder
         flowNodes.push({
           id: 'nodes',
@@ -86,33 +108,8 @@ function GraphView() {
         })
       }
       
+      // Now create edges for all nodes
       verbweaverNodes.forEach((node) => {
-        // Skip the nodes folder itself if it exists in the map
-        if (node.path === 'nodes') {
-          // Use existing position if available
-          const existingNode = flowNodes.find(n => n.id === 'nodes')
-          if (existingNode && node.metadata.position) {
-            existingNode.position = node.metadata.position
-          }
-          return
-        }
-        
-        // Create flow node
-        flowNodes.push({
-          id: node.path,
-          type: 'custom',
-          position: node.metadata.position || { x: Math.random() * 500, y: Math.random() * 500 },
-          data: {
-            label: node.metadata.title || node.name,
-            type: node.isDirectory ? 'folder' : (node.metadata.type || 'document'),
-            metadata: node.metadata,
-            hasTask: node.hasTask,
-            taskStatus: node.taskStatus,
-            isDirectory: node.isDirectory,
-            isMarkdown: node.isMarkdown,
-          },
-        })
-        
         // Create hard link edges (parent-child)
         let parentPath = node.hardLinks.parent
         

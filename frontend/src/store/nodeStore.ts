@@ -140,14 +140,26 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
       // Read Markdown file with front matter
       const fileContent = await window.electronAPI.readFile(absolutePath);
       const parsed = parseMarkdownWithFrontMatter(fileContent);
-      metadata = { ...metadata, ...parsed.metadata };
+      // Preserve the ID from the file if it exists, otherwise use the generated one
+      metadata = { 
+        id: parsed.metadata.id || metadata.id,
+        title: parsed.metadata.title || name.replace(/\.md$/, ''),
+        type: parsed.metadata.type || (isDirectory ? 'folder' : 'file'),
+        ...parsed.metadata 
+      };
       content = parsed.content;
     } else if (!isDirectory) {
       // Check for .metadata.md file
       try {
         const metadataContent = await window.electronAPI.readFile(absoluteMetadataPath);
         const parsed = parseMarkdownWithFrontMatter(metadataContent);
-        metadata = { ...metadata, ...parsed.metadata };
+        // Preserve the ID from the file if it exists
+        metadata = { 
+          id: parsed.metadata.id || metadata.id,
+          title: parsed.metadata.title || name.replace(/\.md$/, ''),
+          type: parsed.metadata.type || (isDirectory ? 'folder' : 'file'),
+          ...parsed.metadata 
+        };
       } catch (e) {
         // No metadata file, use defaults
       }
