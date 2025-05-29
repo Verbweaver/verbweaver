@@ -39,6 +39,11 @@ class EdgeCreate(BaseModel):
     label: Optional[str] = None
 
 
+class FolderCreate(BaseModel):
+    parent_path: str = "nodes"
+    folder_name: str
+
+
 class GraphResponse(BaseModel):
     nodes: List[dict]
     edges: List[dict]
@@ -400,6 +405,44 @@ async def delete_edge(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.post("/projects/{project_id}/folders")
+async def create_folder(
+    project_id: int,
+    folder_data: FolderCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new folder in the graph."""
+    # Check project access
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Create folder using NodeService
+    node_service = NodeService(project)
+    try:
+        folder_node = await node_service.create_folder(
+            parent_path=folder_data.parent_path,
+            folder_name=folder_data.folder_name
+        )
+        return folder_node
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

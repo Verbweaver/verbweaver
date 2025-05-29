@@ -15,10 +15,15 @@ import ReactFlow, {
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
 import { useWebSocket } from '../services/websocket'
+import { TemplateSelectionDialog } from '../components/TemplateSelectionDialog'
+import { FolderCreateDialog } from '../components/FolderCreateDialog'
+import { templatesApi, Template as ApiTemplate } from '../api/templates';
+import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 import { NODE_TYPES } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
+import { createNodeFromTemplateDesktop } from '../api/desktop-templates';
 
 // Define custom node types
 const nodeTypes: NodeTypes = {
@@ -34,8 +39,12 @@ function GraphView() {
   
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; isFolder?: boolean } | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false)
+  const [pendingNodePosition, setPendingNodePosition] = useState<{ x: number; y: number } | undefined>()
+  const [parentPathForNewNode, setParentPathForNewNode] = useState<string>('')
   
   // Connect WebSocket for real-time updates
   const projectId = currentProject?.id?.toString()
@@ -146,14 +155,16 @@ function GraphView() {
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: Node) => {
       event.preventDefault()
+      const verbweaverNode = verbweaverNodes.get(node.id)
       setContextMenu({
         x: event.clientX,
         y: event.clientY,
         nodeId: node.id,
+        isFolder: verbweaverNode?.isDirectory || false
       })
       setSelectedNode(node.id)
     },
-    []
+    [verbweaverNodes]
   )
 
   const onPaneContextMenu = useCallback(
@@ -169,6 +180,7 @@ function GraphView() {
         x: event.clientX,
         y: event.clientY,
       })
+      setPendingNodePosition(position)
     },
     []
   )
@@ -176,25 +188,134 @@ function GraphView() {
   // Handle creating new node
   const handleCreateNode = useCallback(
     async (type: string, position?: { x: number; y: number }) => {
-      const title = prompt(`Enter name for new ${type}:`)
-      if (!title) return
+      setPendingNodePosition(position)
+      setParentPathForNewNode('')
       
-      try {
-        const parentPath = '' // Root level by default
-        const newNode = await createNode(parentPath, title, type as any, {
-          position: position || { x: 250, y: 250 }
-        })
-        
-        // Node will be added to graph automatically via store update
-        toast.success('Node created')
-      } catch (error) {
-        toast.error('Failed to create node')
+      if (type === 'folder') {
+        // For folders, open folder dialog
+        setFolderDialogOpen(true)
+      } else {
+        // For nodes, open template selection dialog
+        setTemplateDialogOpen(true)
       }
       
       setContextMenu(null)
     },
-    [createNode]
+    []
   )
+
+  // Handle folder creation
+  const handleCreateFolder = useCallback(
+    async (folderName: string) => {
+      if (!folderName || !currentProject) return
+      
+      try {
+        const response = await apiClient.post(`/projects/${currentProject?.id}/folders`, {
+          parent_path: 'nodes',
+          folder_name: folderName
+        })
+        
+        if (response.status !== 200) throw new Error('Failed to create folder')
+        
+        await loadNodes()
+        toast.success('Folder created')
+      } catch (error) {
+        toast.error('Failed to create folder')
+      }
+    },
+    [currentProject, loadNodes]
+  )
+
+  // Handle creating child node in folder
+  const handleCreateChildNode = useCallback(
+    async (parentPath: string) => {
+      setParentPathForNewNode(parentPath)
+      setTemplateDialogOpen(true)
+      setContextMenu(null)
+    },
+    []
+  )
+
+  // Handle template selection
+  const handleTemplateSelected = useCallback(
+    async (templatePath: string, nodeName: string, parentPathValue: string) => {
+      const targetParentPath = parentPathValue || parentPathForNewNode || 'nodes'; // Default to 'nodes' if no specific parent
+      const metadataForNewNode = pendingNodePosition ? { position: pendingNodePosition } : {};
+  
+      try {
+        let nodeResponseData; // To store the response from either API
+  
+        if (window.electronAPI && currentProjectPath) {
+          // --- DESKTOP Path ---
+          console.log('Using desktop API to create node from template', { 
+            templatePath,          // e.g., "templates/Empty.md"
+            nodeName,
+            targetParentPath,      // e.g., "nodes" or "nodes/some_folder" (relative to project_root/nodes)
+            metadataForNewNode 
+          });
+          nodeResponseData = await createNodeFromTemplateDesktop(
+            templatePath,          // This is relative to project root for the IPC call
+            nodeName,
+            targetParentPath,      // This path is relative to the 'nodes' directory.
+                                   // The IPC handler joins it with 'nodesDir'.
+            metadataForNewNode
+          );
+        } else if (!window.electronAPI && currentProject?.id) {
+          // --- WEB Path ---
+          const projectId = currentProject.id; // Assuming ID is a string as expected by API
+          console.log('Using web API to create node from template', { 
+            projectId,
+            templatePath, 
+            nodeName, 
+            targetParentPath, 
+            metadataForNewNode 
+          });
+          
+          nodeResponseData = await templatesApi.createNodeFromTemplate(projectId, {
+            template_path: templatePath,       // Relative path to template, e.g., "templates/Empty.md"
+            node_name: nodeName,
+            parent_path: targetParentPath,     // Relative to 'nodes' dir, or 'nodes' for root of nodes
+            initial_metadata: metadataForNewNode,
+          });
+        } else {
+          // --- Context not available ---
+          const errorMsg = 'Project context not available for creating node.';
+          console.error(errorMsg, { 
+            isElectron: !!window.electronAPI, 
+            currentProjectPath, 
+            currentProjectId: currentProject?.id 
+          });
+          toast.error(errorMsg);
+          // Ensure dialog closes and states reset even if we return early
+          setPendingNodePosition(undefined);
+          setParentPathForNewNode('');
+          setTemplateDialogOpen(false); // Close dialog
+          return;
+        }
+        
+        // --- Process response ---
+        if (nodeResponseData) { 
+          console.log('Node created successfully from template:', nodeResponseData);
+          // Ensure nodeResponseData is used if needed to update the graph, 
+          // or that loadNodes() correctly picks up the new node.
+          await loadNodes(); // Reload graph nodes
+          toast.success('Node created from template');
+        } else {
+          console.error('Node creation call succeeded but returned no data.');
+          toast.error('Failed to create node: No data received.');
+        }
+  
+      } catch (error: any) {
+        console.error('Error creating node from template:', error);
+        toast.error(`Error creating node: ${error.message || 'Unknown error'}`);
+      } finally {
+        setPendingNodePosition(undefined);
+        setParentPathForNewNode('');
+        setTemplateDialogOpen(false); // Ensure dialog is always closed
+      }
+    },
+    [currentProject, currentProjectPath, loadNodes, pendingNodePosition, parentPathForNewNode, setTemplateDialogOpen] // Added currentProjectPath and setTemplateDialogOpen to dependency array
+  );
 
   // Handle deleting node
   const handleDeleteNode = useCallback(
@@ -303,6 +424,8 @@ function GraphView() {
                 return '#64748b'
               case NODE_TYPES.FILE:
                 return '#94a3b8'
+              case 'folder':
+                return '#64748b'
               default:
                 return '#6b7280'
             }
@@ -319,11 +442,26 @@ function GraphView() {
           x={contextMenu.x}
           y={contextMenu.y}
           nodeId={contextMenu.nodeId}
+          isFolder={contextMenu.isFolder}
           onCreateNode={handleCreateNode}
           onDeleteNode={handleDeleteNode}
+          onCreateChildNode={handleCreateChildNode}
           onClose={() => setContextMenu(null)}
         />
       )}
+      
+      <FolderCreateDialog
+        isOpen={folderDialogOpen}
+        onClose={() => setFolderDialogOpen(false)}
+        onCreate={handleCreateFolder}
+      />
+      
+      <TemplateSelectionDialog
+        isOpen={templateDialogOpen}
+        onClose={() => setTemplateDialogOpen(false)}
+        onSelectTemplate={handleTemplateSelected}
+        parentPath={parentPathForNewNode}
+      />
     </div>
   )
 }

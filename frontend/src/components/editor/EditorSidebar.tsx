@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, Folder, Plus } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { editorApi } from '../../api/editorApi'
+import { TemplateSelectionDialog } from '../TemplateSelectionDialog'
+import { FolderCreateDialog } from '../FolderCreateDialog'
+import { templatesApi } from '../../api/templates'
+import { apiClient } from '../../api/client'
 import clsx from 'clsx'
 import FileCreateDialog from './FileCreateDialog'
 import toast from 'react-hot-toast'
@@ -27,6 +31,8 @@ function EditorSidebar() {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false)
+  const [showFolderDialog, setShowFolderDialog] = useState(false)
   const { addEditorTab } = useTabStore()
 
   useEffect(() => {
@@ -224,6 +230,41 @@ Add any additional notes or references here.
     }
   }
 
+  const handleCreateFolder = async (folderName: string) => {
+    if (!folderName || !currentProject) return
+    
+    try {
+      await apiClient.post(`/projects/${currentProject.id}/folders`, {
+        parent_path: 'nodes',
+        folder_name: folderName
+      })
+      
+      // Reload the file tree
+      await loadFileTree()
+      toast.success('Folder created')
+    } catch (error) {
+      toast.error('Failed to create folder')
+    }
+  }
+
+  const handleTemplateSelected = async (templatePath: string, nodeName: string, parentPath: string) => {
+    if (!currentProject) return
+    
+    try {
+      await templatesApi.createNodeFromTemplate(parseInt(currentProject.id), {
+        template_path: templatePath,
+        node_name: nodeName,
+        parent_path: parentPath || 'nodes'
+      })
+      
+      // Reload the file tree
+      await loadFileTree()
+      toast.success('Node created')
+    } catch (error) {
+      toast.error('Failed to create node')
+    }
+  }
+
   const renderNode = (node: FileNode, depth: number = 0) => {
     const isExpanded = expandedDirs.has(node.path)
     const Icon = node.type === 'directory' ? Folder : FileText
@@ -268,13 +309,22 @@ Add any additional notes or references here.
       {/* Header */}
       <div className="flex items-center justify-between p-2 border-b border-border">
         <h3 className="text-sm font-semibold">Files</h3>
-        <button
-          onClick={() => setShowCreateDialog(true)}
-          className="p-1 rounded hover:bg-accent"
-          title="New file"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowFolderDialog(true)}
+            className="p-1 rounded hover:bg-accent"
+            title="Create folder"
+          >
+            <FolderPlus className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setShowTemplateDialog(true)}
+            className="p-1 rounded hover:bg-accent"
+            title="Create node"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* File Tree */}
@@ -293,6 +343,21 @@ Add any additional notes or references here.
         isOpen={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
         onCreate={handleCreateFile}
+      />
+
+      {/* Folder Create Dialog */}
+      <FolderCreateDialog
+        isOpen={showFolderDialog}
+        onClose={() => setShowFolderDialog(false)}
+        onCreate={handleCreateFolder}
+      />
+
+      {/* Template Selection Dialog */}
+      <TemplateSelectionDialog
+        isOpen={showTemplateDialog}
+        onClose={() => setShowTemplateDialog(false)}
+        onSelectTemplate={handleTemplateSelected}
+        parentPath="nodes"
       />
     </div>
   )

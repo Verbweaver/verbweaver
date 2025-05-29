@@ -5,7 +5,7 @@
   "private": true,
   "workspaces": [
     "backend",
-    "frontend", 
+    "frontend",
     "shared",
     "desktop",
     "mobile"
@@ -43,5 +43,10 @@
     "project-management"
   ],
   "author": "Your Name",
-  "license": "MIT"
-} 
+  "license": "MIT",
+  "dependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "gray-matter": "^4.0.3",
+    "js-yaml": "^4.1.0"
+  }
+}

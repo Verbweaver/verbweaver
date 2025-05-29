@@ -3,6 +3,7 @@ import { useProjectStore } from '../store/projectStore';
 import { FolderOpen, Plus, BarChart3, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import NewProjectDialog from '../components/NewProjectDialog';
+import ProjectList from '../components/ProjectList';
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -62,6 +63,12 @@ export default function Dashboard() {
     setShowNewProjectDialog(true);
   };
 
+  // For web version, show the project list
+  if (!isElectron) {
+    return <ProjectList />;
+  }
+
+  // Desktop version interface
   return (
     <div className="p-6">
       <div className="mb-6">

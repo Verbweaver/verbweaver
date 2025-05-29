@@ -154,6 +154,7 @@ Comprehensive documentation is available in the [docs](docs/) directory:
 - [API Reference](docs/api-reference.md) - REST API documentation
 - [User Guide](docs/user-guide.md) - How to use Verbweaver
 - [Developer Guide](docs/developer-guide.md) - Contributing and development
+- [Repository Paths](docs/repository-paths.md) - How project storage works
 - [Deployment Guide](docs/deployment.md) - Production deployment
 
 ## 🧪 Testing

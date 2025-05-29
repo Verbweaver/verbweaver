@@ -54,8 +54,8 @@ $backendPath = Join-Path $projectRoot "backend"
 # Create a script block for the backend
 $backendScript = @"
 Write-Host 'Starting Verbweaver Backend...' -ForegroundColor Green
-cd '$backendPath'
-& '$pythonCmd' run.py
+Set-Location '$backendPath'
+& '$pythonCmd' -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 Write-Host 'Backend stopped.' -ForegroundColor Red
 Read-Host 'Press Enter to close'
 "@

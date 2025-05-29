@@ -87,6 +87,7 @@ export interface ElectronAPI {
   loadGraphData: () => Promise<{ nodes: any[], edges: any[] }>;
   createNodeFile: (initialNodeData: Partial<any>) => Promise<any | null>;
   deleteNodeFile: (relativeFilePath: string) => Promise<void>;
+  createNodeFromTemplateFile: (args: { templateRelativePath: string, newNodeName: string, newParentRelativePath: string, initialMetadata: Record<string, any> }) => Promise<any>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -199,6 +200,7 @@ const electronAPI: ElectronAPI = {
   loadGraphData: () => ipcRenderer.invoke('graph:loadData'),
   createNodeFile: (initialNodeData: Partial<any>) => ipcRenderer.invoke('graph:createNodeFile', initialNodeData),
   deleteNodeFile: (relativeFilePath: string) => ipcRenderer.invoke('graph:deleteNodeFile', relativeFilePath),
+  createNodeFromTemplateFile: (args: { templateRelativePath: string, newNodeName: string, newParentRelativePath: string, initialMetadata: Record<string, any> }) => ipcRenderer.invoke('graph:createNodeFromTemplateFile', args),
 };
 
 // Securely expose the API to the renderer process

@@ -6,15 +6,24 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+import logging
+import os
 
 from app.database import get_db
 from app.models import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
 from app.services.git_service import GitService
+from app.services.node_service import NodeService
 from app.core.security import get_current_user
 from app.models import User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def get_git_service() -> GitService:
+    """Dependency to get GitService instance"""
+    return GitService()
 
 
 @router.get("/", response_model=List[ProjectResponse])
@@ -62,9 +71,11 @@ async def create_project(
     project_data: ProjectCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    git_service: GitService = Depends()
+    git_service: GitService = Depends(get_git_service)
 ):
     """Create a new project"""
+    logger.info(f"Creating project: {project_data.name}")
+    
     # Initialize git repository
     git_config = await git_service.initialize_project(
         project_name=project_data.name,
@@ -84,6 +95,34 @@ async def create_project(
     db.add(project)
     await db.commit()
     await db.refresh(project)
+    
+    logger.info(f"Project created in database: {project.id}")
+    
+    # Create default folders and Empty template
+    node_service = NodeService(project)
+    
+    try:
+        # Create nodes folder
+        logger.info("Creating nodes folder...")
+        await node_service.create_folder("", "nodes")
+        logger.info("Nodes folder created successfully")
+        
+        # Create Empty template
+        logger.info("Creating Empty template...")
+        logger.info(f"Project path: {node_service.project_path}")
+        logger.info(f"Git repository path: {git_service.repo_path}")
+        
+        await node_service.create_empty_template()
+        
+        # Verify template was created
+        template_path = os.path.join(node_service.project_path, "templates", "Empty.md")
+        if os.path.exists(template_path):
+            logger.info(f"Empty template created successfully at: {template_path}")
+        else:
+            logger.error(f"Empty template was NOT created at: {template_path}")
+    except Exception as e:
+        logger.error(f"Error creating default project structure: {e}", exc_info=True)
+        # Don't fail the project creation if template creation fails
     
     return project
 
@@ -123,7 +162,7 @@ async def delete_project(
     project_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    git_service: GitService = Depends()
+    git_service: GitService = Depends(get_git_service)
 ):
     """Delete a project"""
     result = await db.execute(

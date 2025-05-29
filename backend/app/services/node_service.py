@@ -11,6 +11,7 @@ from datetime import datetime
 import uuid
 from pathlib import Path
 import json
+import shutil
 
 from app.models import Project
 from app.services.git_service import GitService
@@ -230,7 +231,6 @@ class NodeService:
         
         # Delete from filesystem
         if os.path.isdir(full_path):
-            import shutil
             shutil.rmtree(full_path)
         else:
             os.remove(full_path)
@@ -271,7 +271,7 @@ class NodeService:
             links.remove(target_id)
             await self.update_node(source_path, {'links': links})
     
-    async def list_nodes(self, directory: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def list_nodes(self, directory: Optional[str] = None, exclude_templates: bool = True) -> List[Dict[str, Any]]:
         """List all nodes in a directory (or entire project)."""
         nodes = []
         
@@ -285,9 +285,16 @@ class NodeService:
             if rel_root == '.':
                 rel_root = ''
             
+            # Skip templates directory if requested
+            if exclude_templates and 'templates' in rel_root.split('/'):
+                continue
+            
             # Add directories as nodes
             for dir_name in dirs:
                 if dir_name.startswith('.'):  # Skip hidden directories
+                    continue
+                # Skip templates directory at root level
+                if exclude_templates and rel_root == '' and dir_name == 'templates':
                     continue
                 dir_path = os.path.join(rel_root, dir_name).replace('\\', '/') if rel_root else dir_name
                 node = await self.read_node(dir_path)
@@ -334,4 +341,215 @@ class NodeService:
             
             results.append(node)
         
-        return results 
+        return results
+    
+    async def create_empty_template(self) -> None:
+        """Create the default Empty template for a project."""
+        templates_dir = os.path.join(self.project_path, 'templates')
+        os.makedirs(templates_dir, exist_ok=True)
+        
+        # Source template file
+        source_template = os.path.join(os.path.dirname(__file__), '..', '..', 'templates', 'Empty.md')
+        
+        # Destination template file
+        dest_template = os.path.join(templates_dir, 'Empty.md')
+        
+        # Only copy if destination doesn't exist
+        if not os.path.exists(dest_template):
+            if os.path.exists(source_template):
+                # Copy the template file
+                shutil.copy2(source_template, dest_template)
+                
+                # Update the timestamps in the copied file
+                async with aiofiles.open(dest_template, 'r', encoding='utf-8') as f:
+                    content = await f.read()
+                
+                # Replace the placeholder timestamps with current time
+                now = datetime.now().isoformat()
+                content = content.replace("created: '2024-01-01T00:00:00'", f"created: '{now}'")
+                content = content.replace("modified: '2024-01-01T00:00:00'", f"modified: '{now}'")
+                
+                async with aiofiles.open(dest_template, 'w', encoding='utf-8') as f:
+                    await f.write(content)
+                
+                # Commit to Git
+                await self.git_service.add_and_commit(['templates/Empty.md'], 'Created Empty template')
+            else:
+                # Fallback to generating the template if source doesn't exist
+                metadata = {
+                    'id': '',
+                    'title': 'Empty',
+                    'type': 'file',
+                    'created': datetime.now().isoformat(),
+                    'modified': datetime.now().isoformat(),
+                    'description': '',
+                    'tags': [],
+                    'links': [],
+                    'task': {
+                        'status': 'todo',
+                        'priority': 'medium',
+                        'assignee': None,
+                        'dueDate': None,
+                        'completedDate': None,
+                        'description': ''
+                    }
+                }
+                
+                content = "# {title}\n\n{description}"
+                
+                file_content = await self.stringify_markdown_with_frontmatter(metadata, content)
+                async with aiofiles.open(dest_template, 'w', encoding='utf-8') as f:
+                    await f.write(file_content)
+                
+                await self.git_service.add_and_commit(['templates/Empty.md'], 'Created Empty template')
+    
+    async def list_templates(self) -> List[Dict[str, Any]]:
+        """List all templates in the project."""
+        templates_dir = os.path.join(self.project_path, 'templates')
+        if not os.path.exists(templates_dir):
+            return []
+        
+        templates = []
+        for filename in os.listdir(templates_dir):
+            if filename.endswith('.md'):
+                template_path = os.path.join('templates', filename)
+                template = await self.read_node(template_path)
+                if template:
+                    templates.append(template)
+        
+        return templates
+    
+    async def save_as_template(self, node_path: str, template_name: str) -> Dict[str, Any]:
+        """Save a node as a template."""
+        # Read the source node
+        node = await self.read_node(node_path)
+        if not node:
+            raise FileNotFoundError(f"Node not found: {node_path}")
+        
+        if node['isDirectory']:
+            raise ValueError("Cannot save a directory as a template")
+        
+        # Prepare template metadata (exclude position, links, and task states)
+        template_metadata = node['metadata'].copy()
+        template_metadata['title'] = template_name
+        template_metadata['created'] = datetime.now().isoformat()
+        template_metadata['modified'] = datetime.now().isoformat()
+        
+        # Remove fields that shouldn't be in templates
+        template_metadata.pop('id', None)
+        template_metadata.pop('position', None)
+        template_metadata['links'] = []  # Clear soft links
+        
+        # Reset task state if present
+        if 'task' in template_metadata:
+            template_metadata['task'] = {
+                'status': 'todo',
+                'priority': template_metadata['task'].get('priority', 'medium'),
+                'assignee': None,
+                'dueDate': None,
+                'completedDate': None,
+                'description': template_metadata['task'].get('description', '')
+            }
+        
+        # Create template
+        templates_dir = os.path.join(self.project_path, 'templates')
+        os.makedirs(templates_dir, exist_ok=True)
+        
+        sanitized_name = self.sanitize_filename(template_name)
+        template_filename = sanitized_name if sanitized_name.endswith('.md') else f"{sanitized_name}.md"
+        template_path = os.path.join('templates', template_filename)
+        full_template_path = os.path.join(templates_dir, template_filename)
+        
+        # Write template file
+        content = node.get('content', '')
+        file_content = await self.stringify_markdown_with_frontmatter(template_metadata, content)
+        async with aiofiles.open(full_template_path, 'w', encoding='utf-8') as f:
+            await f.write(file_content)
+        
+        # Commit to Git
+        await self.git_service.add_and_commit([template_path], f'Created template: {template_name}')
+        
+        # Return the created template
+        return await self.read_node(template_path)
+    
+    async def create_node_from_template(self, parent_path: str, name: str, template_path: str,
+                                       initial_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Create a new node from a template."""
+        # Read the template
+        template = await self.read_node(template_path)
+        if not template:
+            raise FileNotFoundError(f"Template not found: {template_path}")
+        
+        # Prepare metadata from template
+        metadata = template['metadata'].copy()
+        metadata['id'] = self.generate_id()
+        metadata['title'] = name
+        metadata['created'] = datetime.now().isoformat()
+        metadata['modified'] = datetime.now().isoformat()
+        
+        # Apply any initial metadata overrides
+        if initial_metadata:
+            metadata.update(initial_metadata)
+        
+        # Get content from template and replace placeholders
+        content = template.get('content', '')
+        content = content.replace('{title}', name)
+        content = content.replace('{description}', metadata.get('description', ''))
+        
+        # Create the node
+        sanitized_name = self.sanitize_filename(name)
+        filename = sanitized_name if sanitized_name.endswith('.md') else f"{sanitized_name}.md"
+        
+        if parent_path:
+            path = os.path.join(parent_path, filename).replace('\\', '/')
+            full_path = os.path.join(self.project_path, parent_path, filename)
+        else:
+            path = os.path.join('nodes', filename).replace('\\', '/')
+            full_path = os.path.join(self.project_path, 'nodes', filename)
+        
+        # Ensure parent directory exists
+        parent_dir = os.path.dirname(full_path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+        
+        # Write file
+        file_content = await self.stringify_markdown_with_frontmatter(metadata, content)
+        async with aiofiles.open(full_path, 'w', encoding='utf-8') as f:
+            await f.write(file_content)
+        
+        # Commit to Git
+        await self.git_service.add_and_commit([path], f"Created node from template: {metadata['title']}")
+        
+        # Return the created node
+        return await self.read_node(path)
+    
+    async def delete_template(self, template_name: str) -> None:
+        """Delete a template."""
+        template_path = os.path.join('templates', f"{template_name}.md")
+        await self.delete_node(template_path)
+    
+    async def create_folder(self, parent_path: str, folder_name: str) -> Dict[str, Any]:
+        """Create a new folder."""
+        sanitized_name = self.sanitize_filename(folder_name)
+        
+        if parent_path:
+            folder_path = os.path.join(parent_path, sanitized_name).replace('\\', '/')
+            full_path = os.path.join(self.project_path, parent_path, sanitized_name)
+        else:
+            folder_path = sanitized_name
+            full_path = os.path.join(self.project_path, sanitized_name)
+        
+        # Create the directory
+        os.makedirs(full_path, exist_ok=True)
+        
+        # Create a .gitkeep file to ensure the folder is tracked by Git
+        gitkeep_path = os.path.join(full_path, '.gitkeep')
+        with open(gitkeep_path, 'w') as f:
+            f.write('')
+        
+        # Commit to Git
+        gitkeep_relative = os.path.join(folder_path, '.gitkeep').replace('\\', '/')
+        await self.git_service.add_and_commit([gitkeep_relative], f"Created folder: {folder_name}")
+        
+        # Return the folder node
+        return await self.read_node(folder_path) 

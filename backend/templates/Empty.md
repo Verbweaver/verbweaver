@@ -2,8 +2,8 @@
 id: ''
 title: Empty
 type: file
-created: '2025-05-28T23:21:39.253307'
-modified: '2025-05-28T23:21:39.253311'
+created: '2024-01-01T00:00:00'
+modified: '2024-01-01T00:00:00'
 description: ''
 tags: []
 links: []
@@ -17,4 +17,4 @@ task:
 ---
 # {title}
 
-{description}
+{description} 

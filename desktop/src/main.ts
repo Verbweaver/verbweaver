@@ -548,7 +548,7 @@ function setupIpcHandlers() {
       
       await mkdir(verbweaverDir, { recursive: true });
       await mkdir(docsDir, { recursive: true });
-      await mkdir(templatesDir, { recursive: true });
+      await mkdir(templatesDir, { recursive: true }); // Ensure templatesDir is created
       await mkdir(nodesDir, { recursive: true }); // Ensure nodesDir is created
       // await mkdir(tasksDir, { recursive: true }); // REMOVED
       
@@ -601,6 +601,30 @@ This project is backed by Git for version control. All changes are tracked and y
 `;
       
       await writeFile(join(projectPath, 'README.md'), readmeContent, 'utf-8');
+      
+      // Create Empty.md template
+      const emptyTemplateContent = `---
+id: ''
+title: Empty
+type: file
+created: '${new Date().toISOString()}'
+modified: '${new Date().toISOString()}'
+description: ''
+tags: []
+links: []
+task:
+  status: todo
+  priority: medium
+  assignee: null
+  dueDate: null
+  completedDate: null
+  description: ''
+---
+# {title}
+
+{description}
+`;
+      await writeFile(join(templatesDir, 'Empty.md'), emptyTemplateContent, 'utf-8');
       
       // Initialize Git repository
       const { spawn } = require('child_process');
@@ -897,6 +921,98 @@ This project is backed by Git for version control. All changes are tracked and y
       };
     } catch (error) {
       console.error(`Failed to create node file ${filename}:`, error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('graph:createNodeFromTemplateFile', async (_, { templateRelativePath, newNodeName, newParentRelativePath, initialMetadata }: { templateRelativePath: string, newNodeName: string, newParentRelativePath: string, initialMetadata: Record<string, any> }) => {
+    const projectPath = store.get('currentProjectPath') as string | undefined;
+    if (!projectPath) {
+      throw new Error('No project path set. Cannot create node from template.');
+    }
+
+    // Ensure newParentRelativePath doesn't start with 'nodes/' as it's already relative to nodes dir
+    const cleanParentPath = newParentRelativePath.replace(/^nodes\/?/, '');
+    
+    const nodesDir = path.join(projectPath, 'nodes');
+    const newNodesParentDir = path.join(nodesDir, cleanParentPath);
+    if (!existsSync(newNodesParentDir)) {
+      await fs.mkdir(newNodesParentDir, { recursive: true });
+    }
+
+    // 1. Read the template file
+    const absoluteTemplatePath = path.join(projectPath, templateRelativePath);
+    if (!existsSync(absoluteTemplatePath)) {
+      throw new Error(`Template file not found: ${templateRelativePath}`);
+    }
+    const templateFileContent = await fs.readFile(absoluteTemplatePath, 'utf8');
+    const { data: templateFrontmatter, content: templateMarkdownContent } = matter(templateFileContent);
+
+    // 2. Prepare new node's frontmatter
+    const now = new Date().toISOString();
+    const finalNewNodeName = newNodeName || templateFrontmatter.title || 'Untitled Node from Template';
+    
+    const newNodeFrontmatter:any = {
+      ...templateFrontmatter, // Start with template's metadata
+      id: `node-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // Simple unique ID
+      title: finalNewNodeName,
+      created: now,
+      modified: now,
+      ...(initialMetadata || {}), // Apply overrides and additions like position
+    };
+    // Ensure critical fields from template are not overridden by empty initialMetadata
+    if (initialMetadata && initialMetadata.title === undefined && templateFrontmatter.title) newNodeFrontmatter.title = templateFrontmatter.title;
+    if (initialMetadata && initialMetadata.type === undefined && templateFrontmatter.type) newNodeFrontmatter.type = templateFrontmatter.type;
+
+    // 3. Process template content (replace placeholders)
+    let newNodeMarkdownContent = templateMarkdownContent || '';
+    newNodeMarkdownContent = newNodeMarkdownContent.replace(/\{title\}/g, newNodeFrontmatter.title);
+    // Add more placeholder replacements if needed, e.g., {description}
+    if (newNodeFrontmatter.description) {
+      newNodeMarkdownContent = newNodeMarkdownContent.replace(/\{description\}/g, newNodeFrontmatter.description);
+    } else {
+      newNodeMarkdownContent = newNodeMarkdownContent.replace(/\{description\}/g, ''); // remove placeholder if no description
+    }
+
+    // 4. Determine new node's file path (ensure unique name)
+    let baseFilename = slugify(finalNewNodeName);
+    let newFilename = `${baseFilename}.md`;
+    let counter = 1;
+    let newFilePathAbsolute = path.join(newNodesParentDir, newFilename);
+
+    while (existsSync(newFilePathAbsolute)) {
+      newFilename = `${baseFilename}-${counter}.md`;
+      newFilePathAbsolute = path.join(newNodesParentDir, newFilename);
+      counter++;
+    }
+
+    const newFileContent = matter.stringify(newNodeMarkdownContent, newNodeFrontmatter);
+
+    try {
+      await fs.writeFile(newFilePathAbsolute, newFileContent, 'utf8');
+      
+      // Create relative path correctly - should be relative to project root
+      // If in root nodes dir, just use nodes/filename.md
+      // If in subdirectory, use nodes/subdir/filename.md
+      const finalRelativePath = cleanParentPath 
+        ? path.join('nodes', cleanParentPath, newFilename).replace(/\\/g, '/')
+        : path.join('nodes', newFilename).replace(/\\/g, '/');
+
+      return {
+        id: finalRelativePath, // Use relative path as ID, consistent with graph:loadData
+        label: newNodeFrontmatter.title,
+        title: newNodeFrontmatter.title,
+        type: newNodeFrontmatter.type || 'document',
+        position: newNodeFrontmatter.position,
+        data: newNodeFrontmatter,
+        filePath: newFilePathAbsolute, // Absolute path
+        created: newNodeFrontmatter.created,
+        modified: newNodeFrontmatter.modified,
+        tags: newNodeFrontmatter.tags || [],
+        status: newNodeFrontmatter.status,
+      };
+    } catch (error) {
+      console.error(`Failed to create node file from template ${newFilename}:`, error);
       throw error;
     }
   });

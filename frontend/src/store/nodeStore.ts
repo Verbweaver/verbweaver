@@ -1,11 +1,20 @@
 import { create } from 'zustand'
-import { VerbweaverNode, NodeFilter, MarkdownMetadata, TaskState, NodeType } from '@verbweaver/shared'
+import { NodeType, TaskState, MarkdownMetadata, GraphNode } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { useProjectStore } from './projectStore'
 import * as yaml from 'js-yaml'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+
+// Helper function to join paths safely in the frontend
+function joinPaths(...parts: string[]): string {
+  // Filter out empty parts and normalize slashes
+  const cleanParts = parts.filter(Boolean).map(part => 
+    part.replace(/^[\/\\]+|[\/\\]+$/g, '').replace(/\\/g, '/')
+  );
+  return cleanParts.join('/');
+}
 
 interface NodeState {
   nodes: Map<string, VerbweaverNode>  // Map of path -> node
@@ -35,6 +44,33 @@ interface NodeState {
   stopWatching: () => void
 }
 
+// Define VerbweaverNode interface
+interface VerbweaverNode {
+  path: string
+  name: string
+  isDirectory: boolean
+  isMarkdown: boolean
+  metadata: MarkdownMetadata
+  content: string | null
+  hardLinks: {
+    parent: string | null
+    children: string[]
+  }
+  softLinks: string[]
+  hasTask: boolean
+  taskStatus?: TaskState
+}
+
+// Define NodeFilter interface
+interface NodeFilter {
+  type?: NodeType
+  tags?: string[]
+  taskStatus?: TaskState
+  hasTask?: boolean
+  directory?: string
+  searchTerm?: string
+}
+
 // Helper function to parse YAML front matter
 function parseMarkdownWithFrontMatter(content: string): { metadata: any, content: string } {
   const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
@@ -57,7 +93,7 @@ function stringifyMarkdownWithFrontMatter(metadata: any, content: string): strin
 
 // Helper to generate a unique ID
 function generateId(): string {
-  return `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `node-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
 // Helper to sanitize filename
@@ -67,12 +103,18 @@ function sanitizeFilename(name: string): string {
 }
 
 // Helper to load a node from file (Electron only)
-async function loadNodeFromFile(path: string, isDirectory: boolean): Promise<VerbweaverNode | null> {
+async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise<VerbweaverNode | null> {
   if (!isElectron || !window.electronAPI) return null;
   
-  const name = path.split('/').pop() || '';
+  const { currentProjectPath } = useProjectStore.getState();
+  if (!currentProjectPath) {
+    console.error('No project path set in loadNodeFromFile');
+    return null;
+  }
+
+  const name = filePath.split('/').pop() || '';
   const isMarkdown = name.endsWith('.md');
-  const metadataPath = isMarkdown ? path : `${path}.metadata.md`;
+  const metadataPath = isMarkdown ? filePath : `${filePath}.metadata.md`;
   
   let metadata: MarkdownMetadata = {
     id: generateId(),
@@ -83,16 +125,25 @@ async function loadNodeFromFile(path: string, isDirectory: boolean): Promise<Ver
   let content: string | null = null;
   
   try {
+    // Resolve absolute paths for file operations
+    const absolutePath = filePath.startsWith(currentProjectPath) 
+      ? filePath 
+      : joinPaths(currentProjectPath, filePath);
+    
+    const absoluteMetadataPath = metadataPath.startsWith(currentProjectPath)
+      ? metadataPath
+      : joinPaths(currentProjectPath, metadataPath);
+
     if (isMarkdown && !isDirectory) {
       // Read Markdown file with front matter
-      const fileContent = await window.electronAPI.readFile(path);
+      const fileContent = await window.electronAPI.readFile(absolutePath);
       const parsed = parseMarkdownWithFrontMatter(fileContent);
       metadata = { ...metadata, ...parsed.metadata };
       content = parsed.content;
     } else if (!isDirectory) {
       // Check for .metadata.md file
       try {
-        const metadataContent = await window.electronAPI.readFile(metadataPath);
+        const metadataContent = await window.electronAPI.readFile(absoluteMetadataPath);
         const parsed = parseMarkdownWithFrontMatter(metadataContent);
         metadata = { ...metadata, ...parsed.metadata };
       } catch (e) {
@@ -100,24 +151,27 @@ async function loadNodeFromFile(path: string, isDirectory: boolean): Promise<Ver
       }
     }
   } catch (error) {
-    console.error(`Failed to read file ${path}:`, error);
+    console.error(`Failed to read file ${filePath}:`, error);
   }
   
   // Build hard links
-  const parent = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : null;
+  const parent = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : null;
   let children: string[] = [];
   
   if (isDirectory) {
     try {
-      const dirContents = await window.electronAPI.readDirectory(path);
-      children = dirContents.map(item => `${path}/${item.name}`);
+      const absoluteDirPath = filePath.startsWith(currentProjectPath)
+        ? filePath
+        : joinPaths(currentProjectPath, filePath);
+      const dirContents = await window.electronAPI.readDirectory(absoluteDirPath);
+      children = dirContents.map(item => joinPaths(filePath, item.name));
     } catch (error) {
-      console.error(`Failed to read directory ${path}:`, error);
+      console.error(`Failed to read directory ${filePath}:`, error);
     }
   }
   
   return {
-    path,
+    path: filePath,
     name,
     isDirectory,
     isMarkdown,
