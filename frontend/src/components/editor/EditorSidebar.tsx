@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { editorApi } from '../../api/editorApi'
 import { TemplateSelectionDialog } from '../TemplateSelectionDialog'
@@ -33,6 +33,9 @@ function EditorSidebar() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showTemplateDialog, setShowTemplateDialog] = useState(false)
   const [showFolderDialog, setShowFolderDialog] = useState(false)
+  const [selectedFolder, setSelectedFolder] = useState<string>('nodes') // Track selected folder
+  const [draggedNode, setDraggedNode] = useState<FileNode | null>(null)
+  const [dragOverNode, setDragOverNode] = useState<string | null>(null)
   const { addEditorTab } = useTabStore()
 
   useEffect(() => {
@@ -62,7 +65,7 @@ function EditorSidebar() {
           .map(item => ({
             id: item.path,
             name: item.name,
-            path: item.path,
+            path: item.name, // Use relative path from project root
             type: item.type,
             children: item.type === 'directory' ? [] : undefined,
             loaded: false
@@ -91,10 +94,14 @@ function EditorSidebar() {
   }
 
   const loadDirectoryContents = async (node: FileNode) => {
-    if (!isElectron || !window.electronAPI || node.loaded) return
+    if (!isElectron || !window.electronAPI || node.loaded || !currentProjectPath) return
     
     try {
-      const items = await window.electronAPI.readDirectory(node.path)
+      // Don't concatenate if node.path is already absolute
+      const absolutePath = node.path.startsWith(currentProjectPath) 
+        ? node.path 
+        : `${currentProjectPath}/${node.path}`
+      const items = await window.electronAPI.readDirectory(absolutePath)
       
       // Convert to FileNode format
       const children: FileNode[] = items
@@ -103,9 +110,9 @@ function EditorSidebar() {
           return item.type === 'directory' || item.name.endsWith('.md')
         })
         .map(item => ({
-          id: item.path,
+          id: `${node.path}/${item.name}`,
           name: item.name,
-          path: item.path,
+          path: `${node.path}/${item.name}`, // Use relative path
           type: item.type,
           children: item.type === 'directory' ? [] : undefined,
           loaded: false
@@ -160,9 +167,14 @@ function EditorSidebar() {
   const handleFileClick = async (node: FileNode) => {
     if (node.type === 'file') {
       // Create or switch to editor tab
-      addEditorTab(node.path, node.name)
-      navigate(`/editor/${encodeURIComponent(node.path)}`)
+      const absolutePath = node.path.startsWith(currentProjectPath!) 
+        ? node.path 
+        : `${currentProjectPath}/${node.path}`
+      addEditorTab(absolutePath, node.name)
+      navigate(`/editor/${encodeURIComponent(absolutePath)}`)
     } else {
+      // Set selected folder when a directory is clicked (use relative path)
+      setSelectedFolder(node.path)
       await toggleDirectory(node)
     }
   }
@@ -234,15 +246,27 @@ Add any additional notes or references here.
     if (!folderName || !currentProject) return
     
     try {
-      await apiClient.post(`/projects/${currentProject.id}/folders`, {
-        parent_path: 'nodes',
-        folder_name: folderName
-      })
-      
-      // Reload the file tree
-      await loadFileTree()
-      toast.success('Folder created')
+      if (isElectron && currentProjectPath && window.electronAPI) {
+        // In Electron mode, create a folder by creating a hidden file inside it
+        const dummyFilePath = `${currentProjectPath}/${selectedFolder}/${folderName}/.gitkeep`
+        await window.electronAPI.writeFile(dummyFilePath, '')
+        
+        // Reload the file tree
+        await loadFileTree()
+        toast.success('Folder created')
+      } else if (!isElectron && currentProject.id) {
+        // Web mode - use API
+        await apiClient.post(`/projects/${currentProject.id}/folders`, {
+          parent_path: selectedFolder,
+          folder_name: folderName
+        })
+        
+        // Reload the file tree
+        await loadFileTree()
+        toast.success('Folder created')
+      }
     } catch (error) {
+      console.error('Failed to create folder:', error)
       toast.error('Failed to create folder')
     }
   }
@@ -251,7 +275,7 @@ Add any additional notes or references here.
     if (!currentProject) return
     
     try {
-      await templatesApi.createNodeFromTemplate(parseInt(currentProject.id), {
+      await templatesApi.createNodeFromTemplate(currentProject.id.toString(), {
         template_path: templatePath,
         node_name: nodeName,
         parent_path: parentPath || 'nodes'
@@ -265,27 +289,108 @@ Add any additional notes or references here.
     }
   }
 
+  const handleDragStart = useCallback((e: React.DragEvent, node: FileNode) => {
+    setDraggedNode(node)
+    e.dataTransfer.effectAllowed = 'move'
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, node: FileNode) => {
+    e.preventDefault()
+    if (node.type === 'directory' && draggedNode && node.path !== draggedNode.path) {
+      e.dataTransfer.dropEffect = 'move'
+      setDragOverNode(node.path)
+    }
+  }, [draggedNode])
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverNode(null)
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetNode: FileNode) => {
+    e.preventDefault()
+    setDragOverNode(null)
+
+    if (!draggedNode || targetNode.type !== 'directory' || targetNode.path === draggedNode.path) {
+      return
+    }
+
+    // Check if we're trying to move a folder into its own child
+    if (draggedNode.type === 'directory' && targetNode.path.startsWith(draggedNode.path + '/')) {
+      toast.error('Cannot move a folder into its own subfolder')
+      return
+    }
+
+    try {
+      if (isElectron && window.electronAPI && currentProjectPath) {
+        // Calculate new path
+        const oldPath = draggedNode.path
+        const newPath = `${targetNode.path}/${draggedNode.name}`
+        
+        // Move the file/folder using the new IPC handler
+        await window.electronAPI.moveFile(oldPath, newPath)
+        
+        await loadFileTree()
+        toast.success(`Moved ${draggedNode.name} to ${targetNode.name}`)
+      } else if (!isElectron && currentProject) {
+        // For web version, use API to move the file
+        const oldPath = draggedNode.path
+        const newPath = `${targetNode.path}/${draggedNode.name}`
+        
+        await apiClient.post(`/projects/${currentProject.id}/move`, {
+          old_path: oldPath,
+          new_path: newPath
+        })
+        
+        await loadFileTree()
+        toast.success(`Moved ${draggedNode.name} to ${targetNode.name}`)
+      }
+    } catch (error) {
+      console.error('Failed to move file:', error)
+      toast.error('Failed to move file')
+    } finally {
+      setDraggedNode(null)
+    }
+  }, [draggedNode, currentProject, currentProjectPath, isElectron, loadFileTree])
+
   const renderNode = (node: FileNode, depth: number = 0) => {
     const isExpanded = expandedDirs.has(node.path)
+    const isSelected = node.type === 'directory' && node.path === selectedFolder
+    const isDragOver = dragOverNode === node.path
     const Icon = node.type === 'directory' ? Folder : FileText
     const ChevronIcon = isExpanded ? ChevronDown : ChevronRight
 
     return (
       <div key={node.id}>
-        <button
-          onClick={() => handleFileClick(node)}
+        <div
+          draggable
+          onDragStart={(e) => handleDragStart(e, node)}
+          onDragOver={(e) => handleDragOver(e, node)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, node)}
           className={clsx(
-            'w-full flex items-center gap-1 px-2 py-1 text-sm hover:bg-accent hover:text-accent-foreground',
-            'transition-colors'
+            'flex items-center group',
+            isDragOver && 'bg-accent/30'
           )}
-          style={{ paddingLeft: `${depth * 12 + 8}px` }}
         >
-          {node.type === 'directory' && (
-            <ChevronIcon className="w-3 h-3 flex-shrink-0" />
-          )}
-          <Icon className="w-4 h-4 flex-shrink-0" />
-          <span className="truncate">{node.name}</span>
-        </button>
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity p-1 cursor-move">
+            <GripVertical className="w-3 h-3 text-muted-foreground" />
+          </div>
+          <button
+            onClick={() => handleFileClick(node)}
+            className={clsx(
+              'flex-1 flex items-center gap-1 px-2 py-1 text-sm hover:bg-accent hover:text-accent-foreground',
+              'transition-colors',
+              isSelected && 'bg-accent/50'
+            )}
+            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+          >
+            {node.type === 'directory' && (
+              <ChevronIcon className="w-3 h-3 flex-shrink-0" />
+            )}
+            <Icon className="w-4 h-4 flex-shrink-0" />
+            <span className="truncate">{node.name}</span>
+          </button>
+        </div>
         
         {node.type === 'directory' && isExpanded && node.children && (
           <div>
@@ -308,19 +413,24 @@ Add any additional notes or references here.
     <div className="h-full bg-muted/30 border-r border-border flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between p-2 border-b border-border">
-        <h3 className="text-sm font-semibold">Files</h3>
+        <div>
+          <h3 className="text-sm font-semibold">Files</h3>
+          {selectedFolder && selectedFolder !== 'nodes' && (
+            <p className="text-xs text-muted-foreground">in {selectedFolder}</p>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowFolderDialog(true)}
             className="p-1 rounded hover:bg-accent"
-            title="Create folder"
+            title={`Create folder in ${selectedFolder}`}
           >
             <FolderPlus className="w-4 h-4" />
           </button>
           <button
             onClick={() => setShowTemplateDialog(true)}
             className="p-1 rounded hover:bg-accent"
-            title="Create node"
+            title={`Create node in ${selectedFolder}`}
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -357,7 +467,7 @@ Add any additional notes or references here.
         isOpen={showTemplateDialog}
         onClose={() => setShowTemplateDialog(false)}
         onSelectTemplate={handleTemplateSelected}
-        parentPath="nodes"
+        parentPath={selectedFolder}
       />
     </div>
   )

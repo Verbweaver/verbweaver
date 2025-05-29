@@ -17,6 +17,7 @@ export interface ElectronAPI {
   writeFile: (filePath: string, content: string) => Promise<void>;
   readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
   deleteFile: (filePath: string) => Promise<void>;
+  moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean }>;
   readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
   
   // Project operations
@@ -101,6 +102,7 @@ const electronAPI: ElectronAPI = {
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
   readDirectory: (dirPath: string) => ipcRenderer.invoke('fs:readDirectory', dirPath),
   deleteFile: (filePath: string) => ipcRenderer.invoke('fs:deleteFile', filePath),
+  moveFile: (oldPath: string, newPath: string) => ipcRenderer.invoke('fs:moveFile', oldPath, newPath),
   readProjectFiles: (projectPath: string) => ipcRenderer.invoke('fs:readProjectFiles', projectPath),
   
   // Project operations

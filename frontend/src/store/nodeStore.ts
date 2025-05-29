@@ -220,6 +220,9 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         console.log('[NodeStore] All files found:', files.map(f => f.path));
         const nodes = new Map<string, VerbweaverNode>();
         
+        // Keep track of which directories we've already processed
+        const processedDirectories = new Set<string>();
+        
         for (const file of files) {
           // Only process files within the nodes/ directory
           // Normalize path separators for cross-platform compatibility
@@ -227,6 +230,21 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           if (!normalizedPath.startsWith('nodes/') && normalizedPath !== 'nodes') {
             console.log('[NodeStore] Skipping file outside nodes/:', file.path);
             continue;
+          }
+          
+          // Skip .metadata.md files - they're handled with their parent files
+          if (normalizedPath.endsWith('.metadata.md')) {
+            console.log('[NodeStore] Skipping metadata file:', file.path);
+            continue;
+          }
+          
+          // For directories, check if we've already processed this path
+          if (file.isDirectory) {
+            if (processedDirectories.has(normalizedPath)) {
+              console.log('[NodeStore] Skipping already processed directory:', file.path);
+              continue;
+            }
+            processedDirectories.add(normalizedPath);
           }
           
           console.log('[NodeStore] Processing node file:', file.path);
@@ -392,8 +410,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         toast.error('Failed to update node');
         throw error;
       }
-    } else {
-      // Non-markdown file: update .metadata.md file
+    } else if (!node.isDirectory) {
+      // Non-markdown file (but not a directory): update .metadata.md file
       const metadataPath = `${path}.metadata.md`;
       const metadataContent = stringifyMarkdownWithFrontMatter(updatedMetadata, '');
       
@@ -427,6 +445,19 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         toast.error('Failed to update node metadata');
         throw error;
       }
+    } else {
+      // For directories, just update the store without creating metadata files
+      const updatedNode: VerbweaverNode = {
+        ...node,
+        metadata: updatedMetadata,
+        softLinks: updatedMetadata.links || [],
+        hasTask: !!updatedMetadata.task,
+        taskStatus: updatedMetadata.task?.status
+      };
+      
+      set(state => ({
+        nodes: new Map(state.nodes).set(path, updatedNode)
+      }));
     }
   },
 

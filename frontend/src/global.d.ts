@@ -18,6 +18,7 @@ declare global {
       writeFile: (filePath: string, content: string) => Promise<void>;
       readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
       deleteFile: (filePath: string) => Promise<void>;
+      moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean }>;
       readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
       
       // Project operations

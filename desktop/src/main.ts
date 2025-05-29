@@ -506,6 +506,53 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.handle('fs:moveFile', async (_event, oldPath: string, newPath: string) => {
+    try {
+      const projectPath = store.get('currentProjectPath');
+      if (!projectPath) throw new Error('No project path set');
+      
+      const fullOldPath = path.isAbsolute(oldPath) ? oldPath : path.join(projectPath as string, oldPath);
+      const fullNewPath = path.isAbsolute(newPath) ? newPath : path.join(projectPath as string, newPath);
+      
+      // Check if source exists
+      if (!existsSync(fullOldPath)) {
+        throw new Error(`Source path does not exist: ${oldPath}`);
+      }
+      
+      // Check if destination already exists
+      if (existsSync(fullNewPath)) {
+        throw new Error(`Destination already exists: ${newPath}`);
+      }
+      
+      // Ensure destination directory exists
+      const destDir = path.dirname(fullNewPath);
+      if (!existsSync(destDir)) {
+        await mkdir(destDir, { recursive: true });
+      }
+      
+      // Move the file/folder
+      await fs.rename(fullOldPath, fullNewPath);
+      
+      // If it's a markdown file and has a metadata file, move that too
+      if (fullOldPath.endsWith('.md')) {
+        const oldMetadataPath = `${fullOldPath}.metadata.md`;
+        const newMetadataPath = `${fullNewPath}.metadata.md`;
+        if (existsSync(oldMetadataPath)) {
+          try {
+            await fs.rename(oldMetadataPath, newMetadataPath);
+          } catch (e) {
+            console.warn('Failed to move metadata file:', e);
+          }
+        }
+      }
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to move file:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('fs:readProjectFiles', async (_event, projectPath: string) => {
     try {
       const files: Array<{ path: string; isDirectory: boolean }> = [];

@@ -12,19 +12,23 @@ import ReactFlow, {
   Connection,
   NodeTypes,
   MarkerType,
+  ReactFlowProvider,
 } from 'react-flow-renderer'
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
 import { useWebSocket } from '../services/websocket'
+import { useTabStore } from '../store/tabStore'
 import { TemplateSelectionDialog } from '../components/TemplateSelectionDialog'
 import { FolderCreateDialog } from '../components/FolderCreateDialog'
 import { templatesApi, Template as ApiTemplate } from '../api/templates';
 import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
+import LayoutControls from '../components/graph/LayoutControls'
 import { NODE_TYPES } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { createNodeFromTemplateDesktop } from '../api/desktop-templates';
+import { getLayoutedElements, getExpandedLayout, LayoutDirection } from '../utils/graphLayout'
 
 // Define custom node types
 const nodeTypes: NodeTypes = {
@@ -38,6 +42,7 @@ function GraphView() {
   const navigate = useNavigate()
   const { currentProject, currentProjectPath } = useProjectStore()
   const { nodes: verbweaverNodes, loadNodes, updateNode, createNode, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
+  const { addEditorTab } = useTabStore()
   
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -66,7 +71,7 @@ function GraphView() {
       const flowNodes: Node[] = []
       const flowEdges: Edge[] = []
       
-      // First, process all nodes from the store
+      // First pass: Create all nodes
       verbweaverNodes.forEach((node) => {
         // Create flow node for all nodes, including 'nodes' folder if it exists
         flowNodes.push({
@@ -393,11 +398,16 @@ function GraphView() {
   // Handle editing node
   const handleEditNode = useCallback(
     (nodeId: string) => {
-      // Navigate to editor with the file path
+      // Get the node to extract its name
+      const node = verbweaverNodes.get(nodeId)
+      const nodeName = node?.name || nodeId.split('/').pop() || 'Untitled'
+      
+      // Add editor tab and navigate
+      addEditorTab(nodeId, nodeName)
       navigate(`/editor/${encodeURIComponent(nodeId)}`)
       setContextMenu(null)
     },
-    [navigate]
+    [navigate, verbweaverNodes, addEditorTab]
   )
 
   // Handle deleting edge
@@ -444,6 +454,31 @@ function GraphView() {
     // TODO: Open node in editor
   }, [])
 
+  // Handle graph layout
+  const handleLayout = useCallback((direction: LayoutDirection | 'expanded') => {
+    let layoutedNodes: Node[]
+    
+    if (direction === 'expanded') {
+      const result = getExpandedLayout(nodes, edges)
+      layoutedNodes = result.nodes
+    } else {
+      const result = getLayoutedElements(nodes, edges, { direction })
+      layoutedNodes = result.nodes
+    }
+    
+    // Update node positions in the store
+    Promise.all(
+      layoutedNodes.map(node => 
+        updateNode(node.id, { metadata: { position: node.position } })
+      )
+    ).then(() => {
+      setNodes(layoutedNodes)
+      toast.success('Layout applied')
+    }).catch(() => {
+      toast.error('Failed to save layout positions')
+    })
+  }, [nodes, edges, setNodes, updateNode])
+
   if (!currentProject) {
     return (
       <div className="h-full flex items-center justify-center bg-background">
@@ -476,6 +511,7 @@ function GraphView() {
       >
         <Background />
         <Controls />
+        <LayoutControls onLayout={handleLayout} />
         <MiniMap
           nodeColor={(node) => {
             switch (node.data?.type) {
@@ -534,4 +570,10 @@ function GraphView() {
   )
 }
 
-export default GraphView 
+export default function GraphViewWrapper() {
+  return (
+    <ReactFlowProvider>
+      <GraphView />
+    </ReactFlowProvider>
+  )
+} 

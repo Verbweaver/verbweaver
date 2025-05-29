@@ -70,10 +70,28 @@ function CustomNode({ data, selected }: CustomNodeProps) {
         'hover:shadow-lg transition-shadow'
       )}
     >
+      {/* Top Handle */}
       <Handle
         type="target"
         position={Position.Top}
         className="w-3 h-3 !bg-primary"
+        id="top"
+      />
+      
+      {/* Left Handle */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="w-3 h-3 !bg-primary"
+        id="left"
+      />
+      
+      {/* Right Handle */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="w-3 h-3 !bg-primary"
+        id="right"
       />
       
       <div className="flex items-center gap-2">
@@ -96,10 +114,12 @@ function CustomNode({ data, selected }: CustomNodeProps) {
         </div>
       )}
       
+      {/* Bottom Handle */}
       <Handle
         type="source"
         position={Position.Bottom}
         className="w-3 h-3 !bg-primary"
+        id="bottom"
       />
     </div>
   )
