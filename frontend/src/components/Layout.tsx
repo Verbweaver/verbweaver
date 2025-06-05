@@ -58,7 +58,7 @@ function Layout() {
         await window.electronAPI.openProject?.(projectPath)
         
         // Update the project store with the current project path
-        setCurrentProjectPath(projectPath)
+        await setCurrentProjectPath(projectPath)
         
         // Navigate to dashboard after opening project
         navigate('/dashboard')

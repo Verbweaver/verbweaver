@@ -25,6 +25,7 @@
     "lint": "npm run lint --workspaces"
   },
   "devDependencies": {
+    "@types/path-browserify": "^1.0.3",
     "concurrently": "^7.6.0"
   },
   "engines": {

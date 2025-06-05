@@ -34,11 +34,21 @@ if (typeof window !== 'undefined') {
 // Request interceptor
 apiClient.interceptors.request.use(
   (config) => {
+    // Remove trailing slashes from URLs to prevent FastAPI redirects
+    if (config.url && config.url.endsWith('/') && config.url !== '/') {
+      config.url = config.url.slice(0, -1)
+    }
+    
     // Get auth token from store
     const token = useAuthStore.getState().accessToken
-    if (token) {
+    
+    // For desktop app, use desktop-token
+    if (isElectron) {
+      config.headers.Authorization = 'Bearer desktop-token'
+    } else if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    
     return config
   },
   (error) => {

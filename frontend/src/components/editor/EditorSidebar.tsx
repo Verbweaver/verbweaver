@@ -275,19 +275,33 @@ Add any additional notes or references here.
     if (!currentProject) return
     
     try {
+      // Extract template name from path (e.g., "templates/MyTemplate.md" -> "MyTemplate")
+      const templateName = templatePath
+        .replace(/^templates\//, '')
+        .replace(/\.md$/, '');
+
+      console.log('Creating node with:', {
+        projectId: currentProject.id,
+        templateName,
+        nodeName,
+        parentPath: parentPath || 'nodes'
+      });
+
       await templatesApi.createNodeFromTemplate(currentProject.id.toString(), {
-        template_path: templatePath,
+        template_name: templateName,
         node_name: nodeName,
         parent_path: parentPath || 'nodes'
-      })
+      });
       
       // Reload the file tree
-      await loadFileTree()
-      toast.success('Node created')
-    } catch (error) {
-      toast.error('Failed to create node')
+      await loadFileTree();
+      toast.success('Node created');
+    } catch (error: any) {
+      console.error('Failed to create node:', error);
+      const errorDetail = error.response?.data?.detail || error.message;
+      toast.error(`Failed to create node: ${errorDetail}`);
     }
-  }
+  };
 
   const handleDragStart = useCallback((e: React.DragEvent, node: FileNode) => {
     setDraggedNode(node)

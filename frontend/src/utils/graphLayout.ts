@@ -64,25 +64,39 @@ export function getLayoutedElements(
   return { nodes: layoutedNodes, edges }
 }
 
-// Helper to determine which handles to use based on relative positions
-function getHandleIds(sourcePos: { x: number; y: number }, targetPos: { x: number; y: number }) {
-  const dx = targetPos.x - sourcePos.x
-  const dy = targetPos.y - sourcePos.y
-  
-  // Determine primary direction
-  if (Math.abs(dx) > Math.abs(dy)) {
-    // Horizontal connection
+// Helper to determine which handles to use based on relative positions and layout type
+function getHandleIds(
+  sourcePos: { x: number; y: number }, 
+  targetPos: { x: number; y: number },
+  sourceNode: Node,
+  targetNode: Node,
+  layoutType: string = 'default'
+) {
+  const dx = targetPos.x - sourcePos.x;
+  const dy = targetPos.y - sourcePos.y;
+
+  if (layoutType === 'expanded') {
+    // For Expanded layout, always use horizontal handles
     if (dx > 0) {
-      return { sourceHandle: 'right', targetHandle: 'left' }
+      return { sourceHandle: 'right', targetHandle: 'left' };
     } else {
-      return { sourceHandle: 'left', targetHandle: 'right' }
+      // Default to left-to-right if dx is 0 or negative, to prevent issues with overlapping nodes
+      return { sourceHandle: 'left', targetHandle: 'right' }; 
     }
-  } else {
-    // Vertical connection
+  }
+  
+  // For all other layouts, use vertical handles as default
+  if (Math.abs(dy) >= Math.abs(dx)) { // Prefer vertical if similar delta
     if (dy > 0) {
-      return { sourceHandle: 'bottom', targetHandle: 'top' }
+      return { sourceHandle: 'bottom', targetHandle: 'top' };
     } else {
-      return { sourceHandle: 'top', targetHandle: 'bottom' }
+      return { sourceHandle: 'top', targetHandle: 'bottom' };
+    }
+  } else { // Horizontal fallback for non-expanded if dx is significantly larger
+     if (dx > 0) {
+      return { sourceHandle: 'right', targetHandle: 'left' };
+    } else {
+      return { sourceHandle: 'left', targetHandle: 'right' };
     }
   }
 }
@@ -92,119 +106,125 @@ export function getExpandedLayout(
   nodes: Node[],
   edges: Edge[]
 ): { nodes: Node[]; edges: Edge[] } {
-  // Build a graph structure
-  const nodeMap = new Map(nodes.map(n => [n.id, n]))
-  const childrenMap = new Map<string, Node[]>()
-  
-  // Find parent-child relationships
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const childrenMap = new Map<string, Node[]>();
+  const parentMap = new Map<string, string>(); // To find parent of a node
+
   edges.forEach(edge => {
     if (edge.style?.stroke === '#6b7280') { // Hard links (parent-child)
-      const children = childrenMap.get(edge.source) || []
-      const childNode = nodeMap.get(edge.target)
+      const children = childrenMap.get(edge.source) || [];
+      const childNode = nodeMap.get(edge.target);
       if (childNode) {
-        children.push(childNode)
-        childrenMap.set(edge.source, children)
+        children.push(childNode);
+        childrenMap.set(edge.source, children);
+        parentMap.set(edge.target, edge.source);
       }
     }
-  })
+  });
   
-  // Find root nodes
   const rootNodes = nodes.filter(node => 
     node.id === 'nodes' || 
     !edges.some(edge => edge.target === node.id && edge.style?.stroke === '#6b7280')
-  )
+  );
   
-  const layoutedNodes: Node[] = []
-  const nodePositions = new Map<string, { x: number; y: number }>()
-  const verticalSpacing = 100
-  const horizontalSpacing = 200
-  let currentY = 50
-  
-  // Layout function that alternates children left and right
-  function layoutNode(node: Node, x: number, y: number, level: number) {
-    // Position the current node
-    const position = { x, y }
-    layoutedNodes.push({
-      ...node,
-      position
-    })
-    nodePositions.set(node.id, position)
-    
-    // Get children
-    const children = childrenMap.get(node.id) || []
-    
-    if (children.length > 0) {
-      // Sort children - folders first, then by name
-      const sortedChildren = children.sort((a, b) => {
-        const aIsFolder = a.data?.isDirectory || a.data?.type === 'folder'
-        const bIsFolder = b.data?.isDirectory || b.data?.type === 'folder'
-        if (aIsFolder && !bIsFolder) return -1
-        if (!aIsFolder && bIsFolder) return 1
-        return (a.data?.label || '').localeCompare(b.data?.label || '')
-      })
-      
-      // For folders at the nodes level, alternate left and right
-      if (node.id === 'nodes') {
-        let leftX = x - horizontalSpacing
-        let rightX = x + horizontalSpacing
-        let childY = y + verticalSpacing
-        
-        sortedChildren.forEach((child, index) => {
-          const isFolder = child.data?.isDirectory || child.data?.type === 'folder'
-          if (isFolder) {
-            // Alternate folders left and right
-            if (index % 2 === 0) {
-              layoutNode(child, leftX, childY, level + 1)
-              leftX -= horizontalSpacing * 1.5
-            } else {
-              layoutNode(child, rightX, childY, level + 1)
-              rightX += horizontalSpacing * 1.5
-            }
-          } else {
-            // Non-folders go below center
-            layoutNode(child, x, childY + (index * 60), level + 1)
-          }
-        })
-      } else {
-        // For other nodes, use standard vertical layout
-        let childY = y + verticalSpacing
-        sortedChildren.forEach((child, index) => {
-          layoutNode(child, x, childY + (index * 80), level + 1)
-        })
+  const layoutedNodes: Node[] = [];
+  const nodePositions = new Map<string, { x: number; y: number }>();
+  const verticalSpacing = 80; // Reduced vertical spacing for a more compact horizontal layout
+  const horizontalSpacing = 250; // Increased horizontal spacing
+  let currentY = 50;
+  const laidOutHorizontally = new Set<string>(); // Track nodes already part of horizontal chain
+
+  function layoutNode(node: Node, x: number, y: number, level: number, isLeftChild?: boolean) {
+    const position = { x, y }; 
+    layoutedNodes.push({ ...node, position });
+    nodePositions.set(node.id, position);
+    laidOutHorizontally.add(node.id);
+
+    const children = (childrenMap.get(node.id) || []).sort((a, b) => {
+      const aIsFolder = a.data?.isDirectory || a.data?.type === 'folder';
+      const bIsFolder = b.data?.isDirectory || b.data?.type === 'folder';
+      if (aIsFolder && !bIsFolder) return -1;
+      if (!aIsFolder && bIsFolder) return 1;
+      return (a.data?.label || '').localeCompare(b.data?.label || '');
+    });
+
+    let childX;
+    let childY = y; // Keep children at the same Y level initially
+    let childrenOnLevel = 0;
+
+    // Group children by whether they are folders or files for separate horizontal layout passes
+    const folderChildren = children.filter(c => c.data?.isDirectory || c.data?.type === 'folder');
+    const fileChildren = children.filter(c => !(c.data?.isDirectory || c.data?.type === 'folder'));
+
+    // Layout folder children horizontally first
+    folderChildren.forEach((child, index) => {
+      if (laidOutHorizontally.has(child.id)) return; // Already processed
+      // Alternate left and right from the parent
+      if (index % 2 === 0) { // Place to the right
+        childX = x + horizontalSpacing * (Math.floor(index / 2) + 1);
+      } else { // Place to the left
+        childX = x - horizontalSpacing * (Math.floor(index / 2) + 1);
       }
+      layoutNode(child, childX, childY, level + 1, childX < x);
+      childrenOnLevel++;
+    });
+    
+    // Layout file children horizontally after folders, slightly offset vertically if needed
+    if (folderChildren.length > 0 && fileChildren.length > 0) {
+        childY += verticalSpacing; // Move files down a bit if folders are present on the same line
+    }
+    
+    fileChildren.forEach((child, index) => {
+        if (laidOutHorizontally.has(child.id)) return;
+        // Alternate left and right from the parent
+        if (index % 2 === 0) { // Place to the right
+            childX = x + horizontalSpacing * (Math.floor(index / 2) + 1);
+        } else { // Place to the left
+            childX = x - horizontalSpacing * (Math.floor(index / 2) + 1);
+        }
+        layoutNode(child, childX, childY, level + 1, childX < x);
+        childrenOnLevel++;
+    });
+
+    // If this node itself was a child and had its own children, adjust its parent's Y if needed to avoid overlap
+    if (level > 0 && childrenOnLevel > 0 && nodePositions.has(parentMap.get(node.id)!)) {
+        const parentNode = nodeMap.get(parentMap.get(node.id)!);
+        if (parentNode) {
+            const parentPos = nodePositions.get(parentNode.id)!;
+            // This logic is complex and might need refinement for deep trees.
+            // For now, simple Y shift to demonstrate intent.
+            // if (isLeftChild && parentPos.y === y) parentPos.y -= verticalSpacing / 2;
+            // if (!isLeftChild && parentPos.y === y) parentPos.y -= verticalSpacing / 2;
+        }
     }
   }
   
-  // Layout each root node
-  rootNodes.forEach((rootNode, index) => {
-    layoutNode(rootNode, 400, currentY + (index * 200), 0)
-  })
-  
-  // Return nodes that were actually laid out
-  const layoutedNodeIds = new Set(layoutedNodes.map(n => n.id))
-  const finalNodes = nodes.map(node => {
-    const layoutedNode = layoutedNodes.find(n => n.id === node.id)
-    return layoutedNode || node
-  })
-  
-  // Update edges with appropriate handle IDs based on node positions
-  const updatedEdges = edges.map(edge => {
-    const sourcePos = nodePositions.get(edge.source)
-    const targetPos = nodePositions.get(edge.target)
-    
-    if (sourcePos && targetPos) {
-      const { sourceHandle, targetHandle } = getHandleIds(sourcePos, targetPos)
-      return {
-        ...edge,
-        sourceHandle,
-        targetHandle
-      }
+  rootNodes.forEach((rootNode) => {
+    if (!laidOutHorizontally.has(rootNode.id)){
+        layoutNode(rootNode, 0, currentY, 0);
+        currentY += verticalSpacing * 3; // Space out different root branches significantly
     }
-    
-    return edge
-  })
+  });
   
-  return { nodes: finalNodes, edges: updatedEdges }
+  const finalNodes = nodes.map(node => {
+    const layoutedNode = layoutedNodes.find(n => n.id === node.id);
+    return layoutedNode || { ...node, position: { x: Math.random() * 200, y: Math.random() * 200 } }; // Fallback position
+  });
+  
+  const updatedEdges = edges.map(edge => {
+    const sourceNode = nodeMap.get(edge.source);
+    const targetNode = nodeMap.get(edge.target);
+    const sourcePos = nodePositions.get(edge.source);
+    const targetPos = nodePositions.get(edge.target);
+    
+    if (sourceNode && targetNode && sourcePos && targetPos) {
+      const { sourceHandle, targetHandle } = getHandleIds(sourcePos, targetPos, sourceNode, targetNode, 'expanded');
+      return { ...edge, sourceHandle, targetHandle };
+    }
+    return { ...edge }; // Return original edge if nodes/positions not found
+  });
+  
+  return { nodes: finalNodes, edges: updatedEdges };
 }
 
 // Helper to get a centered layout

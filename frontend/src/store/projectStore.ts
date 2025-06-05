@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { ProjectConfig } from '@verbweaver/shared'
 import { projectApi } from '../api/projectApi'
+import { projectsApi, GitConfig, ProjectCreate, Project } from '../api/projects'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../services/auth'
 
@@ -30,26 +31,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   error: null,
 
   loadProjects: async () => {
-    if (isElectron) {
-      set({ projects: [], isLoading: false })
-      console.log('[ProjectStore] Electron environment, skipping API project load.');
-      return
-    }
-
     // For web: check auth status from useAuthStore
     const { isAuthenticated, isHydrated } = useAuthStore.getState()
 
     if (!isHydrated) {
       console.log('[ProjectStore] Auth not hydrated yet. Aborting loadProjects.');
-      // Optionally set an error or specific loading state if needed
-      // set({ error: 'Authentication not ready', isLoading: false });
       return; 
     }
 
     if (!isAuthenticated) {
       console.log('[ProjectStore] User not authenticated. Aborting loadProjects.');
-      // set({ error: 'User not authenticated', isLoading: false, projects: [] });
-      // No need to toast here as App.tsx/ProtectedRoute should handle redirection to login
       return; 
     }
 
@@ -59,6 +50,26 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const projects = await projectApi.getProjects()
       set({ projects, isLoading: false })
       const state = get()
+      
+      // In desktop mode, check if we have a stored project path
+      if (isElectron) {
+        const storedPath = localStorage.getItem('verbweaver_active_project_path')
+        if (storedPath) {
+          // Find the project with this path
+          const projectWithPath = projects.find(p => 
+            p.gitRepository?.type === 'local' && 
+            p.gitRepository?.path === storedPath
+          )
+          if (projectWithPath) {
+            set({ 
+              currentProject: projectWithPath,
+              currentProjectPath: storedPath
+            })
+            return
+          }
+        }
+      }
+      
       if (!state.currentProject && projects.length > 0) {
         state.selectProject(projects[0].id)
       }
@@ -82,30 +93,95 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
-  setCurrentProjectPath: (path: string, name?: string) => {
-    // For Electron projects, set the current project path
+  setCurrentProjectPath: async (path: string, name?: string) => {
+    // For Electron projects, register with backend to get proper UUID
     const projectName = name || path.split(/[/\\]/).pop() || 'Unknown Project'
-    const mockProject: ProjectConfig = {
-      id: path, // Use path as ID for Electron projects
-      name: projectName,
-      description: `Local project at ${path}`,
-      created: new Date().toISOString(),
-      modified: new Date().toISOString(),
-      settings: {},
-      gitRepository: {
-        url: '',
-        branch: 'main',
-        type: 'local'
+    
+    try {
+      // First, check if this project already exists in the backend
+      const { projects } = get()
+      let existingProject = projects.find(p => 
+        p.gitRepository?.type === 'local' && 
+        p.gitRepository?.path === path
+      )
+      
+      if (!existingProject) {
+        // Create the project in the backend
+        const gitConfig: GitConfig = {
+          type: 'local',
+          path: path,
+          branch: 'main',
+          autoPush: false
+        }
+        
+        const projectData: ProjectCreate = {
+          name: projectName,
+          description: `Local project at ${path}`,
+          git_config: gitConfig
+        }
+        
+        // Create project via API to get proper UUID
+        const createdProject = await projectsApi.createProject(projectData)
+        
+        // Convert API Project to ProjectConfig format
+        const projectConfig: ProjectConfig = {
+          id: createdProject.id,
+          name: createdProject.name,
+          description: createdProject.description || `Local project at ${path}`,
+          created: createdProject.created_at,
+          modified: createdProject.updated_at || createdProject.created_at,
+          settings: createdProject.settings || {},
+          gitRepository: {
+            url: createdProject.git_config.url || '',
+            branch: createdProject.git_config.branch || 'main',
+            type: createdProject.git_config.type || 'local'
+          }
+        }
+        
+        // Add to local projects list
+        set(state => ({
+          projects: [...state.projects, projectConfig],
+          currentProject: projectConfig,
+          currentProjectPath: path
+        }))
+        
+        existingProject = projectConfig
+      } else {
+        // Use existing project
+        set({ 
+          currentProject: existingProject,
+          currentProjectPath: path 
+        })
       }
+      
+      localStorage.setItem('verbweaver_active_project', existingProject.id)
+      localStorage.setItem('verbweaver_active_project_path', path)
+      toast.success(`Opened project: ${projectName}`)
+    } catch (error) {
+      console.error('Failed to register project with backend:', error)
+      // Fallback to the old behavior if backend registration fails
+      const mockProject: ProjectConfig = {
+        id: path, // Use path as ID for Electron projects
+        name: projectName,
+        description: `Local project at ${path}`,
+        created: new Date().toISOString(),
+        modified: new Date().toISOString(),
+        settings: {},
+        gitRepository: {
+          url: '',
+          branch: 'main',
+          type: 'local'
+        }
+      }
+      
+      set({ 
+        currentProject: mockProject,
+        currentProjectPath: path 
+      })
+      
+      localStorage.setItem('verbweaver_active_project_path', path)
+      toast.error(`Opened project locally: ${projectName} (offline mode)`)
     }
-    
-    set({ 
-      currentProject: mockProject,
-      currentProjectPath: path 
-    })
-    
-    localStorage.setItem('verbweaver_active_project_path', path)
-    toast.success(`Opened project: ${projectName}`)
   },
 
   createProject: async (projectData: Omit<ProjectConfig, 'id' | 'created' | 'modified'>) => {

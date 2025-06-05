@@ -93,4 +93,7 @@ declare global {
   }
 }
 
+// Add a declaration for path-browserify
+declare module 'path-browserify';
+
 export {}; 
