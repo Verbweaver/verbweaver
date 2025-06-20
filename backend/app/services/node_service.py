@@ -273,13 +273,18 @@ class NodeService:
     
     async def list_nodes(self, directory: Optional[str] = None, exclude_templates: bool = True) -> List[Dict[str, Any]]:
         """List all nodes in a directory (or entire project)."""
+        # If no directory specified, default to the canonical "nodes" folder so we don't
+        # crawl the entire git repository (.git, templates, etc.)
+        if directory is None:
+            directory = "nodes"
+
         nodes = []
-        
-        start_path = self.project_path
-        if directory:
-            start_path = os.path.join(self.project_path, directory)
+        start_path = os.path.join(self.project_path, directory)
         
         for root, dirs, files in os.walk(start_path):
+            # Prune directories we never want to enter ( hidden folders like .git )
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d != '.git']
+            
             # Calculate relative path from project root
             rel_root = os.path.relpath(root, self.project_path).replace('\\', '/')
             if rel_root == '.':
