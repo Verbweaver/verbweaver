@@ -62,9 +62,19 @@ apiClient.interceptors.response.use(
   async (error) => {
     // Don't redirect desktop users to login
     if (error.response?.status === 401 && !isElectron) {
-      // Token expired or invalid for web users only
-      localStorage.removeItem('verbweaver_token')
-      window.location.href = '/login'
+      // Only redirect if user was previously authenticated (has a token) and we're not already on login page
+      const { accessToken, isAuthenticated } = useAuthStore.getState()
+      const currentPath = window.location.pathname
+      
+      if (accessToken && isAuthenticated && currentPath !== '/login') {
+        console.log('[API Client] 401 error with valid token, redirecting to login');
+        // Token expired or invalid for web users only
+        localStorage.removeItem('verbweaver_token')
+        window.location.href = '/login'
+      } else {
+        console.log('[API Client] 401 error but not redirecting - no token or already on login page');
+      }
+      // If no token or not authenticated, don't redirect - let the app handle it
     }
     return Promise.reject(error)
   }

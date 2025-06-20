@@ -163,7 +163,7 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
       const response = await authApi.post('/auth/login', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       const { user, access_token, refresh_token } = response.data;
       console.log('User data from backend login:', user);
-      set({ user, accessToken: access_token, refreshToken: refresh_token, isAuthenticated: true, isLoading: false });
+      set({ user, accessToken: access_token, refreshToken: refresh_token, isAuthenticated: true, isLoading: false, isHydrated: true });
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Login failed', isLoading: false });
       throw err;
@@ -175,7 +175,7 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
     try {
       const response = await authApi.post('/auth/register', { email, username, password, full_name });
       const { user, token } = response.data;
-      set({ user, accessToken: token.access_token, refreshToken: token.refresh_token, isAuthenticated: true, isLoading: false });
+      set({ user, accessToken: token.access_token, refreshToken: token.refresh_token, isAuthenticated: true, isLoading: false, isHydrated: true });
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Registration failed', isLoading: false });
       throw err;
@@ -212,7 +212,8 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
         user: response.data.user, // Update user details if backend sends them
         isAuthenticated: true, // Should remain true
         isLoading: false, // Reset loading state
-        error: null // Clear any previous errors
+        error: null, // Clear any previous errors
+        isHydrated: true // Ensure hydration status is true after refresh
       });
     } catch (err) {
       console.error("Token refresh failed:", err);
@@ -222,7 +223,10 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
     }
   },
   clearError: () => set({ error: null }),
-  _setHydrated: () => set({ isHydrated: true }),
+  _setHydrated: () => {
+    console.log('[AuthStore] Setting isHydrated to true');
+    set({ isHydrated: true });
+  },
   requestPasswordReset: async (email: string) => {
     if (isElectron) return console.log('Desktop user: requestPasswordReset N/A');
     set({ isLoading: true, error: null });
@@ -355,6 +359,7 @@ const storeCreator: StateCreator<AuthState, [], []> = (set, get) => ({
 const persistOptions: PersistOptions<AuthState, PersistedAuthState> = {
   name: 'verbweaver-auth-storage',
   onRehydrateStorage: () => (state) => {
+    console.log('[AuthStore] Rehydration completed, calling _setHydrated');
     state?._setHydrated(); // Call the action to update isHydrated in the store
   },
   partialize: (state) => ({
@@ -372,6 +377,18 @@ const persistOptions: PersistOptions<AuthState, PersistedAuthState> = {
 export const useAuthStore = isElectron
   ? create<AuthState>(storeCreator)
   : create<AuthState>()(persist(storeCreator, persistOptions));
+
+// For web version, ensure isHydrated is set to true after a short delay if not already set
+// This handles the case where there's no persisted data
+if (!isElectron && typeof window !== 'undefined') {
+  setTimeout(() => {
+    const state = useAuthStore.getState();
+    if (!state.isHydrated) {
+      console.log('[AuthStore] No persisted data found, setting isHydrated to true');
+      state._setHydrated();
+    }
+  }, 100);
+}
 
 // Modify getInitialAuthState to include isHydrated
 const getInitialAuthStateCorrected = () => {

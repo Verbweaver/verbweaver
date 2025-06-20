@@ -29,6 +29,6 @@ export const editorApi = {
 
   async getFileTree(projectId: string): Promise<any> {
     const response = await apiClient.get(`/editor/${projectId}/tree`)
-    return response.data
+    return response.data.tree || response.data
   }
 } 

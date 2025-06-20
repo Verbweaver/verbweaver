@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import Dashboard from './pages/Dashboard'
@@ -25,6 +25,7 @@ function App() {
   const { loadProjects } = useProjectStore()
   const isAuthenticated = useAuthStore(state => state.isAuthenticated)
   const isAuthHydrated = useAuthStore(state => state.isHydrated)
+  const hasLoadedProjects = useRef(false)
 
   console.log('App component loaded, isAuthenticated:', isAuthenticated, 'isAuthHydrated:', isAuthHydrated)
   console.log('Is Electron?', window.electronAPI !== undefined)
@@ -36,13 +37,17 @@ function App() {
   }, [theme])
 
   useEffect(() => {
-    if (isAuthHydrated) {
-      console.log('Auth store hydrated, attempting to load projects.');
+    if (isAuthHydrated && isAuthenticated && !hasLoadedProjects.current) {
+      console.log('Auth store hydrated and user authenticated, attempting to load projects.');
+      hasLoadedProjects.current = true
       loadProjects()
-    } else {
+    } else if (isAuthHydrated && !isAuthenticated) {
+      console.log('Auth store hydrated but user not authenticated, skipping project load.');
+      hasLoadedProjects.current = false // Reset flag when user logs out
+    } else if (!isAuthHydrated) {
       console.log('Auth store not yet hydrated, waiting to load projects.');
     }
-  }, [loadProjects, isAuthHydrated])
+  }, [isAuthHydrated, isAuthenticated]) // Remove loadProjects from dependencies
 
   if (!isAuthHydrated && !window.electronAPI) {
     console.log('App waiting for auth hydration...');
