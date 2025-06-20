@@ -14,6 +14,7 @@ interface ProjectState {
   currentProjectPath: string | null  // For Electron projects
   isLoading: boolean
   error: string | null
+  hasLoadedOnce: boolean // Add flag to track if projects have been loaded at least once
   
   loadProjects: () => Promise<void>
   selectProject: (projectId: string) => void
@@ -29,10 +30,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   currentProjectPath: null,
   isLoading: false,
   error: null,
+  hasLoadedOnce: false,
 
   loadProjects: async () => {
     // For web: check auth status from useAuthStore
     const { isAuthenticated, isHydrated } = useAuthStore.getState()
+
+    // Prevent multiple simultaneous calls
+    const state = get()
+    if (state.isLoading) {
+      console.log('[ProjectStore] Already loading projects, skipping duplicate call.');
+      return;
+    }
 
     if (!isHydrated) {
       console.log('[ProjectStore] Auth not hydrated yet. Aborting loadProjects.');
@@ -48,8 +57,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const projects = await projectApi.getProjects()
-      set({ projects, isLoading: false })
-      const state = get()
+      set({ projects, isLoading: false, hasLoadedOnce: true })
+      const currentState = get()
       
       // In desktop mode, check if we have a stored project path
       if (isElectron) {
@@ -70,17 +79,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         }
       }
       
-      if (!state.currentProject && projects.length > 0) {
-        state.selectProject(projects[0].id)
+      if (!currentState.currentProject && projects.length > 0) {
+        currentState.selectProject(projects[0].id)
       }
     } catch (error) {
       const errorMessage = (error as Error).message;
       console.error('[ProjectStore] Failed to load projects:', errorMessage);
       set({ error: errorMessage, isLoading: false })
-      // Avoid toast here if the error is 401, as apiClient's interceptor will redirect.
-      // Only toast for other types of errors.
+      
+      // Only show toast for non-401 errors to prevent spam
       if (!(error as any).response || (error as any).response.status !== 401) {
         toast.error('Failed to load projects: ' + errorMessage)
+      } else {
+        console.log('[ProjectStore] 401 error - user not authenticated, not showing toast');
       }
     }
   },
