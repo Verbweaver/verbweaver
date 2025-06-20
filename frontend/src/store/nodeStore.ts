@@ -3,6 +3,8 @@ import { NodeType, TaskState, MarkdownMetadata, GraphNode } from '@verbweaver/sh
 import toast from 'react-hot-toast'
 import { useProjectStore } from './projectStore'
 import * as yaml from 'js-yaml'
+import { getApiUrl } from '@verbweaver/shared'
+import { apiClient } from '../api/client'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
@@ -198,6 +200,8 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
   };
 }
 
+const API_BASE = getApiUrl();
+
 export const useNodeStore = create<NodeState>((set, get) => ({
   nodes: new Map(),
   isLoading: false,
@@ -258,8 +262,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         set({ nodes, isLoading: false });
       } else if (currentProject) {
         // Web: Fetch from API
-        const response = await fetch(`/api/projects/${currentProject.id}/nodes`);
-        const data = await response.json();
+        const response = await apiClient.get(`/projects/${currentProject.id}/nodes`);
+        const data = response.data;
         
         const nodes = new Map<string, VerbweaverNode>();
         for (const node of data.nodes) {
@@ -329,11 +333,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         await window.electronAPI.writeFile(absolutePath, fileContent);
       } else if (!isElectron) {
         // Web API call
-        await fetch(`/api/projects/${useProjectStore.getState().currentProject?.id}/nodes`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: relativePath, metadata, content })
-        });
+        await apiClient.post(`/projects/${useProjectStore.getState().currentProject?.id}/nodes`, { path: relativePath, metadata, content });
       }
       
       // Create the node object
@@ -385,11 +385,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           const absolutePath = path.startsWith(currentProjectPath) ? path : joinPaths(currentProjectPath, path);
           await window.electronAPI.writeFile(absolutePath, fileContent);
         } else if (!isElectron) {
-          await fetch(`/api/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ metadata: updatedMetadata, content: updatedContent })
-          });
+          await apiClient.put(`/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}`, { metadata: updatedMetadata, content: updatedContent });
         }
         
         // Update the store
@@ -421,11 +417,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           const absoluteMetadataPath = joinPaths(currentProjectPath, metadataPath);
           await window.electronAPI.writeFile(absoluteMetadataPath, metadataContent);
         } else if (!isElectron) {
-          await fetch(`/api/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}/metadata`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ metadata: updatedMetadata })
-          });
+          await apiClient.put(`/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}/metadata`, { metadata: updatedMetadata });
         }
         
         // Update the store
@@ -477,9 +469,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           // Ignore error if metadata file doesn't exist
         }
       } else if (!isElectron) {
-        await fetch(`/api/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}`, {
-          method: 'DELETE'
-        });
+        await apiClient.delete(`/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}`);
       }
       
       // Remove from store

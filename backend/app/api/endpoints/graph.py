@@ -51,7 +51,7 @@ class GraphResponse(BaseModel):
 
 @router.get("/projects/{project_id}/graph", response_model=GraphResponse)
 async def get_graph(
-    project_id: int,
+    project_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -123,7 +123,7 @@ async def get_graph(
 
 @router.get("/projects/{project_id}/nodes")
 async def list_nodes(
-    project_id: int,
+    project_id: str,
     directory: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -151,7 +151,7 @@ async def list_nodes(
 
 @router.post("/projects/{project_id}/nodes")
 async def create_node(
-    project_id: int,
+    project_id: str,
     node: NodeCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -198,7 +198,7 @@ async def create_node(
 
 @router.put("/projects/{project_id}/nodes/{node_path:path}")
 async def update_node(
-    project_id: int,
+    project_id: str,
     node_path: str,
     update: NodeUpdate,
     current_user: User = Depends(get_current_user),
@@ -249,7 +249,7 @@ async def update_node(
 
 @router.delete("/projects/{project_id}/nodes/{node_path:path}")
 async def delete_node(
-    project_id: int,
+    project_id: str,
     node_path: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -289,7 +289,7 @@ async def delete_node(
 
 @router.post("/projects/{project_id}/edges")
 async def create_edge(
-    project_id: int,
+    project_id: str,
     edge: EdgeCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -350,7 +350,7 @@ async def create_edge(
 
 @router.delete("/projects/{project_id}/edges/{edge_id}")
 async def delete_edge(
-    project_id: int,
+    project_id: str,
     edge_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -414,7 +414,7 @@ async def delete_edge(
 
 @router.post("/projects/{project_id}/folders")
 async def create_folder(
-    project_id: int,
+    project_id: str,
     folder_data: FolderCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
