@@ -69,8 +69,9 @@ class GitService:
 *.swp
 .DS_Store
 Thumbs.db
-nodes/
-templates/
+# nodes/ and templates/ should NOT be ignored
+# nodes/
+# templates/
 """
             gitignore_path = repo_path_obj / '.gitignore'
             async with aiofiles.open(gitignore_path, 'w') as f:
@@ -184,3 +185,4 @@ Start your content here.
         """Delete a git repository"""
         # TODO: Implement repository deletion if needed
         pass 
+
