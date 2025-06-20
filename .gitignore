@@ -152,7 +152,8 @@ temp/
 /backend/media/
 /uploads/
 /downloads/
-.git-repos/
+# /git-repos/ should NOT be ignored
+# .git-repos/
 *.bak
 
 # Documentation build
