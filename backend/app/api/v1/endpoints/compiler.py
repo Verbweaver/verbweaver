@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import io
 import os
+import re
+import yaml
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +37,6 @@ class ContentAggregator:
     
     def __init__(self, project_path: str):
         self.project_path = project_path
-        self.git_service = GitService(project_path)
     
     def aggregate_content(self, node_paths: List[str], options: Dict[str, Any]) -> str:
         """Aggregate content from multiple nodes into a single document"""
@@ -120,8 +121,6 @@ class ContentAggregator:
         """Add embedded files section if task has uploaded files"""
         try:
             # Parse front matter to get task metadata
-            import yaml
-            import re
             
             # Extract YAML front matter
             yaml_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
@@ -271,6 +270,11 @@ async def compile_document(
     """Compile selected nodes into a document"""
     
     try:
+        print(f"Compiling document for project {project_id}")
+        print(f"Request nodes: {request.nodes}")
+        print(f"Request format: {request.format}")
+        print(f"Request options: {request.options}")
+        
         # Check project access
         result = await db.execute(
             select(Project).where(
@@ -286,8 +290,16 @@ async def compile_document(
                 detail="Project not found"
             )
         
+        print(f"Found project: {project.name}")
+        print(f"Project git_config: {project.git_config}")
+        
         # Get project path
-        project_path = project.path
+        project_path = project.git_config.get('path')
+        
+        if not project_path:
+            raise HTTPException(status_code=404, detail="Project path not configured")
+        
+        print(f"Project path: {project_path}")
         
         # Validate project path exists
         if not os.path.exists(project_path):
@@ -297,17 +309,22 @@ async def compile_document(
         aggregator = ContentAggregator(project_path)
         
         # Aggregate content
+        print("Aggregating content...")
         content = aggregator.aggregate_content(request.nodes, request.options)
         
         # Create exporter
+        print(f"Creating exporter for format: {request.format}")
         exporter = ExporterFactory.create_exporter(request.format)
         
         # Export content
+        print("Exporting content...")
         exported_content = exporter.export(content, request.options)
         
         # Generate filename
         title = request.options.get('title', 'document')
         filename = f"{title}.{request.format}"
+        
+        print(f"Generated filename: {filename}")
         
         # Return as streaming response
         return StreamingResponse(
@@ -317,8 +334,12 @@ async def compile_document(
         )
         
     except ValueError as e:
+        print(f"ValueError in compile_document: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        print(f"Exception in compile_document: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Compilation failed: {str(e)}")
 
 @router.get("/formats")
