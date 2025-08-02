@@ -72,6 +72,7 @@ interface CompileOptions {
   includeToc: boolean
   includeIndex: boolean
   includeBibliography: boolean
+  embedUploadedFiles: boolean
   pageSize: 'A4' | 'Letter' | 'A5'
   fontSize: 'small' | 'medium' | 'large'
   margins: 'narrow' | 'normal' | 'wide'
@@ -92,6 +93,7 @@ function CompilerView() {
     includeToc: true,
     includeIndex: false,
     includeBibliography: false,
+    embedUploadedFiles: true,
     pageSize: 'A4',
     fontSize: 'medium',
     margins: 'normal',
@@ -288,6 +290,16 @@ function CompilerView() {
                 className="rounded"
               />
               <span className="text-sm">Include table of contents</span>
+            </label>
+            
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={options.embedUploadedFiles}
+                onChange={(e) => updateOption('embedUploadedFiles', e.target.checked)}
+                className="rounded"
+              />
+              <span className="text-sm">Embed uploaded files (if supported by format)</span>
             </label>
           </div>
 

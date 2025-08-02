@@ -27,12 +27,13 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
+  const [showNodesOnly, setShowNodesOnly] = useState(true)
 
   useEffect(() => {
     if (currentProject) {
       loadFileTree()
     }
-  }, [currentProject, currentProjectPath])
+  }, [currentProject, currentProjectPath, showNodesOnly])
 
   const loadFileTree = async () => {
     if (!currentProjectPath) return
@@ -41,13 +42,39 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
     try {
       if (isElectron && window.electronAPI) {
         // Use Electron API for file system access
-        const files = await window.electronAPI.readDirectory(currentProjectPath)
+        let files = await window.electronAPI.readDirectory(currentProjectPath)
+        
+        // Filter to only show nodes directory if showNodesOnly is true
+        if (showNodesOnly) {
+          // Show the nodes directory and all its contents
+          files = files.filter(file => {
+            // Include the nodes directory itself
+            if (file.path === 'nodes') return true
+            // Include all files and subdirectories within nodes
+            if (file.path.startsWith('nodes/')) return true
+            return false
+          })
+        }
+        
         const tree = buildFileTree(files)
         setFileTree(tree)
       } else {
         // Use web API
         const response = await editorApi.getFileTree()
-        setFileTree(response.data)
+        let files = response.data
+        
+        // Filter to only show nodes directory if showNodesOnly is true
+        if (showNodesOnly) {
+          files = files.filter((file: any) => {
+            // Include the nodes directory itself
+            if (file.path === 'nodes') return true
+            // Include all files and subdirectories within nodes
+            if (file.path.startsWith('nodes/')) return true
+            return false
+          })
+        }
+        
+        setFileTree(files)
       }
     } catch (error) {
       console.error('Failed to load file tree:', error)
@@ -57,6 +84,8 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
   }
 
   const buildFileTree = (files: Array<{ name: string; path: string; type: 'file' | 'directory' }>): FileNode[] => {
+    console.log('Building file tree with files:', files)
+    
     const tree: FileNode[] = []
     const nodeMap = new Map<string, FileNode>()
 
@@ -75,7 +104,8 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
     // Build tree structure
     files.forEach(file => {
       const node = nodeMap.get(file.path)!
-      const parentPath = file.path.split('/').slice(0, -1).join('/')
+      const pathParts = file.path.split('/')
+      const parentPath = pathParts.slice(0, -1).join('/')
       
       if (parentPath && nodeMap.has(parentPath)) {
         const parent = nodeMap.get(parentPath)!
@@ -85,22 +115,51 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
       }
     })
 
+    console.log('Built tree:', tree)
     return tree
   }
 
   const loadDirectoryContents = async (node: FileNode) => {
     if (!currentProjectPath) return
 
+    console.log('Loading directory contents for:', node.path)
+    
     try {
       if (isElectron && window.electronAPI) {
-        const files = await window.electronAPI.readDirectory(node.path)
-        const children = buildFileTree(files)
-        node.children = children
+        let files = await window.electronAPI.readDirectory(node.path)
+        console.log('Files in directory:', files)
+        
+        // Convert relative paths to absolute paths for proper tree building
+        const absoluteFiles = files.map(file => ({
+          ...file,
+          path: file.path.startsWith('/') ? file.path : `${node.path}/${file.name}`
+        }))
+        
+        // Filter to only show nodes directory if showNodesOnly is true
+        if (showNodesOnly) {
+          // Show the nodes directory and all its contents
+          const filteredFiles = absoluteFiles.filter(file => {
+            // Include the nodes directory itself
+            if (file.path === 'nodes') return true
+            // Include all files and subdirectories within nodes
+            if (file.path.startsWith('nodes/')) return true
+            return false
+          })
+          console.log('Filtered files:', filteredFiles)
+          
+          const children = buildFileTree(filteredFiles)
+          node.children = children
+        } else {
+          const children = buildFileTree(absoluteFiles)
+          node.children = children
+        }
+        
         node.loaded = true
         setFileTree([...fileTree]) // Trigger re-render
       } else {
-        const response = await editorApi.getDirectoryContents(node.path)
-        node.children = response.data
+        // For web API, we'll need to implement this differently
+        console.warn('Directory loading not implemented for web API')
+        node.children = []
         node.loaded = true
         setFileTree([...fileTree]) // Trigger re-render
       }
@@ -110,9 +169,12 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
   }
 
   const toggleDirectory = async (node: FileNode) => {
+    console.log('toggleDirectory called for:', node.path)
     const isExpanded = expandedDirs.has(node.path)
+    console.log('Is expanded:', isExpanded, 'Is loaded:', node.loaded)
     
     if (!isExpanded && !node.loaded) {
+      console.log('Loading directory contents...')
       await loadDirectoryContents(node)
     }
     
@@ -120,16 +182,22 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
       const next = new Set(prev)
       if (next.has(node.path)) {
         next.delete(node.path)
+        console.log('Collapsing directory:', node.path)
       } else {
         next.add(node.path)
+        console.log('Expanding directory:', node.path)
       }
       return next
     })
   }
 
   const handleNodeToggle = (node: FileNode) => {
+    console.log('Node clicked:', node.path, 'type:', node.type, 'showFolders:', showFolders)
+    
     if (node.type === 'directory') {
+      // Always allow folder selection when showFolders is true
       if (showFolders) {
+        console.log('Handling folder selection')
         // Toggle folder selection
         const isSelected = selectedNodes.includes(node.path)
         if (isSelected) {
@@ -145,10 +213,12 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
           onSelectionChange([...new Set(newSelection)]) // Remove duplicates
         }
       } else {
+        console.log('Handling directory expansion')
         // Just expand/collapse the directory
         toggleDirectory(node)
       }
     } else {
+      console.log('Handling file selection')
       // Toggle file selection
       const isSelected = selectedNodes.includes(node.path)
       if (isSelected) {
@@ -206,11 +276,16 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
             )}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
           >
-            {/* Checkbox */}
+            {/* Checkbox or Chevron */}
             <div className="flex items-center justify-center w-4 h-4">
-              {node.type === 'file' || showFolders ? (
-                <div className="w-4 h-4 border border-input rounded flex items-center justify-center">
-                  {isSelected && <Check className="w-3 h-3" />}
+              {node.type === 'file' || (node.type === 'directory' && showFolders) ? (
+                <div className={clsx(
+                  'w-4 h-4 border rounded flex items-center justify-center',
+                  isSelected ? 'bg-primary border-primary' : 'border-input',
+                  isIndeterminate && 'bg-primary/50 border-primary'
+                )}>
+                  {isSelected && <Check className="w-3 h-3 text-primary-foreground" />}
+                  {isIndeterminate && !isSelected && <div className="w-2 h-0.5 bg-primary-foreground" />}
                 </div>
               ) : (
                 <ChevronIcon className="w-3 h-3 flex-shrink-0" />
@@ -293,6 +368,19 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
             Clear
           </button>
         </div>
+      </div>
+
+      {/* Show Nodes Only Toggle */}
+      <div className="p-2 border-b border-border">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showNodesOnly}
+            onChange={(e) => setShowNodesOnly(e.target.checked)}
+            className="rounded"
+          />
+          <span className="text-xs">Show Nodes Only</span>
+        </label>
       </div>
 
       {/* File Tree */}

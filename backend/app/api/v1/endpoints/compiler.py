@@ -44,6 +44,7 @@ class ContentAggregator:
         sections = []
         metadata = options.get('title', 'Document')
         author = options.get('author', 'Unknown')
+        embed_files = options.get('embedUploadedFiles', True)
         
         # Add document header
         if options.get('includeMetadata', True):
@@ -77,6 +78,14 @@ class ContentAggregator:
                     # Add content (strip any existing headers)
                     clean_content = self._clean_content(content)
                     sections.append(clean_content)
+                    
+                    # Add embedded files if requested
+                    if embed_files:
+                        embedded_files_section = self._add_embedded_files(content, path)
+                        if embedded_files_section:
+                            sections.append("\n\n")
+                            sections.append(embedded_files_section)
+                    
                     sections.append("\n\n")
                 else:
                     sections.append(f"## {os.path.basename(path)}\n\n*File not found*\n\n")
@@ -106,6 +115,64 @@ class ContentAggregator:
             cleaned_lines.append(line)
         
         return '\n'.join(cleaned_lines).strip()
+    
+    def _add_embedded_files(self, content: str, node_path: str) -> Optional[str]:
+        """Add embedded files section if task has uploaded files"""
+        try:
+            # Parse front matter to get task metadata
+            import yaml
+            import re
+            
+            # Extract YAML front matter
+            yaml_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+            if not yaml_match:
+                return None
+            
+            yaml_content = yaml_match.group(1)
+            metadata = yaml.safe_load(yaml_content) if yaml_content else {}
+            
+            # Check for task metadata and files
+            task_metadata = metadata.get('task', {})
+            files = task_metadata.get('files', [])
+            
+            if not files:
+                return None
+            
+            # Create embedded files section
+            sections = []
+            sections.append("### Attachments\n\n")
+            
+            for file_info in files:
+                file_name = file_info.get('originalName', file_info.get('name', 'Unknown File'))
+                file_size = file_info.get('size', 0)
+                uploaded_at = file_info.get('uploadedAt', '')
+                
+                # Format file size
+                size_str = self._format_file_size(file_size)
+                
+                sections.append(f"- **{file_name}** ({size_str})")
+                if uploaded_at:
+                    sections.append(f" - Uploaded: {uploaded_at}")
+                sections.append("\n")
+            
+            return ''.join(sections)
+            
+        except Exception as e:
+            print(f"Error processing embedded files for {node_path}: {e}")
+            return None
+    
+    def _format_file_size(self, bytes: int) -> str:
+        """Format file size in human readable format"""
+        if bytes == 0:
+            return "0 B"
+        
+        size_names = ["B", "KB", "MB", "GB"]
+        i = 0
+        while bytes >= 1024 and i < len(size_names) - 1:
+            bytes /= 1024.0
+            i += 1
+        
+        return f"{bytes:.1f} {size_names[i]}"
 
 class MarkdownExporter:
     """Markdown format exporter"""
