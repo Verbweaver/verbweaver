@@ -117,33 +117,34 @@ export class FileStorage {
         throw new Error('Failed to read file for download')
       }
       
-      // Create a blob with the original MIME type
-      const blob = new Blob([result.data], { type: storedFile.mimeType })
+      // Create a blob from the file data
+      const blob = new Blob([result.data])
       
-      // Create download link
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      
-      // Set the original filename with extension for the download
-      link.download = storedFile.originalName
-      
-      // Set the MIME type to help the browser understand the file type
-      link.setAttribute('type', storedFile.mimeType)
-      
-      // Trigger the browser's native download dialog
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      
-      // Clean up
-      URL.revokeObjectURL(url)
-      
-      console.log('File download initiated:', storedFile.originalName)
+      // Use the fallback download method since File System Access API is blocked in Electron
+      console.log('Using fallback download method for:', storedFile.originalName)
+      this.fallbackDownload(blob, storedFile.originalName)
     } catch (error) {
       console.error('Failed to download file:', error)
       throw error
     }
+  }
+
+  private static fallbackDownload(blob: Blob, filename: string): void {
+    // Create download link as fallback
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    
+    // Trigger the browser's native download dialog
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    // Clean up
+    URL.revokeObjectURL(url)
+    
+    console.log('File download initiated (fallback):', filename)
   }
 
   static async deleteFile(storedFile: StoredFile): Promise<boolean> {
