@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import { X, Send, Paperclip, Link, User, Calendar, Tag, MessageSquare, Edit3, Download, Trash2 } from 'lucide-react'
+import { X, Send, Paperclip, Link, User, Calendar, Tag, MessageSquare, Edit3, Download, Trash2, FileText } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useNodeStore } from '../../store/nodeStore'
+import { useTabStore } from '../../store/tabStore'
 import { TaskState } from '@verbweaver/shared'
 import { FileStorage, StoredFile } from '../../utils/fileStorage'
 import clsx from 'clsx'
@@ -37,6 +39,8 @@ interface TaskDetailModalProps {
 
 function TaskDetailModal({ node, onClose, onUpdate }: TaskDetailModalProps) {
   const { updateNode, getNode } = useNodeStore()
+  const { addEditorTab } = useTabStore()
+  const navigate = useNavigate()
   const [isEditing, setIsEditing] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -184,6 +188,16 @@ function TaskDetailModal({ node, onClose, onUpdate }: TaskDetailModalProps) {
     }
   }
 
+  const handleOpenInEditor = () => {
+    if (node) {
+      const tabId = addEditorTab(node.path, node.name)
+      // Set the new tab as active
+      useTabStore.getState().setActiveTab(tabId)
+      navigate(`/editor/${encodeURIComponent(node.path)}`) // Navigate to the editor path
+      onClose() // Close the modal after opening the editor
+    }
+  }
+
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'urgent':
@@ -227,6 +241,12 @@ function TaskDetailModal({ node, onClose, onUpdate }: TaskDetailModalProps) {
               className="p-2 rounded hover:bg-accent"
             >
               <Edit3 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleOpenInEditor}
+              className="p-2 rounded hover:bg-accent"
+            >
+              <FileText className="w-4 h-4" />
             </button>
             <button
               onClick={onClose}
