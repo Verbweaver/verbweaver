@@ -84,8 +84,6 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
   }
 
   const buildFileTree = (files: Array<{ name: string; path: string; type: 'file' | 'directory' }>): FileNode[] => {
-    console.log('Building file tree with files:', files)
-    
     const tree: FileNode[] = []
     const nodeMap = new Map<string, FileNode>()
 
@@ -115,19 +113,15 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
       }
     })
 
-    console.log('Built tree:', tree)
     return tree
   }
 
   const loadDirectoryContents = async (node: FileNode) => {
     if (!currentProjectPath) return
 
-    console.log('Loading directory contents for:', node.path)
-    
     try {
       if (isElectron && window.electronAPI) {
         let files = await window.electronAPI.readDirectory(node.path)
-        console.log('Files in directory:', files)
         
         // Convert relative paths to absolute paths for proper tree building
         const absoluteFiles = files.map(file => ({
@@ -145,7 +139,6 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
             if (file.path.startsWith('nodes/')) return true
             return false
           })
-          console.log('Filtered files:', filteredFiles)
           
           const children = buildFileTree(filteredFiles)
           node.children = children
@@ -169,12 +162,9 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
   }
 
   const toggleDirectory = async (node: FileNode) => {
-    console.log('toggleDirectory called for:', node.path)
     const isExpanded = expandedDirs.has(node.path)
-    console.log('Is expanded:', isExpanded, 'Is loaded:', node.loaded)
     
     if (!isExpanded && !node.loaded) {
-      console.log('Loading directory contents...')
       await loadDirectoryContents(node)
     }
     
@@ -182,22 +172,18 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
       const next = new Set(prev)
       if (next.has(node.path)) {
         next.delete(node.path)
-        console.log('Collapsing directory:', node.path)
       } else {
         next.add(node.path)
-        console.log('Expanding directory:', node.path)
       }
       return next
     })
   }
 
   const handleNodeToggle = (node: FileNode) => {
-    console.log('Node clicked:', node.path, 'type:', node.type, 'showFolders:', showFolders)
     
     if (node.type === 'directory') {
       // Always allow folder selection when showFolders is true
       if (showFolders) {
-        console.log('Handling folder selection')
         // Toggle folder selection
         const isSelected = selectedNodes.includes(node.path)
         if (isSelected) {
@@ -213,12 +199,10 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
           onSelectionChange([...new Set(newSelection)]) // Remove duplicates
         }
       } else {
-        console.log('Handling directory expansion')
         // Just expand/collapse the directory
         toggleDirectory(node)
       }
     } else {
-      console.log('Handling file selection')
       // Toggle file selection
       const isSelected = selectedNodes.includes(node.path)
       if (isSelected) {

@@ -46,7 +46,7 @@ function GraphView() {
   
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; isFolder?: boolean } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; isFolder?: boolean; hasTask?: boolean } | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
@@ -208,7 +208,8 @@ function GraphView() {
         x: event.clientX,
         y: event.clientY,
         nodeId: node.id,
-        isFolder: verbweaverNode?.isDirectory || false
+        isFolder: verbweaverNode?.isDirectory || false,
+        hasTask: verbweaverNode?.hasTask || false,
       })
       setSelectedNode(node.id)
     },
@@ -546,10 +547,15 @@ function GraphView() {
           y={contextMenu.y}
           nodeId={contextMenu.nodeId}
           isFolder={contextMenu.isFolder}
+          hasTask={contextMenu.hasTask}
           onCreateNode={handleCreateNode}
           onDeleteNode={handleDeleteNode}
           onEditNode={handleEditNode}
           onCreateChildNode={handleCreateChildNode}
+          onSeeTask={(nodeId) => {
+            setContextMenu(null);
+            navigate(`/threads/${encodeURIComponent(nodeId)}`);
+          }}
           onClose={() => setContextMenu(null)}
         />
       )}
