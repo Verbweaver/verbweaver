@@ -16,7 +16,7 @@ import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
-import { VerbweaverNode, NODE_TYPES } from '@verbweaver/shared'
+import { NODE_TYPES } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 
 // Define custom node types

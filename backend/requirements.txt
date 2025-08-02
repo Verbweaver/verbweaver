@@ -4,7 +4,7 @@ pydantic==2.11.5
 pydantic-settings==2.9.1
 python-multipart==0.0.20
 python-jose[cryptography]==3.5.0
-bcrypt==4.3.0
+bcrypt==4.0.1
 passlib[bcrypt]==1.7.4
 sqlalchemy==2.0.41
 greenlet==3.2.2

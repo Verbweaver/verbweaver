@@ -49,7 +49,7 @@ let backendPort: number | null = null;
 
 // Configuration
 const isDevelopment = process.env.NODE_ENV === 'development';
-const BACKEND_STARTUP_TIMEOUT = 30000; // 30 seconds
+const BACKEND_STARTUP_TIMEOUT = 60000; // 60 seconds
 
 // Security: Set Content Security Policy
 app.on('web-contents-created', (_, contents) => {
@@ -118,28 +118,36 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     throw new Error(`Backend directory not found at: ${backendPath}`);
   }
   
-  // Try different Python executables
-  const pythonCommands = process.platform === 'win32' 
-    ? ['py', 'python', 'python3'] 
-    : ['python3', 'python'];
-  
+  // Try to use virtual environment first, then fall back to system Python
   let pythonExecutable: string | null = null;
   
-  // Find the first available Python executable
-  for (const cmd of pythonCommands) {
-    try {
-      const { execSync } = require('child_process');
-      execSync(`${cmd} --version`, { stdio: 'ignore' });
-      pythonExecutable = cmd;
-      console.log(`Found Python executable: ${cmd}`);
-      break;
-    } catch (e) {
-      // Continue to next command
+  // Check for virtual environment
+  const venvPythonPath = join(backendPath, '../.venv/Scripts/python.exe');
+  if (existsSync(venvPythonPath)) {
+    pythonExecutable = venvPythonPath;
+    console.log('Using virtual environment Python:', pythonExecutable);
+  } else {
+    // Fall back to system Python
+    const pythonCommands = process.platform === 'win32' 
+      ? ['py', 'python', 'python3'] 
+      : ['python3', 'python'];
+    
+    // Find the first available Python executable
+    for (const cmd of pythonCommands) {
+      try {
+        const { execSync } = require('child_process');
+        execSync(`${cmd} --version`, { stdio: 'ignore' });
+        pythonExecutable = cmd;
+        console.log(`Found Python executable: ${cmd}`);
+        break;
+      } catch (e) {
+        // Continue to next command
+      }
     }
   }
   
   if (!pythonExecutable) {
-    throw new Error('Python not found. Please ensure Python is installed and in your PATH.');
+    throw new Error('Python not found. Please ensure Python is installed and in your PATH, or run the setup script to create a virtual environment.');
   }
   
   return new Promise((resolve, reject) => {
@@ -178,15 +186,28 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       mainWindow?.webContents.send('backend:log', data.toString());
       
       if (data.toString().includes('Uvicorn running on')) {
-        clearTimeout(timeout);
-        backendPort = port;
-        resolve({ port, pid: currentProcess.pid! });
+        // Add a small delay to ensure the server is fully started
+        setTimeout(() => {
+          clearTimeout(timeout);
+          backendPort = port;
+          resolve({ port, pid: currentProcess.pid! });
+        }, 1000);
       }
     });
 
     currentProcess.stderr?.on('data', (data) => {
       console.error(`Backend Error: ${data}`);
       mainWindow?.webContents.send('backend:log', `ERROR: ${data}`);
+      
+      // Also check stderr for the startup message
+      if (data.toString().includes('Uvicorn running on')) {
+        // Add a small delay to ensure the server is fully started
+        setTimeout(() => {
+          clearTimeout(timeout);
+          backendPort = port;
+          resolve({ port, pid: currentProcess.pid! });
+        }, 1000);
+      }
     });
 
     currentProcess.on('error', (error) => {
@@ -260,6 +281,21 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+  }
+
+  // Auto-open most recent project if available
+  const recentProjects = store.get('recentProjects', []) as string[];
+  if (recentProjects.length > 0) {
+    const mostRecentProject = recentProjects[0];
+    if (existsSync(mostRecentProject)) {
+      console.log('Auto-opening most recent project:', mostRecentProject);
+      // Set the project path in the store
+      store.set('currentProjectPath', mostRecentProject);
+      // Notify the renderer after a short delay to ensure it's loaded
+      setTimeout(() => {
+        mainWindow?.webContents.send('project:opened', mostRecentProject);
+      }, 2000);
+    }
   }
 
   // Handle external links
@@ -432,14 +468,21 @@ function setupIpcHandlers() {
   ipcMain.handle('fs:readDirectory', async (_event, dirPath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
-      if (!projectPath) throw new Error('No project path set');
+      if (!projectPath) {
+        throw new Error('No project is currently open. Please open or create a project first.');
+      }
       
+      // If dirPath is already absolute, use it directly
+      // Otherwise, join it with the project path
       const fullPath = path.isAbsolute(dirPath) ? dirPath : path.join(projectPath as string, dirPath);
       const items = await fs.readdir(fullPath, { withFileTypes: true });
       
       return items.map(item => ({
         name: item.name,
-        path: path.join(dirPath, item.name),
+        // Return relative path from the project root
+        path: path.isAbsolute(dirPath) 
+          ? path.relative(projectPath as string, path.join(dirPath, item.name))
+          : path.join(dirPath, item.name),
         type: item.isDirectory() ? 'directory' : 'file'
       }));
     } catch (error) {
@@ -465,12 +508,13 @@ function setupIpcHandlers() {
 
   ipcMain.handle('fs:readFile', async (_, filePath: string) => {
     try {
-      // If it's a relative path, resolve it from the app directory
-      const resolvedPath = filePath.startsWith('..') || filePath.startsWith('.')
-        ? resolve(app.getAppPath(), filePath)
-        : filePath;
+      const projectPath = store.get('currentProjectPath');
+      if (!projectPath) {
+        throw new Error('No project is currently open. Please open or create a project first.');
+      }
       
-      const content = await readFile(resolvedPath, 'utf-8');
+      const fullPath = path.isAbsolute(filePath) ? filePath : path.join(projectPath as string, filePath);
+      const content = await readFile(fullPath, 'utf-8');
       return content;
     } catch (error) {
       throw new Error(`Failed to read file: ${error}`);

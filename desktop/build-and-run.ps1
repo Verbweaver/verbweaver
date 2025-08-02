@@ -6,6 +6,22 @@ Write-Host "Building Verbweaver Desktop..." -ForegroundColor Green
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
+# Check if backend is set up
+Write-Host "`nChecking backend setup..." -ForegroundColor Yellow
+$venvPath = Join-Path $projectRoot ".venv"
+$venvPythonPath = Join-Path $venvPath "Scripts\python.exe"
+
+if (-not (Test-Path $venvPythonPath)) {
+    Write-Host "Virtual environment not found. Running setup..." -ForegroundColor Yellow
+    & "$projectRoot\setup-backend.ps1"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Backend setup failed. Please run setup-backend.ps1 manually." -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host "Backend environment found" -ForegroundColor Green
+}
+
 # Function to start a process in a new window
 function Start-ProcessInNewWindow {
     param(

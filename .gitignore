@@ -152,8 +152,8 @@ temp/
 /backend/media/
 /uploads/
 /downloads/
-# /git-repos/ should NOT be ignored
-# .git-repos/
+# User project repositories - contains dynamic user data
+backend/git-repos/
 *.bak
 
 # Documentation build
