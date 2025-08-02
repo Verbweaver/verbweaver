@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   DndContext,
   DragEndEvent,
@@ -95,6 +96,32 @@ function ThreadsView() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [selectedTask, setSelectedTask] = useState<VerbweaverNode | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
+  
+  // Handle URL parameters for opening specific tasks
+  const { taskPath } = useParams()
+  const navigate = useNavigate()
+
+  // Load nodes when component mounts or project changes
+  useEffect(() => {
+    if (currentProject) {
+      loadNodes()
+    }
+  }, [currentProject, loadNodes])
+
+  // Handle opening task from URL parameter
+  useEffect(() => {
+    if (taskPath && nodes.size > 0) {
+      const decodedTaskPath = decodeURIComponent(taskPath)
+      const taskNode = nodes.get(decodedTaskPath)
+      
+      if (taskNode && taskNode.hasTask) {
+        setSelectedTask(taskNode)
+        setIsDetailModalOpen(true)
+        // Clear the URL parameter after opening the task
+        navigate('/threads', { replace: true })
+      }
+    }
+  }, [taskPath, nodes, navigate])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -103,12 +130,6 @@ function ThreadsView() {
       },
     })
   )
-
-  useEffect(() => {
-    if (currentProject) {
-      loadNodes()
-    }
-  }, [currentProject, loadNodes])
 
   // Get all nodes as tasks, grouped by status
   // According to DESIGN.md: "Remember that each Task is backed by a Markdown file in the Git repository and is also rendered as a Node in the Graph"

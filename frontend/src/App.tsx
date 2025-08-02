@@ -73,6 +73,7 @@ function App() {
         <Route path="editor/:filePath" element={<Editor />} />
         <Route path="graph" element={<Graph />} />
         <Route path="threads" element={<Threads />} />
+        <Route path="threads/:taskPath" element={<Threads />} />
         <Route path="version" element={<Version />} />
         <Route path="compiler" element={<Compiler />} />
         <Route path="settings" element={<Settings />}>
