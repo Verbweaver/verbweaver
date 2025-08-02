@@ -521,6 +521,21 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.handle('fs:readFileBinary', async (_, filePath: string) => {
+    try {
+      const projectPath = store.get('currentProjectPath');
+      if (!projectPath) {
+        throw new Error('No project is currently open. Please open or create a project first.');
+      }
+      
+      const fullPath = path.isAbsolute(filePath) ? filePath : path.join(projectPath as string, filePath);
+      const content = await readFile(fullPath);
+      return content;
+    } catch (error) {
+      throw new Error(`Failed to read file: ${error}`);
+    }
+  });
+
   ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
     try {
       // Ensure parent directory exists
@@ -546,6 +561,41 @@ function setupIpcHandlers() {
       await fs.unlink(fullPath);
     } catch (error) {
       console.error('Failed to delete file:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('fs:createDirectory', async (_event, dirPath: string) => {
+    try {
+      const projectPath = store.get('currentProjectPath');
+      if (!projectPath) throw new Error('No project path set');
+      
+      const fullPath = path.isAbsolute(dirPath) ? dirPath : path.join(projectPath as string, dirPath);
+      await mkdir(fullPath, { recursive: true });
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to create directory:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('fs:writeFileBinary', async (_event, filePath: string, uint8Array: Uint8Array) => {
+    try {
+      const projectPath = store.get('currentProjectPath');
+      if (!projectPath) throw new Error('No project path set');
+      
+      const fullPath = path.isAbsolute(filePath) ? filePath : path.join(projectPath as string, filePath);
+      
+      // Ensure directory exists
+      const dir = path.dirname(fullPath);
+      if (!existsSync(dir)) {
+        await mkdir(dir, { recursive: true });
+      }
+      
+      await fs.writeFile(fullPath, uint8Array);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to write binary file:', error);
       throw error;
     }
   });
@@ -1648,6 +1698,33 @@ task:
 
   ipcMain.handle('get-app-version', async () => {
     return app.getVersion();
+  });
+
+  ipcMain.handle('fs:downloadFile', async (_event, filePath: string, originalName: string) => {
+    try {
+      const projectPath = store.get('currentProjectPath');
+      if (!projectPath) throw new Error('No project path set');
+      
+      const fullPath = path.isAbsolute(filePath) ? filePath : path.join(projectPath as string, filePath);
+      
+      // Check if file exists
+      if (!existsSync(fullPath)) {
+        throw new Error('File not found');
+      }
+      
+      // Read the file as binary
+      const fileBuffer = await fs.readFile(fullPath);
+      
+      return { 
+        success: true, 
+        data: fileBuffer,
+        filename: originalName,
+        mimeType: 'application/octet-stream' // Will be overridden by the frontend
+      };
+    } catch (error) {
+      console.error('Failed to read file for download:', error);
+      throw error;
+    }
   });
 
   // Helper function to list docs recursively

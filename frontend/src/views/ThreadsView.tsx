@@ -13,12 +13,13 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { Plus, MoreHorizontal, Calendar, User } from 'lucide-react'
+import { Plus, MoreHorizontal, Calendar, User, Tag, MessageSquare, Link } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
 import { TaskState } from '@verbweaver/shared'
 import TaskCard from '../components/tasks/TaskCard'
 import CreateTaskModal from '../components/tasks/CreateTaskModal'
+import TaskDetailModal from '../components/tasks/TaskDetailModal'
 import clsx from 'clsx'
 
 // Define VerbweaverNode interface locally
@@ -92,6 +93,8 @@ function ThreadsView() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [selectedColumn, setSelectedColumn] = useState<TaskState | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [selectedTask, setSelectedTask] = useState<VerbweaverNode | null>(null)
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -107,7 +110,8 @@ function ThreadsView() {
     }
   }, [currentProject, loadNodes])
 
-  // Get all nodes that have tasks, grouped by status
+  // Get all nodes as tasks, grouped by status
+  // According to DESIGN.md: "Remember that each Task is backed by a Markdown file in the Git repository and is also rendered as a Node in the Graph"
   const tasksByStatus = useMemo(() => {
     const result: Record<TaskState, VerbweaverNode[]> = {
       'todo': [],
@@ -118,8 +122,13 @@ function ThreadsView() {
     }
     
     Array.from(nodes.values()).forEach(node => {
-      if (node.hasTask && node.taskStatus) {
-        result[node.taskStatus].push(node)
+      // Only treat files as tasks, not directories
+      // Directories provide context but aren't tasks themselves
+      if (!node.isDirectory) {
+        // Treat all files as tasks - they all represent content that can be managed
+        // If no task status is set, default to 'todo'
+        const status = node.taskStatus || 'todo'
+        result[status].push(node)
       }
     })
     
@@ -151,6 +160,16 @@ function ThreadsView() {
     setIsCreateModalOpen(true)
   }
 
+  const handleTaskClick = (node: VerbweaverNode) => {
+    setSelectedTask(node)
+    setIsDetailModalOpen(true)
+  }
+
+  const handleTaskUpdate = (updatedNode: VerbweaverNode) => {
+    setSelectedTask(updatedNode)
+    // The nodeStore will handle the update automatically
+  }
+
   const activeNode = activeId ? Array.from(nodes.values()).find(node => node.path === activeId) : null
 
   if (!currentProject) {
@@ -174,7 +193,7 @@ function ThreadsView() {
           <div>
             <h1 className="text-2xl font-bold">Tasks</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Manage your project tasks and track progress
+              Manage your project tasks and track progress. Every node in your project is a task.
             </p>
           </div>
           
@@ -219,6 +238,7 @@ function ThreadsView() {
                           key={node.path}
                           node={node}
                           isDragging={activeId === node.path}
+                          onClick={handleTaskClick}
                         />
                       ))}
                     </SortableContext>
@@ -242,11 +262,24 @@ function ThreadsView() {
       {/* Create Task Modal */}
       {isCreateModalOpen && (
         <CreateTaskModal
+          projectId={currentProject?.id}
           defaultStatus={selectedColumn || 'todo'}
           onClose={() => {
             setIsCreateModalOpen(false)
             setSelectedColumn(null)
           }}
+        />
+      )}
+
+      {/* Task Detail Modal */}
+      {isDetailModalOpen && selectedTask && (
+        <TaskDetailModal
+          node={selectedTask}
+          onClose={() => {
+            setIsDetailModalOpen(false)
+            setSelectedTask(null)
+          }}
+          onUpdate={handleTaskUpdate}
         />
       )}
     </div>

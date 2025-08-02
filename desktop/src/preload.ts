@@ -14,9 +14,13 @@ export interface ElectronAPI {
   openDirectory: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   saveFile: (content: string) => Promise<{ canceled: boolean; filePath?: string }>;
   readFile: (filePath: string) => Promise<string>;
+  readFileBinary: (filePath: string) => Promise<Buffer>;
   writeFile: (filePath: string, content: string) => Promise<void>;
+  writeFileBinary: (filePath: string, uint8Array: Uint8Array) => Promise<{ success: boolean }>;
   readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
+  createDirectory: (dirPath: string) => Promise<{ success: boolean }>;
   deleteFile: (filePath: string) => Promise<void>;
+  downloadFile: (filePath: string, originalName: string) => Promise<{ success: boolean; data: Buffer; filename: string; mimeType: string }>;
   moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean }>;
   readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
   
@@ -99,9 +103,13 @@ const electronAPI: ElectronAPI = {
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
   saveFile: (content: string) => ipcRenderer.invoke('dialog:saveFile', content),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
+  readFileBinary: (filePath: string) => ipcRenderer.invoke('fs:readFileBinary', filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
+  writeFileBinary: (filePath: string, uint8Array: Uint8Array) => ipcRenderer.invoke('fs:writeFileBinary', filePath, uint8Array),
   readDirectory: (dirPath: string) => ipcRenderer.invoke('fs:readDirectory', dirPath),
+  createDirectory: (dirPath: string) => ipcRenderer.invoke('fs:createDirectory', dirPath),
   deleteFile: (filePath: string) => ipcRenderer.invoke('fs:deleteFile', filePath),
+  downloadFile: (filePath: string, originalName: string) => ipcRenderer.invoke('fs:downloadFile', filePath, originalName),
   moveFile: (oldPath: string, newPath: string) => ipcRenderer.invoke('fs:moveFile', oldPath, newPath),
   readProjectFiles: (projectPath: string) => ipcRenderer.invoke('fs:readProjectFiles', projectPath),
   
