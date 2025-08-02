@@ -1,7 +1,25 @@
-import { VerbweaverNode } from '@verbweaver/shared'
 import { Calendar, User, Tag, MoreVertical } from 'lucide-react'
 import clsx from 'clsx'
 import { format } from 'date-fns'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+// Define VerbweaverNode interface locally
+interface VerbweaverNode {
+  path: string
+  name: string
+  isDirectory: boolean
+  isMarkdown: boolean
+  metadata: any
+  content: string | null
+  hardLinks: {
+    parent: string | null
+    children: string[]
+  }
+  softLinks: string[]
+  hasTask: boolean
+  taskStatus?: string
+}
 
 interface TaskCardProps {
   node: VerbweaverNode
@@ -9,6 +27,19 @@ interface TaskCardProps {
 }
 
 function TaskCard({ node, isDragging }: TaskCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: node.path })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
   const task = node.metadata.task
   
   const getPriorityColor = (priority?: string) => {
@@ -26,6 +57,10 @@ function TaskCard({ node, isDragging }: TaskCardProps) {
 
   return (
     <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
       className={clsx(
         'p-3 rounded-md border cursor-pointer transition-all',
         getPriorityColor(task?.priority),

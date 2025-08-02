@@ -1,12 +1,83 @@
 import { useEffect, useState, useMemo } from 'react'
-import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd'
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import { Plus, MoreHorizontal, Calendar, User } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
-import { VerbweaverNode, TaskState } from '@verbweaver/shared'
+import { TaskState } from '@verbweaver/shared'
 import TaskCard from '../components/tasks/TaskCard'
 import CreateTaskModal from '../components/tasks/CreateTaskModal'
 import clsx from 'clsx'
+
+// Define VerbweaverNode interface locally
+interface VerbweaverNode {
+  path: string
+  name: string
+  isDirectory: boolean
+  isMarkdown: boolean
+  metadata: any
+  content: string | null
+  hardLinks: {
+    parent: string | null
+    children: string[]
+  }
+  softLinks: string[]
+  hasTask: boolean
+  taskStatus?: TaskState
+}
+
+// Droppable Column Component
+function DroppableColumn({ 
+  id, 
+  title, 
+  color, 
+  children, 
+  onCreateTask 
+}: { 
+  id: string
+  title: string
+  color: string
+  children: React.ReactNode
+  onCreateTask: () => void
+}) {
+  const { setNodeRef } = useDroppable({ id })
+
+  return (
+    <div className="flex-1 min-w-[300px] flex flex-col bg-muted/30 rounded-lg">
+      {/* Column Header */}
+      <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center gap-2">
+          <div className={clsx('w-3 h-3 rounded-full', color)} />
+          <h3 className="font-semibold">{title}</h3>
+        </div>
+        
+        <button
+          onClick={onCreateTask}
+          className="p-1 rounded hover:bg-accent"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Column Content */}
+      <div ref={setNodeRef} className="flex-1 p-2 space-y-2 overflow-y-auto scrollbar-thin">
+        {children}
+      </div>
+    </div>
+  )
+}
 
 const columns = [
   { id: 'todo' as TaskState, title: 'To Do', color: 'bg-gray-500' },
@@ -20,6 +91,15 @@ function ThreadsView() {
   const { nodes, loadNodes, updateTaskStatus, isLoading } = useNodeStore()
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [selectedColumn, setSelectedColumn] = useState<TaskState | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  )
 
   useEffect(() => {
     if (currentProject) {
@@ -37,7 +117,7 @@ function ThreadsView() {
       'archived': []
     }
     
-    nodes.forEach(node => {
+    Array.from(nodes.values()).forEach(node => {
       if (node.hasTask && node.taskStatus) {
         result[node.taskStatus].push(node)
       }
@@ -46,11 +126,18 @@ function ThreadsView() {
     return result
   }, [nodes])
 
-  const handleDragEnd = (result: DropResult) => {
-    if (!result.destination || !currentProject) return
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string)
+  }
 
-    const nodePath = result.draggableId
-    const newStatus = result.destination.droppableId as TaskState
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    setActiveId(null)
+
+    if (!over || !currentProject) return
+
+    const nodePath = active.id as string
+    const newStatus = over.id as TaskState
 
     updateTaskStatus(nodePath, newStatus)
   }
@@ -63,6 +150,8 @@ function ThreadsView() {
     setSelectedColumn(columnId)
     setIsCreateModalOpen(true)
   }
+
+  const activeNode = activeId ? Array.from(nodes.values()).find(node => node.path === activeId) : null
 
   if (!currentProject) {
     return (
@@ -107,71 +196,45 @@ function ThreadsView() {
               <p className="text-muted-foreground">Loading tasks...</p>
             </div>
           ) : (
-            <DragDropContext onDragEnd={handleDragEnd}>
+            <DndContext
+              sensors={sensors}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
               <div className="flex gap-4 h-full">
                 {columns.map(column => (
-                  <div
+                  <DroppableColumn
                     key={column.id}
-                    className="flex-1 min-w-[300px] flex flex-col bg-muted/30 rounded-lg"
+                    id={column.id}
+                    title={column.title}
+                    color={column.color}
+                    onCreateTask={() => handleCreateTask(column.id)}
                   >
-                    {/* Column Header */}
-                    <div className="flex items-center justify-between p-4 border-b border-border">
-                      <div className="flex items-center gap-2">
-                        <div className={clsx('w-3 h-3 rounded-full', column.color)} />
-                        <h3 className="font-semibold">{column.title}</h3>
-                        <span className="text-sm text-muted-foreground">
-                          {getTasksByStatus(column.id).length}
-                        </span>
-                      </div>
-                      
-                      <button
-                        onClick={() => handleCreateTask(column.id)}
-                        className="p-1 rounded hover:bg-accent"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    {/* Column Content */}
-                    <Droppable droppableId={column.id}>
-                      {(provided, snapshot) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.droppableProps}
-                          className={clsx(
-                            'flex-1 p-2 space-y-2 overflow-y-auto scrollbar-thin',
-                            snapshot.isDraggingOver && 'bg-accent/20'
-                          )}
-                        >
-                          {getTasksByStatus(column.id).map((node, index) => (
-                            <Draggable
-                              key={node.path}
-                              draggableId={node.path}
-                              index={index}
-                            >
-                              {(provided, snapshot) => (
-                                <div
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  {...provided.dragHandleProps}
-                                  style={provided.draggableProps.style}
-                                >
-                                  <TaskCard
-                                    node={node}
-                                    isDragging={snapshot.isDragging}
-                                  />
-                                </div>
-                              )}
-                            </Draggable>
-                          ))}
-                          {provided.placeholder}
-                        </div>
-                      )}
-                    </Droppable>
-                  </div>
+                    <SortableContext
+                      items={getTasksByStatus(column.id).map(node => node.path)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {getTasksByStatus(column.id).map((node) => (
+                        <TaskCard
+                          key={node.path}
+                          node={node}
+                          isDragging={activeId === node.path}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DroppableColumn>
                 ))}
               </div>
-            </DragDropContext>
+
+              <DragOverlay>
+                {activeNode ? (
+                  <TaskCard
+                    node={activeNode}
+                    isDragging={true}
+                  />
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           )}
         </div>
       </div>

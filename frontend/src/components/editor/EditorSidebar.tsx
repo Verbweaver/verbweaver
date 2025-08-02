@@ -408,7 +408,11 @@ Add any additional notes or references here.
         
         {node.type === 'directory' && isExpanded && node.children && (
           <div>
-            {node.children.map(child => renderNode(child, depth + 1))}
+            {node.children.map(child => (
+              <div key={child.path}>
+                {renderNode(child, depth + 1)}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -458,7 +462,11 @@ Add any additional notes or references here.
         ) : fileTree.length === 0 ? (
           <div className="p-4 text-sm text-muted-foreground">No files</div>
         ) : (
-          fileTree.map(node => renderNode(node))
+          fileTree.map(node => (
+            <div key={node.path}>
+              {renderNode(node)}
+            </div>
+          ))
         )}
       </div>
 
