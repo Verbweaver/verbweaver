@@ -15,9 +15,13 @@ declare global {
       openDirectory: () => Promise<{ canceled: boolean; filePaths: string[] }>;
       saveFile: (content: string) => Promise<{ canceled: boolean; filePath?: string }>;
       readFile: (filePath: string) => Promise<string>;
+      readFileBinary: (filePath: string) => Promise<Buffer>;
       writeFile: (filePath: string, content: string) => Promise<void>;
+      writeFileBinary: (filePath: string, uint8Array: Uint8Array) => Promise<{ success: boolean }>;
       readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
+      createDirectory: (dirPath: string) => Promise<{ success: boolean }>;
       deleteFile: (filePath: string) => Promise<void>;
+      downloadFile: (filePath: string, originalName: string) => Promise<{ success: boolean; data: Buffer; filename: string; mimeType: string }>;
       moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean }>;
       readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
       

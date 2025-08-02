@@ -1,0 +1,530 @@
+import { useState, useEffect } from 'react'
+import { X, Send, Paperclip, Link, User, Calendar, Tag, MessageSquare, Edit3, Download, Trash2 } from 'lucide-react'
+import { useNodeStore } from '../../store/nodeStore'
+import { TaskState } from '@verbweaver/shared'
+import { FileStorage, StoredFile } from '../../utils/fileStorage'
+import clsx from 'clsx'
+
+// Define VerbweaverNode interface locally
+interface VerbweaverNode {
+  path: string
+  name: string
+  isDirectory: boolean
+  isMarkdown: boolean
+  metadata: any
+  content: string | null
+  hardLinks: {
+    parent: string | null
+    children: string[]
+  }
+  softLinks: string[]
+  hasTask: boolean
+  taskStatus?: TaskState
+}
+
+interface Comment {
+  id: string
+  author: string
+  content: string
+  timestamp: Date
+}
+
+interface TaskDetailModalProps {
+  node: VerbweaverNode | null
+  onClose: () => void
+  onUpdate: (node: VerbweaverNode) => void
+}
+
+function TaskDetailModal({ node, onClose, onUpdate }: TaskDetailModalProps) {
+  const { updateNode, getNode } = useNodeStore()
+  const [isEditing, setIsEditing] = useState(false)
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
+  const [assignee, setAssignee] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [newTag, setNewTag] = useState('')
+  const [newComment, setNewComment] = useState('')
+  const [comments, setComments] = useState<Comment[]>([])
+  const [files, setFiles] = useState<StoredFile[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+
+  useEffect(() => {
+    if (node) {
+      const task = node.metadata.task || {}
+      setTitle(node.metadata.title || node.name)
+      setDescription(node.metadata.description || '')
+      setPriority(task.priority || node.metadata.priority || 'medium')
+      setAssignee(task.assignee || node.metadata.assignee || '')
+      setDueDate(task.dueDate || node.metadata.dueDate || '')
+      setTags(node.metadata.tags || [])
+      setComments(task.comments || [])
+      
+      // Handle file migration from old format
+      const oldFiles = task.files || []
+      const migratedFiles = oldFiles.map((file: any) => {
+        const migrated = FileStorage.migrateOldFileFormat(file)
+        if (migrated) {
+          return migrated
+        } else {
+          // Create a placeholder for old files that can't be recovered
+          return {
+            id: file.id || `old_${Date.now()}`,
+            name: file.name || 'Unknown File',
+            originalName: file.originalName || file.name || 'Unknown File',
+            size: file.size || 0,
+            uploadedAt: file.uploadedAt ? new Date(file.uploadedAt) : new Date(),
+            uploadedBy: file.uploadedBy || 'Unknown User',
+            path: '', // Empty path indicates this file cannot be downloaded
+            mimeType: file.mimeType || 'application/octet-stream'
+          } as StoredFile
+        }
+      })
+      setFiles(migratedFiles)
+    }
+  }, [node])
+
+  const handleSave = async () => {
+    if (!node) return
+
+    const updatedMetadata = {
+      ...node.metadata,
+      title,
+      description,
+      priority,
+      assignee,
+      dueDate,
+      tags,
+      task: {
+        ...node.metadata.task,
+        priority,
+        assignee,
+        dueDate,
+        comments,
+        files
+      }
+    }
+
+    await updateNode(node.path, { metadata: updatedMetadata })
+    onUpdate({ ...node, metadata: updatedMetadata })
+    setIsEditing(false)
+  }
+
+  const handleAddComment = () => {
+    if (!newComment.trim()) return
+
+    const comment: Comment = {
+      id: Date.now().toString(),
+      author: 'Current User', // TODO: Get from auth context
+      content: newComment,
+      timestamp: new Date()
+    }
+
+    setComments([...comments, comment])
+    setNewComment('')
+  }
+
+  const handleAddTag = () => {
+    if (!newTag.trim() || tags.includes(newTag.trim())) return
+    setTags([...tags, newTag.trim()])
+    setNewTag('')
+  }
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setTags(tags.filter(tag => tag !== tagToRemove))
+  }
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadedFiles = event.target.files
+    if (!uploadedFiles || !node) return
+
+    setIsUploading(true)
+    try {
+      const newFiles: StoredFile[] = []
+      
+      for (const file of Array.from(uploadedFiles)) {
+        const storedFile = await FileStorage.uploadFile(file, node.path)
+        if (storedFile) {
+          newFiles.push(storedFile)
+        }
+      }
+      
+      setFiles([...files, ...newFiles])
+    } catch (error) {
+      console.error('Failed to upload files:', error)
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const handleDownloadFile = async (storedFile: StoredFile) => {
+    try {
+      // Check if file has a valid path
+      if (!storedFile.path) {
+        alert('This file was uploaded with an older version and cannot be downloaded. Please re-upload the file.')
+        return
+      }
+      
+      await FileStorage.downloadFile(storedFile)
+    } catch (error) {
+      console.error('Failed to download file:', error)
+      alert('Failed to download file. Please try again.')
+    }
+  }
+
+  const handleRemoveFile = async (fileToRemove: StoredFile) => {
+    try {
+      const success = await FileStorage.deleteFile(fileToRemove)
+      if (success) {
+        setFiles(files.filter(file => file.id !== fileToRemove.id))
+      }
+    } catch (error) {
+      console.error('Failed to remove file:', error)
+    }
+  }
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'urgent':
+        return 'bg-red-500'
+      case 'high':
+        return 'bg-orange-500'
+      case 'medium':
+        return 'bg-yellow-500'
+      case 'low':
+        return 'bg-blue-500'
+      default:
+        return 'bg-gray-500'
+    }
+  }
+
+  if (!node) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-background border border-border rounded-lg w-full max-w-4xl h-[80vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className={clsx('w-3 h-3 rounded-full', getPriorityColor(priority))} />
+            <h2 className="text-xl font-semibold">
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="bg-transparent border-none outline-none"
+                />
+              ) : (
+                title
+              )}
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsEditing(!isEditing)}
+              className="p-2 rounded hover:bg-accent"
+            >
+              <Edit3 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded hover:bg-accent"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left Panel - Task Details */}
+          <div className="flex-1 p-6 overflow-y-auto">
+            {/* Description */}
+            <div className="mb-6">
+              <h3 className="text-sm font-medium mb-2">Description</h3>
+              {isEditing ? (
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full p-3 border border-input rounded-md bg-background resize-none"
+                  rows={4}
+                  placeholder="Enter task description..."
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {description || 'No description provided'}
+                </p>
+              )}
+            </div>
+
+            {/* Task Properties */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium mb-1">Priority</label>
+                {isEditing ? (
+                  <select
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value as any)}
+                    className="w-full p-2 border border-input rounded-md bg-background"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <div className={clsx('w-2 h-2 rounded-full', getPriorityColor(priority))} />
+                    <span className="text-sm capitalize">{priority}</span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Assignee</label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={assignee}
+                    onChange={(e) => setAssignee(e.target.value)}
+                    className="w-full p-2 border border-input rounded-md bg-background"
+                    placeholder="Enter assignee..."
+                  />
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    {assignee || 'Unassigned'}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Due Date</label>
+                {isEditing ? (
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-full p-2 border border-input rounded-md bg-background"
+                  />
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    {dueDate ? new Date(dueDate).toLocaleDateString() : 'No due date'}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Status</label>
+                <span className="text-sm text-muted-foreground capitalize">
+                  {node.taskStatus || 'todo'}
+                </span>
+              </div>
+            </div>
+
+            {/* Tags */}
+            <div className="mb-6">
+              <h3 className="text-sm font-medium mb-2">Tags</h3>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {tags.map((tag, index) => (
+                  <span
+                    key={index}
+                    className="px-2 py-1 text-xs bg-muted text-muted-foreground rounded flex items-center gap-1"
+                  >
+                    {tag}
+                    {isEditing && (
+                      <button
+                        onClick={() => handleRemoveTag(tag)}
+                        className="hover:text-destructive"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+              {isEditing && (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    className="flex-1 p-2 border border-input rounded-md bg-background text-sm"
+                    placeholder="Add tag..."
+                    onKeyPress={(e) => e.key === 'Enter' && handleAddTag()}
+                  />
+                  <button
+                    onClick={handleAddTag}
+                    className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm"
+                  >
+                    Add
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Files */}
+            <div className="mb-6">
+              <h3 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <Paperclip className="w-4 h-4" />
+                Attachments ({files.length})
+              </h3>
+              {files.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {files.map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center justify-between p-2 bg-muted rounded-md"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Download className="w-4 h-4 text-muted-foreground" />
+                        <div>
+                          <div className="text-sm font-medium">{file.originalName}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {FileStorage.formatFileSize(file.size)} • {file.uploadedAt.toLocaleDateString()}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {file.path ? `ID: ${file.id} • Location: ${file.path}` : '⚠️ File cannot be downloaded (old format)'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleDownloadFile(file)}
+                          className="p-1 rounded hover:bg-accent"
+                          title={file.path ? "Download file" : "File cannot be downloaded (old format)"}
+                          disabled={!file.path}
+                        >
+                          <Download className={clsx("w-4 h-4", !file.path && "text-muted-foreground opacity-50")} />
+                        </button>
+                        {isEditing && (
+                          <button
+                            onClick={() => handleRemoveFile(file)}
+                            className="p-1 rounded hover:bg-accent"
+                            title="Remove file"
+                          >
+                            <Trash2 className="w-4 h-4 text-muted-foreground" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {isEditing && (
+                <div>
+                  <input
+                    type="file"
+                    multiple
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    id="file-upload"
+                    disabled={isUploading}
+                  />
+                  <label
+                    htmlFor="file-upload"
+                    className={clsx(
+                      "flex items-center gap-2 px-3 py-2 border border-dashed border-input rounded-md cursor-pointer hover:bg-accent",
+                      isUploading && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    <Paperclip className="w-4 h-4" />
+                    <span className="text-sm">
+                      {isUploading ? 'Uploading...' : 'Upload files'}
+                    </span>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* Soft Links */}
+            {node.softLinks.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-sm font-medium mb-2 flex items-center gap-1">
+                  <Link className="w-4 h-4" />
+                  Related Content
+                </h3>
+                <div className="space-y-2">
+                  {node.softLinks.map((link, index) => (
+                    <div
+                      key={index}
+                      className="p-2 bg-muted rounded-md text-sm cursor-pointer hover:bg-accent"
+                    >
+                      {link}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Save Button */}
+            {isEditing && (
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setIsEditing(false)}
+                  className="px-4 py-2 border border-input rounded-md hover:bg-accent"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                >
+                  Save Changes
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Right Panel - Comments */}
+          <div className="w-80 border-l border-border flex flex-col">
+            <div className="p-4 border-b border-border">
+              <h3 className="text-sm font-medium flex items-center gap-1">
+                <MessageSquare className="w-4 h-4" />
+                Comments ({comments.length})
+              </h3>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {comments.map((comment) => (
+                <div key={comment.id} className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium">{comment.author}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {comment.timestamp.toLocaleDateString()}
+                    </span>
+                  </div>
+                  <p className="text-sm bg-muted p-3 rounded-md">
+                    {comment.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-4 border-t border-border">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  className="flex-1 p-2 border border-input rounded-md bg-background text-sm"
+                  placeholder="Add a comment..."
+                  onKeyPress={(e) => e.key === 'Enter' && handleAddComment()}
+                />
+                <button
+                  onClick={handleAddComment}
+                  className="p-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default TaskDetailModal 
