@@ -4,6 +4,8 @@ import { useProjectStore } from '../store/projectStore'
 import { EXPORT_FORMATS } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
+import NodeSelector from '../components/NodeSelector'
+import NodeOrderingPanel from '../components/NodeOrderingPanel'
 
 interface ExportFormat {
   id: string
@@ -14,6 +16,20 @@ interface ExportFormat {
 }
 
 const exportFormats: ExportFormat[] = [
+  {
+    id: 'markdown',
+    name: 'Markdown',
+    icon: Code,
+    description: 'Plain text with formatting',
+    extension: '.md'
+  },
+  {
+    id: 'html',
+    name: 'HTML',
+    icon: Globe,
+    description: 'Web page format',
+    extension: '.html'
+  },
   {
     id: 'pdf',
     name: 'PDF',
@@ -48,20 +64,6 @@ const exportFormats: ExportFormat[] = [
     icon: Book,
     description: 'Kindle format',
     extension: '.mobi'
-  },
-  {
-    id: 'html',
-    name: 'HTML',
-    icon: Globe,
-    description: 'Web page format',
-    extension: '.html'
-  },
-  {
-    id: 'markdown',
-    name: 'Markdown',
-    icon: Code,
-    description: 'Plain text with formatting',
-    extension: '.md'
   }
 ]
 
@@ -80,11 +82,9 @@ function CompilerView() {
   const { currentProject } = useProjectStore()
   const [title, setTitle] = useState('')
   const [author, setAuthor] = useState('')
-  const [exportFormat, setExportFormat] = useState(EXPORT_FORMATS.PDF)
   const [selectedNodes, setSelectedNodes] = useState<string[]>([])
-  const [includeMetadata, setIncludeMetadata] = useState(true)
-  const [includeTOC, setIncludeTOC] = useState(true)
-  const [selectedFormat, setSelectedFormat] = useState<string>('pdf')
+  const [orderedNodes, setOrderedNodes] = useState<string[]>([])
+  const [selectedFormat, setSelectedFormat] = useState<string>('markdown')
   const [isCompiling, setIsCompiling] = useState(false)
   const [compileProgress, setCompileProgress] = useState(0)
   const [options, setOptions] = useState<CompileOptions>({
@@ -107,7 +107,7 @@ function CompilerView() {
   const handleCompile = async () => {
     if (!currentProject) return
     
-    if (selectedNodes.length === 0) {
+    if (orderedNodes.length === 0) {
       toast.error('Please select files to export')
       return
     }
@@ -127,9 +127,14 @@ function CompilerView() {
         })
       }, 500)
 
-      const response = await api.post('/compiler/compile', {
+      const response = await api.post(`/compiler/${currentProject.id}/compile`, {
+        nodes: orderedNodes,
         format: selectedFormat,
-        options
+        options: {
+          title,
+          author,
+          ...options
+        }
       }, {
         responseType: 'blob'
       })
@@ -143,7 +148,7 @@ function CompilerView() {
       const a = document.createElement('a')
       const format = exportFormats.find(f => f.id === selectedFormat)
       a.href = url
-      a.download = `document${format?.extension || '.pdf'}`
+      a.download = `${title || 'document'}${format?.extension || '.md'}`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -167,15 +172,6 @@ function CompilerView() {
     setOptions(prev => ({ ...prev, [key]: value }))
   }
 
-  const selectAllNodes = () => {
-    // TODO: Implement selecting all nodes from the graph
-    setSelectedNodes([]);
-  };
-
-  const clearSelection = () => {
-    setSelectedNodes([]);
-  };
-
   if (!currentProject) {
     return (
       <div className="h-full flex items-center justify-center bg-background">
@@ -192,33 +188,20 @@ function CompilerView() {
   return (
     <div className="h-full flex bg-background">
       {/* Left Panel - File Selection */}
-      <div className="w-1/3 border-r border-border flex flex-col">
-        <div className="p-4 border-b border-border">
-          <h2 className="font-semibold mb-2">Select Files</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={selectAllNodes}
-              className="text-sm px-2 py-1 border border-input rounded hover:bg-accent"
-            >
-              Select All
-            </button>
-            <button
-              onClick={clearSelection}
-              className="text-sm px-2 py-1 border border-input rounded hover:bg-accent"
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto scrollbar-thin p-4">
-          <p className="text-sm text-muted-foreground">
-            File selection will be implemented with the file tree component
-          </p>
-          <p className="text-sm text-muted-foreground mt-2">
-            {selectedNodes.length} files selected
-          </p>
-        </div>
+      <div className="w-1/3 border-r border-border">
+        <NodeSelector
+          selectedNodes={selectedNodes}
+          onSelectionChange={setSelectedNodes}
+          showFolders={false}
+        />
+      </div>
+
+      {/* Middle Panel - File Ordering */}
+      <div className="w-1/3 border-r border-border">
+        <NodeOrderingPanel
+          selectedNodes={selectedNodes}
+          onOrderChange={setOrderedNodes}
+        />
       </div>
 
       {/* Right Panel - Export Settings */}
@@ -274,7 +257,10 @@ function CompilerView() {
                   }`}
                 >
                   <format.icon className="w-5 h-5" />
-                  <span className="text-sm font-medium">{format.name}</span>
+                  <div className="text-left">
+                    <div className="text-sm font-medium">{format.name}</div>
+                    <div className="text-xs text-muted-foreground">{format.description}</div>
+                  </div>
                 </button>
               ))}
             </div>
@@ -309,7 +295,7 @@ function CompilerView() {
           <div className="space-y-4">
             <button
               onClick={handleCompile}
-              disabled={isCompiling || selectedNodes.length === 0}
+              disabled={isCompiling || orderedNodes.length === 0}
               className="w-full py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium"
             >
               {isCompiling ? (
