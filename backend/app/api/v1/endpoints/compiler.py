@@ -136,7 +136,8 @@ class ContentAggregator:
                     in_front_matter = False
                     # Format the front matter nicely
                     if front_matter_lines:
-                        cleaned_lines.append("### Metadata\n")
+                        cleaned_lines.append("### Metadata")
+                        cleaned_lines.append("")
                         cleaned_lines.append("```yaml")
                         cleaned_lines.extend(front_matter_lines)
                         cleaned_lines.append("```")
@@ -441,26 +442,28 @@ class HtmlExporter:
         """Convert markdown to HTML with comprehensive parsing"""
         html = markdown
         
-        # Process code blocks first (before inline code)
-        html = self._process_code_blocks(html)
+        # Split content into code blocks and non-code blocks
+        parts = self._split_code_and_content(html)
         
-        # Process headers
-        html = self._process_headers(html)
+        # Process only non-code parts
+        processed_parts = []
+        for part in parts:
+            if part['is_code']:
+                # Convert code blocks to HTML
+                processed_parts.append(self._convert_code_block_to_html(part['content']))
+            else:
+                # Process non-code content
+                content = part['content']
+                content = self._process_headers(content)
+                content = self._process_lists(content)
+                content = self._process_blockquotes(content)
+                content = self._process_tables(content)
+                content = self._process_inline_formatting(content)
+                content = self._process_links(content)
+                processed_parts.append(content)
         
-        # Process lists
-        html = self._process_lists(html)
-        
-        # Process blockquotes
-        html = self._process_blockquotes(html)
-        
-        # Process tables
-        html = self._process_tables(html)
-        
-        # Process inline formatting
-        html = self._process_inline_formatting(html)
-        
-        # Process links
-        html = self._process_links(html)
+        # Rejoin all parts
+        html = ''.join(processed_parts)
         
         # Process horizontal rules
         html = html.replace('\n---\n', '\n<hr>\n')
@@ -478,46 +481,54 @@ class HtmlExporter:
         
         return html
     
-    def _process_code_blocks(self, text: str) -> str:
-        """Process code blocks with language specification"""
+    def _convert_code_block_to_html(self, code_block: str) -> str:
+        """Convert a markdown code block to HTML"""
         import re
         
-        # Handle fenced code blocks with language
-        def code_block_replacer(match):
+        # Match ```language\ncode\n```
+        match = re.match(r'```(\w+)?\n(.*?)\n```', code_block, re.DOTALL)
+        if match:
             language = match.group(1) or ''
             code = match.group(2)
             return f'<pre><code class="language-{language}">{code}</code></pre>'
         
-        # Match ```language\ncode\n```
-        text = re.sub(r'```(\w+)?\n(.*?)\n```', code_block_replacer, text, flags=re.DOTALL)
-        
         # Handle indented code blocks
-        lines = text.split('\n')
-        in_code_block = False
-        code_lines = []
-        result_lines = []
+        lines = code_block.split('\n')
+        if lines[0].startswith('    '):
+            code = '\n'.join(line[4:] for line in lines if line.startswith('    '))
+            return f'<pre><code>{code}</code></pre>'
         
-        for line in lines:
-            if line.startswith('    ') and not in_code_block:
-                in_code_block = True
-                code_lines.append(line[4:])
-            elif line.startswith('    ') and in_code_block:
-                code_lines.append(line[4:])
-            elif in_code_block:
-                # End of code block
-                if code_lines:
-                    result_lines.append(f'<pre><code>{"\n".join(code_lines)}</code></pre>')
-                result_lines.append(line)
-                code_lines = []
-                in_code_block = False
-            else:
-                result_lines.append(line)
+        return code_block
+    
+    def _split_code_and_content(self, text: str) -> list:
+        """Split text into code blocks and non-code content"""
+        import re
         
-        # Handle code block at end
-        if in_code_block and code_lines:
-            result_lines.append(f'<pre><code>{"\n".join(code_lines)}</code></pre>')
+        parts = []
+        current_pos = 0
         
-        return '\n'.join(result_lines)
+        # Find all code blocks
+        code_pattern = r'```(\w+)?\n(.*?)\n```'
+        for match in re.finditer(code_pattern, text, re.DOTALL):
+            start, end = match.span()
+            
+            # Add non-code content before this code block
+            if start > current_pos:
+                non_code = text[current_pos:start]
+                if non_code.strip():
+                    parts.append({'content': non_code, 'is_code': False})
+            
+            # Add the code block
+            parts.append({'content': match.group(0), 'is_code': True})
+            current_pos = end
+        
+        # Add remaining non-code content
+        if current_pos < len(text):
+            remaining = text[current_pos:]
+            if remaining.strip():
+                parts.append({'content': remaining, 'is_code': False})
+        
+        return parts
     
     def _process_headers(self, text: str) -> str:
         """Process markdown headers"""
