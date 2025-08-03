@@ -292,7 +292,141 @@ async def get_compiler_settings(
         return {"compiler": compiler_settings}
     except Exception as e:
         logger.error(f"Error reading compiler settings: {e}")
-        raise HTTPException(status_code=500, detail="Error reading compiler settings")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error reading compiler settings"
+        )
+
+
+@router.get("/{project_id}/settings/threads")
+async def get_threads_settings(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get threads-specific settings (Kanban columns)"""
+    # Get project to verify access
+    result = await db.execute(
+        select(Project)
+        .where(Project.id == project_id, Project.user_id == current_user.id)
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get project path
+    git_service = GitService(project=project)
+    project_path = git_service.repo_path
+    
+    if not project_path or not os.path.exists(project_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project directory not found"
+        )
+    
+    # Read settings file
+    settings_file = Path(project_path) / "verbweaver-settings.yaml"
+    
+    if not settings_file.exists():
+        # Return default columns if no settings file exists
+        default_columns = [
+            {"id": "todo", "title": "Todo", "color": "bg-blue-500"},
+            {"id": "in-progress", "title": "In Progress", "color": "bg-amber-500"},
+            {"id": "review", "title": "Review", "color": "bg-purple-500"},
+            {"id": "done", "title": "Done", "color": "bg-green-500"}
+        ]
+        return {"threads": {"columns": default_columns}}
+    
+    try:
+        with open(settings_file, 'r', encoding='utf-8') as f:
+            settings = yaml.safe_load(f) or {}
+        
+        threads_settings = settings.get('threads', {})
+        columns = threads_settings.get('columns', [])
+        
+        # Return default columns if none are configured
+        if not columns:
+            default_columns = [
+                {"id": "todo", "title": "Todo", "color": "bg-blue-500"},
+                {"id": "in-progress", "title": "In Progress", "color": "bg-amber-500"},
+                {"id": "review", "title": "Review", "color": "bg-purple-500"},
+                {"id": "done", "title": "Done", "color": "bg-green-500"}
+            ]
+            return {"threads": {"columns": default_columns}}
+        
+        return {"threads": {"columns": columns}}
+        
+    except Exception as e:
+        logger.error(f"Error reading threads settings: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error reading threads settings"
+        )
+
+
+@router.put("/{project_id}/settings/threads")
+async def update_threads_settings(
+    project_id: str,
+    threads_settings: Dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update threads-specific settings (Kanban columns)"""
+    # Get project to verify access
+    result = await db.execute(
+        select(Project)
+        .where(Project.id == project_id, Project.user_id == current_user.id)
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get project path
+    git_service = GitService(project=project)
+    project_path = git_service.repo_path
+    
+    if not project_path or not os.path.exists(project_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project directory not found"
+        )
+    
+    # Read existing settings or create new
+    settings_file = Path(project_path) / "verbweaver-settings.yaml"
+    
+    try:
+        if settings_file.exists():
+            with open(settings_file, 'r', encoding='utf-8') as f:
+                settings = yaml.safe_load(f) or {}
+        else:
+            settings = {}
+        
+        # Update threads settings
+        settings['threads'] = threads_settings
+        
+        # Write back to file
+        with open(settings_file, 'w', encoding='utf-8') as f:
+            yaml.dump(settings, f, default_flow_style=False, allow_unicode=True)
+        
+        # Commit changes to git
+        await git_service.commit_changes("Update threads settings", [str(settings_file)])
+        
+        return {"message": "Threads settings updated successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error updating threads settings: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error updating threads settings"
+        )
 
 
 @router.put("/{project_id}/settings/compiler")
