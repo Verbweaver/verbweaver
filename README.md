@@ -7,7 +7,7 @@
 ## 🌟 Features
 
 - **Graph-based Design**: Visualize relationships between your ideas, documents, and tasks
-- **Markdown-powered**: All content is stored as Markdown files with metadata headers
+- **Markdown-powered**: All content is stored as Markdown files with metadata headers. The [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown) format is used to enable exporting to many file formats using Pandoc with advanced formatting.
 - **Git Version Control**: Built-in version control for all your projects
 - **Task Management**: Turn any idea into a trackable task with Kanban boards
 - **Multi-platform**: Available as a web app, desktop app (Windows, Mac, Linux), and mobile app (iOS, Android)
