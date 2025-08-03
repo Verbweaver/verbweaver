@@ -2,150 +2,42 @@
 
 ## Overview
 
-The Verbweaver compiler now supports a template-based export system that allows users to customize how their documents are formatted and structured. Templates use Pandoc-compatible syntax and support multiple output formats.
+The Verbweaver template system allows users to customize how their exported documents appear. Templates are Markdown files that use Pandoc's template syntax for variable substitution, conditionals, and loops. The system supports multiple output formats including HTML, PDF, DOCX, EPUB, and ODT.
 
-## Template Structure
+## Architecture
 
-Templates are stored in the project's `templates/compiler/` directory, organized by format:
+### Template Storage
+- Templates are stored in `templates/compiler/{format_type}/` within each project's Git repository
+- When a new project is created, default templates are automatically copied from the global template set
+- Templates are version-controlled via Git along with the project content
 
-```
-templates/compiler/
-├── markdown/
-│   ├── simple.md
-│   └── academic.md
-├── html/
-│   ├── simple.html
-│   └── academic.html
-├── pdf/
-│   ├── simple.md
-│   ├── academic.md
-│   └── book.md
-├── docx/
-│   ├── simple.md
-│   ├── academic.md
-│   └── report.md
-└── epub/
-    ├── simple.md
-    ├── academic.md
-    └── novel.md
-```
+### Template Processing Flow
+1. **Template Discovery**: The system scans for available templates based on the target format
+2. **Template Validation**: Templates are validated for proper Pandoc syntax
+3. **Content Aggregation**: Node content is collected and organized
+4. **Template Processing**: Variables are substituted and loops are processed
+5. **Pandoc Conversion**: The processed content is converted to the target format
 
 ## Template Variables
 
 ### Document-Level Variables
-
-- `$title$` - Document title
-- `$author$` - Document author
-- `$date$` - Document date
-- `$toc$` - Table of contents (if enabled)
+- `$title$`: Document title
+- `$author$`: Document author
+- `$date$`: Document date
+- `$toc$`: Table of contents (if enabled)
 
 ### Node-Level Variables
-
-- `$nodes$` - Array of all nodes
-- `$nodes.title$` - Node title
-- `$nodes.content$` - Node content
-- `$nodes.metadata$` - Node metadata (YAML front matter)
-- `$nodes.attachments$` - Node attachments
+- `$nodes.title$`: Node title
+- `$nodes.content$`: Node content (Markdown)
+- `$nodes.metadata$`: Node metadata (YAML front matter)
+- `$nodes.attachments$`: Node attachments
 
 ### Custom Variables
-
-Users can define custom variables in their templates. These will be automatically detected and presented as input fields in the UI.
+Custom variables are dynamically detected from the template and can be set by users through the UI.
 
 ## Template Syntax
 
-Templates use Pandoc-compatible syntax:
-
-### Basic Variable Replacement
-```
-# $title$
-
-Author: $author$
-Date: $date$
-```
-
-### Conditional Blocks
-```
-$if(toc)$
-## Table of Contents
-$toc$
-$endif$
-```
-
-### Loops
-```
-$for(nodes)$
-## $nodes.title$
-
-$nodes.content$
-
-$if(nodes.metadata)$
-### Metadata
-$for(nodes.metadata)$
-- **$it.key$:** $it.value$
-$endfor$
-$endif$
-
-$if(nodes.attachments)$
-### Attachments
-$for(nodes.attachments)$
-- $it.name$ ($it.size$)
-$endfor$
-$endif$
-
-$endfor$
-```
-
-## Supported Formats
-
-### Markdown
-- Direct output
-- No external dependencies
-- Fastest processing
-
-### HTML
-- Standalone HTML files
-- CSS styling support
-- Self-contained output
-
-### PDF
-- Requires Pandoc and LaTeX
-- High-quality typography
-- Professional formatting
-
-### DOCX (Word)
-- Requires Pandoc
-- Microsoft Word compatible
-- Rich formatting support
-
-### EPUB
-- Requires Pandoc
-- E-book format
-- Reflowable text
-
-## Default Templates
-
-### Simple Template
-Basic template with minimal formatting:
-- Document title and metadata
-- Node content in order
-- Clean, readable output
-
-### Academic Template
-Formal academic formatting:
-- Table of contents
-- Metadata sections
-- Attachment listings
-- Professional styling
-
-## Creating Custom Templates
-
-1. **Template Location**: Place templates in `templates/compiler/{format}/`
-2. **File Extension**: Use `.md` for all template files
-3. **Variable Syntax**: Use `$variable$` for variable replacement
-4. **Validation**: Templates are automatically validated for syntax errors
-
-### Example Custom Template
-
+### Basic Variable Substitution
 ```markdown
 ---
 title: $title$
@@ -155,79 +47,178 @@ date: $date$
 
 # $title$
 
-$if(toc)$
-## Contents
-$toc$
-$endif$
+By $author$ on $date$
+```
 
+### Loops
+```markdown
 $for(nodes)$
 ## $nodes.title$
 
 $nodes.content$
 
-$if(nodes.metadata.status)$
-**Status:** $nodes.metadata.status$
+$if(nodes.metadata)$
+**Metadata:** $nodes.metadata$
 $endif$
 
 $if(nodes.attachments)$
-**Files:**
-$for(nodes.attachments)$
-- $it.name$ ($it.size$)
+**Attachments:** $nodes.attachments$
+$endif$
+
+---
 $endfor$
+```
+
+### Conditionals
+```markdown
+$if(title)$
+# $title$
+$endif$
+
+$if(author)$
+By $author$
+$endif$
+```
+
+## Supported Formats
+
+### HTML
+- **Engine**: Pandoc with `--standalone --self-contained`
+- **Features**: Full HTML document with embedded CSS
+- **Use Case**: Web publishing, documentation
+
+### PDF
+- **Engine**: Pandoc with `--pdf-engine=xelatex` (fallback to `pdflatex`)
+- **Features**: Professional PDF output with proper typography
+- **Use Case**: Print-ready documents, academic papers
+
+### DOCX
+- **Engine**: Pandoc with basic DOCX export
+- **Features**: Microsoft Word compatible format
+- **Use Case**: Business documents, collaborative editing
+
+### EPUB
+- **Engine**: Pandoc with EPUB generation
+- **Features**: E-book format with metadata
+- **Use Case**: E-book publishing, digital reading
+
+### ODT
+- **Engine**: Pandoc with OpenDocument Text format
+- **Features**: Open-source document format
+- **Use Case**: LibreOffice compatibility
+
+## Default Templates
+
+### Simple Template
+A basic template with minimal formatting:
+```markdown
+---
+title: $title$
+author: $author$
+date: $date$
+---
+
+# $title$
+
+By $author$ on $date$
+
+$for(nodes)$
+## $nodes.title$
+
+$nodes.content$
+
+$if(nodes.metadata)$
+**Metadata:** $nodes.metadata$
+$endif$
+
+$if(nodes.attachments)$
+**Attachments:** $nodes.attachments$
+$endif$
+
+---
+$endfor$
+```
+
+### Academic Template
+A more structured template suitable for academic documents:
+```markdown
+---
+title: $title$
+author: $author$
+date: $date$
+documentclass: article
+geometry: margin=1in
+---
+
+\maketitle
+
+\tableofcontents
+
+$for(nodes)$
+\section{$nodes.title$}
+
+$nodes.content$
+
+$if(nodes.metadata)$
+\textbf{Metadata:} $nodes.metadata$
+$endif$
+
+$if(nodes.attachments)$
+\textbf{Attachments:} $nodes.attachments$
 $endif$
 
 $endfor$
 
----
-*Generated by Verbweaver*
+\section{References}
+
+[References would be automatically generated here]
 ```
 
-## Template Validation
+## API Endpoints
 
-The system automatically validates templates for:
-- Balanced delimiters (`$` pairs)
-- Valid loop syntax (`$for(...)$` and `$endfor$`)
-- Valid conditional syntax (`$if(...)$` and `$endif$`)
-- At least one variable present
+### Get Available Templates
+```
+GET /api/v1/projects/{project_id}/compiler/templates?format={format}
+```
+Returns a list of available templates for the specified format.
 
-## Custom Variables
+### Get Template Content
+```
+GET /api/v1/projects/{project_id}/compiler/templates/{template_path}
+```
+Returns the template content, validation status, and detected custom variables.
 
-When a template contains custom variables (not standard system variables), the UI will automatically present input fields for users to provide values.
+### Compile Document
+```
+POST /api/v1/projects/{project_id}/compiler/compile
+```
+Compiles a document using the specified template and custom variables.
 
-### Example Custom Template with Variables
-```markdown
-# $title$
+## Error Handling
 
-**Project:** $project_name$
-**Version:** $version$
-**Department:** $department$
-
-$for(nodes)$
-## $nodes.title$
-$nodes.content$
-$endfor$
+### Pandoc Not Installed
+If Pandoc is not available, the system will return an error message with installation instructions:
+```
+Pandoc is not installed. Please install Pandoc to use this feature.
+Visit: https://pandoc.org/installing.html
 ```
 
-This template would present input fields for:
-- `project_name`
-- `version` 
-- `department`
+### Template Validation Errors
+Invalid templates will be flagged with specific error messages:
+- Unbalanced delimiters
+- Invalid loop syntax
+- Missing required variables
 
-## Pandoc Integration
+### Conversion Failures
+Format-specific conversion errors are handled gracefully:
+- PDF: LaTeX engine issues
+- DOCX: Template reference problems
+- EPUB: Metadata validation errors
 
-For formats requiring Pandoc (PDF, DOCX, EPUB), the system:
-1. Processes the template with node data
-2. Converts the resulting markdown to the target format
-3. Handles format-specific options automatically
-4. Provides clear error messages if Pandoc is not installed
+## Installation Requirements
 
-### Pandoc Requirements
-
-- **PDF**: Requires LaTeX (TeX Live or MiKTeX)
-- **DOCX**: No additional requirements
-- **EPUB**: No additional requirements
-
-### Installation
+### Pandoc
+Pandoc is required for document conversion. Installation methods:
 
 **Windows:**
 ```powershell
@@ -244,56 +235,78 @@ brew install pandoc
 sudo apt-get install pandoc
 ```
 
-## API Endpoints
+### LaTeX (for PDF)
+For PDF generation, a LaTeX distribution is required:
 
-### Get Available Templates
-```
-GET /compiler/{project_id}/templates?format_type={format}
-```
-
-### Get Template Content
-```
-GET /compiler/{project_id}/templates/{template_path}
-```
-
-### Compile with Template
-```
-POST /compiler/{project_id}/compile
-{
-  "nodes": ["node1.md", "node2.md"],
-  "format": "pdf",
-  "template": "templates/compiler/pdf/academic.md",
-  "custom_variables": {
-    "project_name": "My Project",
-    "version": "1.0"
-  },
-  "options": {
-    "title": "My Document",
-    "author": "John Doe"
-  }
-}
-```
-
-## Error Handling
-
-- **Template Not Found**: Clear error message with template path
-- **Invalid Template**: Detailed validation errors
-- **Pandoc Not Installed**: Installation instructions provided
-- **Conversion Failed**: Pandoc error output included
+**Windows:** Install MiKTeX or TeX Live
+**macOS:** Install MacTeX
+**Linux:** Install TeX Live
 
 ## Best Practices
 
-1. **Keep Templates Simple**: Start with basic templates and add complexity gradually
-2. **Test Templates**: Validate templates before using them in production
-3. **Use Meaningful Names**: Name templates descriptively (e.g., `academic-report.md`)
-4. **Document Custom Variables**: Include comments in templates for custom variables
-5. **Version Control**: Templates are automatically versioned with the project
+### Template Design
+1. **Keep templates simple**: Start with basic formatting and add complexity gradually
+2. **Use meaningful variable names**: Make custom variables self-documenting
+3. **Test across formats**: Ensure templates work with all target formats
+4. **Version control**: Track template changes in Git
 
-## Migration
+### Content Organization
+1. **Consistent metadata**: Use consistent front matter across nodes
+2. **Clear structure**: Organize content with clear headings and sections
+3. **Attachment management**: Keep attachments organized and referenced properly
 
-Existing projects will automatically get default templates when:
-- A new project is created
-- The compiler is accessed for the first time
-- Templates are manually generated using the provided script
+### Performance Considerations
+1. **Template caching**: Templates are cached for performance
+2. **Content validation**: Large documents are validated before processing
+3. **Error recovery**: Failed conversions are handled gracefully
 
-No migration is required for existing projects - the system maintains backward compatibility with the legacy export format. 
+## Troubleshooting
+
+### Common Issues
+
+**Pandoc not found:**
+- Ensure Pandoc is installed and in PATH
+- Check installation with `pandoc --version`
+
+**PDF generation fails:**
+- Install LaTeX distribution (MiKTeX, TeX Live, MacTeX)
+- Check LaTeX installation with `xelatex --version`
+
+**Template validation errors:**
+- Check for balanced `$` delimiters
+- Verify loop syntax: `$for(var)$...$endfor$`
+- Ensure conditional syntax: `$if(var)$...$endif$`
+
+**Custom variables not detected:**
+- Variables must be in `$variable$` format
+- Exclude Pandoc control variables from custom variables
+
+### Debug Mode
+Enable debug logging to troubleshoot template processing:
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+## Future Enhancements
+
+### Planned Features
+- **Template editor**: Visual template editing interface
+- **Live preview**: Real-time template preview
+- **Template sharing**: Community template repository
+- **Advanced formatting**: CSS styling for HTML output
+- **Bibliography support**: Automatic citation management
+
+### Format Extensions
+- **MOBI**: Kindle format support (requires Calibre)
+- **LaTeX**: Direct LaTeX output
+- **AsciiDoc**: AsciiDoc format support
+- **ReStructuredText**: RST format support
+
+## Implementation Status
+
+✅ **Phase 1 Complete**: Template system architecture and basic functionality
+✅ **Phase 2 Complete**: Pandoc integration and multi-format export
+🔄 **Phase 3 Planned**: Advanced features and UI enhancements
+
+The template system is fully functional and ready for production use. All core features have been implemented and tested across multiple output formats. 
