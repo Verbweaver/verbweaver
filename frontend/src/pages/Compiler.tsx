@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { FileDown, FileText, Book, Package, Globe, Code, Loader2 } from 'lucide-react'
+import { FileDown, FileText, Book, Package, Globe, Code, Loader2, FileType } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { EXPORT_FORMATS } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
+import { compilerApi } from '../api/compilerApi'
 import NodeSelector from '../components/NodeSelector'
 import NodeOrderingPanel from '../components/NodeOrderingPanel'
 
@@ -79,6 +80,17 @@ interface CompileOptions {
   lineSpacing: 'single' | '1.5' | 'double'
 }
 
+interface Template {
+  name: string
+  path: string
+  format: string
+}
+
+interface CustomVariable {
+  name: string
+  value: string
+}
+
 function CompilerView() {
   const { currentProject } = useProjectStore()
   const [title, setTitle] = useState('')
@@ -86,6 +98,9 @@ function CompilerView() {
   const [selectedNodes, setSelectedNodes] = useState<string[]>([])
   const [orderedNodes, setOrderedNodes] = useState<string[]>([])
   const [selectedFormat, setSelectedFormat] = useState<string>('markdown')
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('')
+  const [availableTemplates, setAvailableTemplates] = useState<Template[]>([])
+  const [customVariables, setCustomVariables] = useState<CustomVariable[]>([])
   const [isCompiling, setIsCompiling] = useState(false)
   const [compileProgress, setCompileProgress] = useState(0)
   const [options, setOptions] = useState<CompileOptions>({
@@ -105,6 +120,58 @@ function CompilerView() {
       setTitle(currentProject.name)
     }
   }, [currentProject])
+
+  // Load templates when format changes
+  useEffect(() => {
+    if (currentProject) {
+      loadTemplates(selectedFormat)
+    }
+  }, [currentProject, selectedFormat])
+
+  const loadTemplates = async (format: string) => {
+    if (!currentProject) return
+    
+    try {
+      const templates = await compilerApi.getTemplates(currentProject.id, format)
+      setAvailableTemplates(templates)
+      
+      // Reset template selection if current template is not available for this format
+      if (selectedTemplate && !templates.find(t => t.path === selectedTemplate)) {
+        setSelectedTemplate('')
+        setCustomVariables([])
+      }
+    } catch (error) {
+      console.error('Failed to load templates:', error)
+    }
+  }
+
+  const handleTemplateChange = async (templatePath: string) => {
+    setSelectedTemplate(templatePath)
+    
+    if (templatePath && currentProject) {
+      try {
+        const templateContent = await compilerApi.getTemplateContent(currentProject.id, templatePath)
+        if (templateContent.custom_variables.length > 0) {
+          setCustomVariables(
+            templateContent.custom_variables.map(name => ({ name, value: '' }))
+          )
+        } else {
+          setCustomVariables([])
+        }
+      } catch (error) {
+        console.error('Failed to load template content:', error)
+        setCustomVariables([])
+      }
+    } else {
+      setCustomVariables([])
+    }
+  }
+
+  const handleCustomVariableChange = (index: number, value: string) => {
+    const newVariables = [...customVariables]
+    newVariables[index].value = value
+    setCustomVariables(newVariables)
+  }
 
   const handleCompile = async () => {
     if (!currentProject) return
@@ -129,9 +196,19 @@ function CompilerView() {
         })
       }, 500)
 
+      // Prepare custom variables
+      const customVars: Record<string, any> = {}
+      customVariables.forEach(variable => {
+        if (variable.value.trim()) {
+          customVars[variable.name] = variable.value
+        }
+      })
+
       const response = await api.post(`/compiler/${currentProject.id}/compile`, {
         nodes: orderedNodes,
         format: selectedFormat,
+        template: selectedTemplate || undefined,
+        custom_variables: Object.keys(customVars).length > 0 ? customVars : undefined,
         options: {
           title,
           author,
@@ -208,7 +285,7 @@ function CompilerView() {
 
       {/* Right Panel - Export Settings */}
       <div className="flex-1 flex flex-col">
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 overflow-y-auto h-full">
           <div>
             <h1 className="text-2xl font-bold mb-2">Export Document</h1>
             <p className="text-muted-foreground">
@@ -267,6 +344,50 @@ function CompilerView() {
               ))}
             </div>
           </div>
+
+          {/* Template Selection */}
+          {availableTemplates.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="font-semibold">Template</h3>
+              
+              <div className="space-y-3">
+                <label className="block text-sm font-medium mb-1">Select Template</label>
+                <select
+                  value={selectedTemplate}
+                  onChange={(e) => handleTemplateChange(e.target.value)}
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                >
+                  <option value="">No template (use default)</option>
+                  {availableTemplates.map((template) => (
+                    <option key={template.path} value={template.path}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Custom Variables */}
+              {customVariables.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium">Custom Variables</h4>
+                  {customVariables.map((variable, index) => (
+                    <div key={index}>
+                      <label className="block text-xs font-medium mb-1">
+                        {variable.name}
+                      </label>
+                      <input
+                        type="text"
+                        value={variable.value}
+                        onChange={(e) => handleCustomVariableChange(index, e.target.value)}
+                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm"
+                        placeholder={`Enter value for ${variable.name}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Options */}
           <div className="space-y-4">
