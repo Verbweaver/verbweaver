@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Save, Moon, Sun, Bell, GitBranch, Shield, LogOut, UserCircle, Palette } from 'lucide-react';
+import { Save, Moon, Sun, Bell, GitBranch, Shield, LogOut, UserCircle, Palette, FolderOpen } from 'lucide-react';
 import { useAuthStore } from '../services/auth';
 import { cn } from '@/lib/utils';
 
@@ -11,6 +11,7 @@ const settingsTabs = [
   { name: 'Profile', href: '/settings', icon: UserCircle, exact: true },
   { name: 'Appearance', href: '/settings/appearance', icon: Palette, exact: false },
   { name: 'Security', href: '/settings/security', icon: Shield, exact: false },
+  { name: 'Project', href: '/settings/project', icon: FolderOpen, exact: false },
 ];
 
 export default function Settings() {
