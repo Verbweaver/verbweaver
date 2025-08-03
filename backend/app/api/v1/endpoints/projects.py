@@ -2,11 +2,14 @@
 Projects API endpoints
 """
 
-from typing import List
+from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import logging
+import os
+import yaml
+from pathlib import Path
 # import os # No longer directly needed here
 
 from app.database import get_db
@@ -170,4 +173,176 @@ async def delete_project(
     await db.commit()
     
     logger.info(f"Project '{project_model.name}' (ID: {project_model.id}) and its repository deleted successfully.")
-    return {"message": "Project deleted successfully"} 
+    return {"message": "Project deleted successfully"}
+
+
+@router.get("/{project_id}/settings")
+async def get_project_settings(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get project settings from the git repository"""
+    result = await db.execute(
+        select(Project)
+        .where(Project.id == project_id, Project.user_id == current_user.id)
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get project path
+    project_path = project.git_config.get('path')
+    if not project_path:
+        raise HTTPException(status_code=404, detail="Project path not configured")
+    
+    # Read settings from git repository
+    settings_file = Path(project_path) / "verbweaver-settings.yaml"
+    if not settings_file.exists():
+        return {"settings": {}}
+    
+    try:
+        with open(settings_file, 'r', encoding='utf-8') as f:
+            settings = yaml.safe_load(f)
+        return {"settings": settings or {}}
+    except Exception as e:
+        logger.error(f"Error reading project settings: {e}")
+        raise HTTPException(status_code=500, detail="Error reading project settings")
+
+
+@router.put("/{project_id}/settings")
+async def update_project_settings(
+    project_id: str,
+    settings: Dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update project settings in the git repository"""
+    result = await db.execute(
+        select(Project)
+        .where(Project.id == project_id, Project.user_id == current_user.id)
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get project path
+    project_path = project.git_config.get('path')
+    if not project_path:
+        raise HTTPException(status_code=404, detail="Project path not configured")
+    
+    # Write settings to git repository
+    settings_file = Path(project_path) / "verbweaver-settings.yaml"
+    try:
+        with open(settings_file, 'w', encoding='utf-8') as f:
+            yaml.dump(settings, f, default_flow_style=False, allow_unicode=True)
+        
+        # Commit the settings file to git
+        git_service = GitService(project=project)
+        await git_service.commit_changes("Update project settings", [str(settings_file)])
+        
+        return {"message": "Project settings updated successfully"}
+    except Exception as e:
+        logger.error(f"Error updating project settings: {e}")
+        raise HTTPException(status_code=500, detail="Error updating project settings")
+
+
+@router.get("/{project_id}/settings/compiler")
+async def get_compiler_settings(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get compiler-specific settings"""
+    result = await db.execute(
+        select(Project)
+        .where(Project.id == project_id, Project.user_id == current_user.id)
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get project path
+    project_path = project.git_config.get('path')
+    if not project_path:
+        raise HTTPException(status_code=404, detail="Project path not configured")
+    
+    # Read settings from git repository
+    settings_file = Path(project_path) / "verbweaver-settings.yaml"
+    if not settings_file.exists():
+        return {"compiler": {"defaultTemplates": {}}}
+    
+    try:
+        with open(settings_file, 'r', encoding='utf-8') as f:
+            settings = yaml.safe_load(f)
+        
+        compiler_settings = settings.get('compiler', {})
+        return {"compiler": compiler_settings}
+    except Exception as e:
+        logger.error(f"Error reading compiler settings: {e}")
+        raise HTTPException(status_code=500, detail="Error reading compiler settings")
+
+
+@router.put("/{project_id}/settings/compiler")
+async def update_compiler_settings(
+    project_id: str,
+    compiler_settings: Dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update compiler-specific settings"""
+    result = await db.execute(
+        select(Project)
+        .where(Project.id == project_id, Project.user_id == current_user.id)
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get project path
+    project_path = project.git_config.get('path')
+    if not project_path:
+        raise HTTPException(status_code=404, detail="Project path not configured")
+    
+    # Read existing settings
+    settings_file = Path(project_path) / "verbweaver-settings.yaml"
+    settings = {}
+    if settings_file.exists():
+        try:
+            with open(settings_file, 'r', encoding='utf-8') as f:
+                settings = yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.error(f"Error reading existing settings: {e}")
+    
+    # Update compiler settings
+    settings['compiler'] = compiler_settings
+    
+    # Write updated settings
+    try:
+        with open(settings_file, 'w', encoding='utf-8') as f:
+            yaml.dump(settings, f, default_flow_style=False, allow_unicode=True)
+        
+        # Commit the settings file to git
+        git_service = GitService(project=project)
+        await git_service.commit_changes("Update compiler settings", [str(settings_file)])
+        
+        return {"message": "Compiler settings updated successfully"}
+    except Exception as e:
+        logger.error(f"Error updating compiler settings: {e}")
+        raise HTTPException(status_code=500, detail="Error updating compiler settings") 

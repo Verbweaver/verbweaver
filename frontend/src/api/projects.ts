@@ -65,4 +65,26 @@ export const projectsApi = {
   deleteProject: async (projectId: string): Promise<void> => {
     await apiClient.delete(`/projects/${projectId}`)
   },
+
+  // Get project settings
+  getProjectSettings: async (projectId: string): Promise<Record<string, any>> => {
+    const response = await apiClient.get(`/projects/${projectId}/settings`)
+    return response.data.settings
+  },
+
+  // Update project settings
+  updateProjectSettings: async (projectId: string, settings: Record<string, any>): Promise<void> => {
+    await apiClient.put(`/projects/${projectId}/settings`, settings)
+  },
+
+  // Get compiler settings
+  getCompilerSettings: async (projectId: string): Promise<Record<string, any>> => {
+    const response = await apiClient.get(`/projects/${projectId}/settings/compiler`)
+    return response.data.compiler
+  },
+
+  // Update compiler settings
+  updateCompilerSettings: async (projectId: string, compilerSettings: Record<string, any>): Promise<void> => {
+    await apiClient.put(`/projects/${projectId}/settings/compiler`, compilerSettings)
+  },
 } 

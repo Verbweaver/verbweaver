@@ -162,6 +162,31 @@ Start your content here.
         except Exception as e:
             print(f"An unexpected error occurred during remove_and_commit: {e}")
     
+    async def commit_changes(self, message: str, files: Optional[List[str]] = None) -> None:
+        """Commit changes with an optional list of files. If no files specified, commits all changes."""
+        if not self.repo_path:
+            print("No repo_path configured, skipping git commit.")
+            return
+        
+        try:
+            if files:
+                # Add specific files
+                for file_path in files:
+                    relative_file_path = Path(file_path).relative_to(self.repo_path)
+                    subprocess.run(['git', 'add', str(relative_file_path)], cwd=self.repo_path, check=True, capture_output=True)
+            else:
+                # Add all changes
+                subprocess.run(['git', 'add', '.'], cwd=self.repo_path, check=True, capture_output=True)
+            
+            # Commit changes
+            subprocess.run(['git', 'commit', '-m', message], cwd=self.repo_path, check=True, capture_output=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Git commit failed: {e.stdout.decode() if e.stdout else ''} {e.stderr.decode() if e.stderr else ''}")
+        except ValueError as e:
+            print(f"Error making path relative for git add: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred during commit_changes: {e}")
+    
     async def delete_project_repository(self) -> None:
         """Delete the project's git repository from the filesystem."""
         if not self.repo_path or not Path(self.repo_path).exists():

@@ -16,6 +16,7 @@ import ResetPassword from './pages/ResetPassword'
 import SecuritySettingsPage from './pages/UserSettings/SecuritySettingsPage'
 import ProfileSettingsPage from './pages/UserSettings/ProfileSettingsPage'
 import AppearanceSettingsPage from './pages/UserSettings/AppearanceSettingsPage'
+import ProjectSettingsPage from './pages/UserSettings/ProjectSettingsPage'
 import { useProjectStore } from './store/projectStore'
 import { useThemeStore } from './store/themeStore'
 import { useAuthStore } from './services/auth'
@@ -80,6 +81,7 @@ function App() {
           <Route index element={<ProfileSettingsPage />} />
           <Route path="appearance" element={<AppearanceSettingsPage />} />
           <Route path="security" element={<SecuritySettingsPage />} />
+          <Route path="project" element={<ProjectSettingsPage />} />
         </Route>
         <Route path="help" element={<Help />} />
       </Route>
