@@ -117,7 +117,18 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }
     }
 
     await updateNode(node.path, { metadata: updatedMetadata })
-    onUpdate({ ...node, metadata: updatedMetadata })
+    
+    // Create updated node with new taskStatus
+    const updatedNode = { 
+      ...node, 
+      metadata: updatedMetadata,
+      taskStatus: status as TaskState // Update the taskStatus directly
+    }
+    
+    onUpdate(updatedNode)
+    
+    // Update local state to reflect the new status immediately
+    setStatus(status)
     setIsEditing(false)
   }
 
@@ -369,7 +380,11 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }
                   </select>
                 ) : (
                   <span className="text-sm text-muted-foreground capitalize">
-                    {node.taskStatus || 'todo'}
+                    {(() => {
+                      const currentStatus = node.taskStatus || 'todo'
+                      const column = columns?.find(col => col.id === currentStatus)
+                      return column ? column.title : currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1).replace('-', ' ')
+                    })()}
                   </span>
                 )}
               </div>
