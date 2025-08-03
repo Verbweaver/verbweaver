@@ -178,19 +178,38 @@ class TemplateService:
                 
                 # Add format-specific options
                 if output_format == 'pdf':
+                    # Use xelatex for better Unicode support, fallback to pdflatex
                     cmd.extend(['--pdf-engine=xelatex'])
+                    # Add metadata for better PDF output
+                    cmd.extend(['--metadata', 'title=Document'])
                 elif output_format == 'html':
                     cmd.extend(['--standalone', '--self-contained'])
                 elif output_format == 'docx':
-                    cmd.extend(['--reference-doc=template.docx'])  # Optional
+                    # Basic DOCX export without reference template
+                    pass
                 elif output_format == 'epub':
-                    cmd.extend(['--epub-metadata=metadata.xml'])  # Optional
+                    # Basic EPUB export without metadata file
+                    pass
+                elif output_format == 'odt':
+                    # OpenDocument Text format
+                    pass
+                elif output_format == 'mobi':
+                    # Kindle format (requires calibre)
+                    return False, "MOBI format requires Calibre. Please install Calibre to use this feature."
                 
                 # Run pandoc
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 
                 if result.returncode != 0:
-                    return False, f"Pandoc conversion failed: {result.stderr}"
+                    error_msg = result.stderr.strip()
+                    if "xelatex" in error_msg and output_format == 'pdf':
+                        # Try with pdflatex as fallback
+                        cmd = ['pandoc', temp_file_path, '-o', output_file, '--pdf-engine=pdflatex']
+                        result = subprocess.run(cmd, capture_output=True, text=True)
+                        if result.returncode != 0:
+                            return False, f"Pandoc PDF conversion failed: {result.stderr}"
+                    else:
+                        return False, f"Pandoc conversion failed: {error_msg}"
                 
                 return True, "Conversion successful"
                 

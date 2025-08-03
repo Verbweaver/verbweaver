@@ -865,9 +865,14 @@ class PandocExporter:
         import tempfile
         import os
         
+        print(f"PandocExporter: Starting export to {output_format}")
+        print(f"PandocExporter: Content length: {len(content)} characters")
+        
         # Create temporary output file
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{output_format}') as temp_output:
             output_file = temp_output.name
+        
+        print(f"PandocExporter: Output file: {output_file}")
         
         try:
             # Convert using Pandoc
@@ -875,12 +880,16 @@ class PandocExporter:
                 content, output_format, output_file
             )
             
+            print(f"PandocExporter: Conversion result - Success: {success}, Message: {message}")
+            
             if not success:
                 raise ValueError(f"Pandoc conversion failed: {message}")
             
             # Read the converted file
             with open(output_file, 'rb') as f:
-                return f.read()
+                result = f.read()
+                print(f"PandocExporter: Generated file size: {len(result)} bytes")
+                return result
                 
         finally:
             # Clean up temporary file
@@ -898,7 +907,7 @@ class ExporterFactory:
         }
         
         # Use Pandoc for formats that need it
-        pandoc_formats = ['pdf', 'docx', 'epub']
+        pandoc_formats = ['pdf', 'docx', 'epub', 'odt']
         if format_type in pandoc_formats:
             if not project_path:
                 raise ValueError(f"Project path required for {format_type} export")
@@ -959,12 +968,15 @@ async def compile_document(
         
         # Aggregate content
         print("Aggregating content...")
+        print(f"Template: {request.template}")
+        print(f"Custom variables: {request.custom_variables}")
         content = aggregator.aggregate_content(
             request.nodes, 
             request.options,
             request.template,
             request.custom_variables
         )
+        print(f"Content length: {len(content)} characters")
         
         # Create exporter
         print(f"Creating exporter for format: {request.format}")
@@ -972,11 +984,12 @@ async def compile_document(
         
         # Export content
         print("Exporting content...")
-        if hasattr(exporter, 'export'):
-            exported_content = exporter.export(content, request.options)
-        else:
-            # Pandoc exporter
+        if isinstance(exporter, PandocExporter):
+            # Pandoc exporter needs format parameter
             exported_content = exporter.export(content, request.options, request.format)
+        else:
+            # Standard exporters (Markdown, HTML)
+            exported_content = exporter.export(content, request.options)
         
         # Generate filename
         title = request.options.get('title', 'document')
