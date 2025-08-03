@@ -19,12 +19,15 @@ from app.models.project import Project
 from app.models.user import User
 from app.core.security import get_current_user
 from app.services.git_service import GitService
+from app.services.template_service import TemplateService
 
 router = APIRouter()
 
 class CompileRequest(BaseModel):
     nodes: List[str]
     format: str
+    template: Optional[str] = None
+    custom_variables: Optional[Dict[str, Any]] = None
     options: Dict[str, Any]
 
 class CompileResponse(BaseModel):
@@ -37,9 +40,91 @@ class ContentAggregator:
     
     def __init__(self, project_path: str):
         self.project_path = project_path
+        self.template_service = TemplateService(project_path)
     
-    def aggregate_content(self, node_paths: List[str], options: Dict[str, Any]) -> str:
+    def aggregate_content(self, node_paths: List[str], options: Dict[str, Any], 
+                        template_path: Optional[str] = None, 
+                        custom_variables: Optional[Dict[str, Any]] = None) -> str:
         """Aggregate content from multiple nodes into a single document"""
+        
+        # If template is specified, use template-based processing
+        if template_path:
+            return self._process_with_template(node_paths, options, template_path, custom_variables)
+        
+        # Fall back to legacy processing
+        return self._process_legacy(node_paths, options)
+    
+    def _process_with_template(self, node_paths: List[str], options: Dict[str, Any],
+                             template_path: str, custom_variables: Optional[Dict[str, Any]] = None) -> str:
+        """Process content using a template"""
+        
+        # Get template content
+        template_content = self.template_service.get_template_content(template_path)
+        if not template_content:
+            raise ValueError(f"Template not found: {template_path}")
+        
+        # Validate template
+        is_valid, custom_vars = self.template_service.validate_template(template_content)
+        if not is_valid:
+            raise ValueError(f"Invalid template: {custom_vars}")
+        
+        # Prepare data for template
+        data = {
+            'title': options.get('title', 'Document'),
+            'author': options.get('author', 'Unknown'),
+            'date': options.get('date', ''),
+            'nodes': []
+        }
+        
+        # Add custom variables
+        if custom_variables:
+            data.update(custom_variables)
+        
+        # Process each node
+        for path in node_paths:
+            try:
+                full_path = os.path.join(self.project_path, path)
+                if os.path.exists(full_path):
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    # Extract metadata and content
+                    title = self._extract_title(content) or os.path.basename(path).replace('.md', '')
+                    clean_content = self._clean_content(content)
+                    
+                    # Get node metadata
+                    metadata = self._extract_metadata(content)
+                    
+                    # Get attachments
+                    attachments = []
+                    if options.get('embedUploadedFiles', True):
+                        attachments = self._get_attachments(content, path)
+                    
+                    node_data = {
+                        'title': title,
+                        'content': clean_content,
+                        'metadata': metadata,
+                        'attachments': attachments,
+                        'path': path
+                    }
+                    
+                    data['nodes'].append(node_data)
+                    
+            except Exception as e:
+                # Add error node
+                data['nodes'].append({
+                    'title': os.path.basename(path),
+                    'content': f"*Error loading file: {str(e)}*",
+                    'metadata': {},
+                    'attachments': [],
+                    'path': path
+                })
+        
+        # Process template with data
+        return self.template_service.process_template(template_content, data)
+    
+    def _process_legacy(self, node_paths: List[str], options: Dict[str, Any]) -> str:
+        """Legacy content aggregation (for backward compatibility)"""
         
         # Load and process each node
         sections = []
@@ -237,6 +322,54 @@ class ContentAggregator:
             i += 1
         
         return f"{bytes:.1f} {size_names[i]}"
+    
+    def _extract_metadata(self, content: str) -> Dict[str, Any]:
+        """Extract metadata from markdown content"""
+        try:
+            # Extract YAML front matter
+            yaml_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+            if yaml_match:
+                yaml_content = yaml_match.group(1)
+                return yaml.safe_load(yaml_content) if yaml_content else {}
+        except Exception as e:
+            print(f"Error extracting metadata: {e}")
+        return {}
+    
+    def _get_attachments(self, content: str, node_path: str) -> List[Dict[str, Any]]:
+        """Get attachments from node content"""
+        try:
+            # Extract YAML front matter
+            yaml_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+            if not yaml_match:
+                return []
+            
+            yaml_content = yaml_match.group(1)
+            metadata = yaml.safe_load(yaml_content) if yaml_content else {}
+            
+            # Check for task metadata and files
+            task_metadata = metadata.get('task', {})
+            files = task_metadata.get('files', [])
+            
+            if not files:
+                return []
+            
+            # Filter out empty or invalid file entries
+            valid_files = []
+            for file_info in files:
+                if file_info and isinstance(file_info, dict):
+                    file_name = file_info.get('originalName') or file_info.get('name')
+                    if file_name and file_name.strip():
+                        valid_files.append({
+                            'name': file_name,
+                            'size': self._format_file_size(file_info.get('size', 0)),
+                            'uploadedAt': file_info.get('uploadedAt', '')
+                        })
+            
+            return valid_files
+            
+        except Exception as e:
+            print(f"Error processing attachments for {node_path}: {e}")
+            return []
 
 class MarkdownExporter:
     """Markdown format exporter"""
@@ -720,18 +853,56 @@ class HtmlExporter:
         
         return text
 
+class PandocExporter:
+    """Pandoc-based exporter for multiple formats"""
+    
+    def __init__(self, project_path: str):
+        self.project_path = project_path
+        self.template_service = TemplateService(project_path)
+    
+    def export(self, content: str, options: Dict[str, Any], output_format: str) -> bytes:
+        """Export content using Pandoc"""
+        import tempfile
+        import os
+        
+        # Create temporary output file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{output_format}') as temp_output:
+            output_file = temp_output.name
+        
+        try:
+            # Convert using Pandoc
+            success, message = self.template_service.convert_with_pandoc(
+                content, output_format, output_file
+            )
+            
+            if not success:
+                raise ValueError(f"Pandoc conversion failed: {message}")
+            
+            # Read the converted file
+            with open(output_file, 'rb') as f:
+                return f.read()
+                
+        finally:
+            # Clean up temporary file
+            if os.path.exists(output_file):
+                os.unlink(output_file)
+
 class ExporterFactory:
     """Factory for creating exporters based on format"""
     
     @staticmethod
-    def create_exporter(format_type: str):
+    def create_exporter(format_type: str, project_path: str = None):
         exporters = {
             'markdown': MarkdownExporter(),
             'html': HtmlExporter(),
-            # Add more exporters as needed
-            # 'pdf': PdfExporter(),
-            # 'docx': DocxExporter(),
         }
+        
+        # Use Pandoc for formats that need it
+        pandoc_formats = ['pdf', 'docx', 'epub']
+        if format_type in pandoc_formats:
+            if not project_path:
+                raise ValueError(f"Project path required for {format_type} export")
+            return PandocExporter(project_path)
         
         if format_type not in exporters:
             raise ValueError(f"Unsupported format: {format_type}")
@@ -788,15 +959,24 @@ async def compile_document(
         
         # Aggregate content
         print("Aggregating content...")
-        content = aggregator.aggregate_content(request.nodes, request.options)
+        content = aggregator.aggregate_content(
+            request.nodes, 
+            request.options,
+            request.template,
+            request.custom_variables
+        )
         
         # Create exporter
         print(f"Creating exporter for format: {request.format}")
-        exporter = ExporterFactory.create_exporter(request.format)
+        exporter = ExporterFactory.create_exporter(request.format, project_path)
         
         # Export content
         print("Exporting content...")
-        exported_content = exporter.export(content, request.options)
+        if hasattr(exporter, 'export'):
+            exported_content = exporter.export(content, request.options)
+        else:
+            # Pandoc exporter
+            exported_content = exporter.export(content, request.options, request.format)
         
         # Generate filename
         title = request.options.get('title', 'document')
@@ -835,14 +1015,91 @@ async def get_supported_formats():
         ]
     }
 
-@router.get("/templates")
-async def get_templates():
-    """Get list of available document templates"""
+@router.get("/{project_id}/templates")
+async def get_templates(
+    project_id: str,
+    format_type: str = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get available templates for a project"""
+    
+    # Check project access
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get project path
+    project_path = project.git_config.get('path')
+    if not project_path:
+        raise HTTPException(status_code=404, detail="Project path not configured")
+    
+    # Create template service
+    template_service = TemplateService(project_path)
+    
+    if format_type:
+        # Get templates for specific format
+        templates = template_service.get_available_templates(format_type)
+    else:
+        # Get templates for all formats
+        templates = []
+        for fmt in template_service.supported_formats:
+            templates.extend(template_service.get_available_templates(fmt))
+    
+    return {"templates": templates}
+
+@router.get("/{project_id}/templates/{template_path:path}")
+async def get_template_content(
+    project_id: str,
+    template_path: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get template content and validate it"""
+    
+    # Check project access
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get project path
+    project_path = project.git_config.get('path')
+    if not project_path:
+        raise HTTPException(status_code=404, detail="Project path not configured")
+    
+    # Create template service
+    template_service = TemplateService(project_path)
+    
+    # Get template content
+    content = template_service.get_template_content(template_path)
+    if not content:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Validate template
+    is_valid, custom_variables = template_service.validate_template(content)
+    
     return {
-        "templates": [
-            {"id": "default", "name": "Default", "description": "Standard document template"},
-            {"id": "academic", "name": "Academic", "description": "Academic paper template"},
-            {"id": "book", "name": "Book", "description": "Book manuscript template"},
-            {"id": "report", "name": "Report", "description": "Business report template"},
-        ]
+        "content": content,
+        "is_valid": is_valid,
+        "custom_variables": custom_variables
     } 

@@ -98,8 +98,13 @@ Start your content here.
             async with aiofiles.open(empty_template_path, 'w') as f:
                 await f.write(empty_template_content)
 
-            # Stage and commit the .gitignore, nodes/, templates/, and Empty.md
-            subprocess.run(['git', 'add', '.gitignore', 'nodes/', 'templates/', 'templates/Empty.md'], cwd=str(repo_path_obj), check=True, capture_output=True)
+            # Create compiler templates
+            from app.services.template_service import TemplateService
+            template_service = TemplateService(str(repo_path_obj))
+            template_service.create_default_templates()
+
+            # Stage and commit the .gitignore, nodes/, templates/, and compiler templates
+            subprocess.run(['git', 'add', '.gitignore', 'nodes/', 'templates/'], cwd=str(repo_path_obj), check=True, capture_output=True)
             subprocess.run(['git', 'commit', '-m', 'Initial commit with project structure and Empty template'], cwd=str(repo_path_obj), check=True, capture_output=True)
             
         except subprocess.CalledProcessError as e:

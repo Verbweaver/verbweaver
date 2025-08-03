@@ -5,11 +5,25 @@ interface CompileOptions {
   author: string
   format: string
   nodes: string[]
+  template?: string
+  custom_variables?: Record<string, any>
   options: {
     includeMetadata?: boolean
     includeTOC?: boolean
-    template?: string
+    embedUploadedFiles?: boolean
   }
+}
+
+interface Template {
+  name: string
+  path: string
+  format: string
+}
+
+interface TemplateContent {
+  content: string
+  is_valid: boolean
+  custom_variables: string[]
 }
 
 interface CompileResult {
@@ -24,8 +38,14 @@ export const compilerApi = {
     return response.data
   },
 
-  async getTemplates(projectId: string): Promise<any[]> {
-    const response = await apiClient.get(`/compiler/${projectId}/templates`)
+  async getTemplates(projectId: string, format?: string): Promise<Template[]> {
+    const params = format ? { format_type: format } : {}
+    const response = await apiClient.get(`/compiler/${projectId}/templates`, { params })
+    return response.data.templates
+  },
+
+  async getTemplateContent(projectId: string, templatePath: string): Promise<TemplateContent> {
+    const response = await apiClient.get(`/compiler/${projectId}/templates/${templatePath}`)
     return response.data
   },
 
