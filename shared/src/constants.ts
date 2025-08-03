@@ -120,6 +120,7 @@ export const STORAGE_KEYS = {
   ACTIVE_PROJECT: 'verbweaver_active_project',
   THEME: 'verbweaver_theme',
   SIDEBAR_WIDTH: 'verbweaver_sidebar_width',
+  COMPILER_SELECTION: 'verbweaver_compiler_selection',
 } as const;
 
 // Regex patterns
