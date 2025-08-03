@@ -109,12 +109,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const projectName = name || path.split(/[/\\]/).pop() || 'Unknown Project'
     
     try {
-      // First, check if this project already exists in the backend
-      const { projects } = get()
-      let existingProject = projects.find(p => 
-        p.gitRepository?.type === 'local' && 
-        p.gitRepository?.path === path
-      )
+      // First, check if this project already exists in the backend by querying all projects
+      let existingProject = null
+      
+      try {
+        // Get all projects from backend to check for existing one
+        const backendProjects = await projectsApi.getProjects()
+        existingProject = backendProjects.find(p => 
+          p.git_config?.type === 'local' && 
+          p.git_config?.path === path
+        )
+      } catch (error) {
+        console.warn('Failed to check existing projects from backend:', error)
+        // Fallback to local check
+        const { projects } = get()
+        existingProject = projects.find(p => 
+          p.gitRepository?.type === 'local' && 
+          p.gitRepository?.path === path
+        )
+      }
       
       if (!existingProject) {
         // Create the project in the backend
@@ -158,11 +171,39 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         
         existingProject = projectConfig
       } else {
-        // Use existing project
-        set({ 
-          currentProject: existingProject,
-          currentProjectPath: path 
+        // Convert backend Project to ProjectConfig format
+        const projectConfig: ProjectConfig = {
+          id: existingProject.id,
+          name: existingProject.name,
+          description: existingProject.description || `Local project at ${path}`,
+          created: 'created_at' in existingProject ? existingProject.created_at : existingProject.created,
+          modified: 'updated_at' in existingProject ? (existingProject.updated_at || existingProject.created_at) : ('modified' in existingProject ? existingProject.modified : new Date().toISOString()),
+          settings: existingProject.settings || {},
+          gitRepository: {
+            url: 'git_config' in existingProject ? (existingProject.git_config.url || '') : (existingProject.gitRepository?.url || ''),
+            branch: 'git_config' in existingProject ? (existingProject.git_config.branch || 'main') : (existingProject.gitRepository?.branch || 'main'),
+            type: 'git_config' in existingProject ? (existingProject.git_config.type || 'local') : (existingProject.gitRepository?.type || 'local')
+          }
+        }
+        
+        // Update local projects list to include this project if not already present
+        set(state => {
+          const existingInLocal = state.projects.find(p => p.id === projectConfig.id)
+          if (!existingInLocal) {
+            return {
+              projects: [...state.projects, projectConfig],
+              currentProject: projectConfig,
+              currentProjectPath: path
+            }
+          } else {
+            return {
+              currentProject: projectConfig,
+              currentProjectPath: path
+            }
+          }
         })
+        
+        existingProject = projectConfig
       }
       
       localStorage.setItem('verbweaver_active_project', existingProject.id)
