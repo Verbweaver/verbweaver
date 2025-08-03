@@ -180,8 +180,6 @@ class TemplateService:
                 if output_format == 'pdf':
                     # Use xelatex for better Unicode support, fallback to pdflatex
                     cmd.extend(['--pdf-engine=xelatex'])
-                    # Add metadata for better PDF output
-                    cmd.extend(['--metadata', 'title=Document'])
                 elif output_format == 'html':
                     cmd.extend(['--standalone', '--self-contained'])
                 elif output_format == 'docx':

@@ -164,7 +164,9 @@ author: $author$
 date: $date$
 ---
 
+$if(title)$
 # $title$
+$endif$
 
 $for(nodes)$
 ## $nodes.title$
