@@ -6,6 +6,7 @@ import { useTabStore } from '../../store/tabStore'
 import { TaskState } from '@verbweaver/shared'
 import { FileStorage, StoredFile } from '../../utils/fileStorage'
 import clsx from 'clsx'
+import { KanbanColumn } from './ColumnManager'
 
 // Define VerbweaverNode interface locally
 interface VerbweaverNode {
@@ -35,9 +36,11 @@ interface TaskDetailModalProps {
   node: VerbweaverNode | null
   onClose: () => void
   onUpdate: (node: VerbweaverNode) => void
+  availableStatuses?: string[]
+  columns?: KanbanColumn[]
 }
 
-function TaskDetailModal({ node, onClose, onUpdate }: TaskDetailModalProps) {
+function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }: TaskDetailModalProps) {
   const { updateNode, getNode } = useNodeStore()
   const { addEditorTab } = useTabStore()
   const navigate = useNavigate()
@@ -45,6 +48,7 @@ function TaskDetailModal({ node, onClose, onUpdate }: TaskDetailModalProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
+  const [status, setStatus] = useState('todo')
   const [assignee, setAssignee] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [tags, setTags] = useState<string[]>([])
@@ -60,6 +64,7 @@ function TaskDetailModal({ node, onClose, onUpdate }: TaskDetailModalProps) {
       setTitle(node.metadata.title || node.name)
       setDescription(node.metadata.description || '')
       setPriority(task.priority || node.metadata.priority || 'medium')
+      setStatus(node.taskStatus || task.status || 'todo')
       setAssignee(task.assignee || node.metadata.assignee || '')
       setDueDate(task.dueDate || node.metadata.dueDate || '')
       setTags(node.metadata.tags || [])
@@ -102,6 +107,7 @@ function TaskDetailModal({ node, onClose, onUpdate }: TaskDetailModalProps) {
       tags,
       task: {
         ...node.metadata.task,
+        status,
         priority,
         assignee,
         dueDate,
@@ -337,9 +343,35 @@ function TaskDetailModal({ node, onClose, onUpdate }: TaskDetailModalProps) {
 
               <div>
                 <label className="block text-sm font-medium mb-1">Status</label>
-                <span className="text-sm text-muted-foreground capitalize">
-                  {node.taskStatus || 'todo'}
-                </span>
+                {isEditing ? (
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm"
+                  >
+                                         {availableStatuses?.map(statusOption => {
+                       // Find the column title for this status ID
+                       const column = columns?.find(col => col.id === statusOption)
+                       const displayName = column ? column.title : statusOption.charAt(0).toUpperCase() + statusOption.slice(1).replace('-', ' ')
+                       return (
+                         <option key={statusOption} value={statusOption}>
+                           {displayName}
+                         </option>
+                       )
+                     }) || (
+                      <>
+                        <option value="todo">Todo</option>
+                        <option value="in-progress">In Progress</option>
+                        <option value="review">Review</option>
+                        <option value="done">Done</option>
+                      </>
+                    )}
+                  </select>
+                ) : (
+                  <span className="text-sm text-muted-foreground capitalize">
+                    {node.taskStatus || 'todo'}
+                  </span>
+                )}
               </div>
             </div>
 

@@ -87,4 +87,15 @@ export const projectsApi = {
   updateCompilerSettings: async (projectId: string, compilerSettings: Record<string, any>): Promise<void> => {
     await apiClient.put(`/projects/${projectId}/settings/compiler`, compilerSettings)
   },
+
+  // Get threads settings
+  getThreadsSettings: async (projectId: string): Promise<Record<string, any>> => {
+    const response = await apiClient.get(`/projects/${projectId}/settings/threads`)
+    return response.data.threads
+  },
+
+  // Update threads settings
+  updateThreadsSettings: async (projectId: string, threadsSettings: Record<string, any>): Promise<void> => {
+    await apiClient.put(`/projects/${projectId}/settings/threads`, threadsSettings)
+  },
 } 

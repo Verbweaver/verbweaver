@@ -14,13 +14,16 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { Plus, MoreHorizontal, Calendar, User, Tag, MessageSquare, Link } from 'lucide-react'
+import { Plus, MoreHorizontal, Calendar, User, Tag, MessageSquare, Link, Settings } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
+import { projectsApi } from '../api/projects'
 import { TaskState } from '@verbweaver/shared'
 import TaskCard from '../components/tasks/TaskCard'
 import CreateTaskModal from '../components/tasks/CreateTaskModal'
 import TaskDetailModal from '../components/tasks/TaskDetailModal'
+import ColumnManager, { KanbanColumn } from '../components/tasks/ColumnManager'
+import { Button } from '../components/ui/Button'
 import clsx from 'clsx'
 
 // Define VerbweaverNode interface locally
@@ -81,11 +84,12 @@ function DroppableColumn({
   )
 }
 
-const columns = [
-  { id: 'todo' as TaskState, title: 'To Do', color: 'bg-gray-500' },
-  { id: 'in-progress' as TaskState, title: 'In Progress', color: 'bg-blue-500' },
-  { id: 'review' as TaskState, title: 'Review', color: 'bg-amber-500' },
-  { id: 'done' as TaskState, title: 'Done', color: 'bg-green-500' },
+// Default columns fallback
+const defaultColumns: KanbanColumn[] = [
+  { id: 'todo', title: 'To Do', color: 'bg-gray-500' },
+  { id: 'in-progress', title: 'In Progress', color: 'bg-blue-500' },
+  { id: 'review', title: 'Review', color: 'bg-amber-500' },
+  { id: 'done', title: 'Done', color: 'bg-green-500' },
 ]
 
 function ThreadsView() {
@@ -96,6 +100,9 @@ function ThreadsView() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [selectedTask, setSelectedTask] = useState<VerbweaverNode | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
+  const [columns, setColumns] = useState<KanbanColumn[]>(defaultColumns)
+  const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false)
+  const [isLoadingColumns, setIsLoadingColumns] = useState(true)
   
   // Handle URL parameters for opening specific tasks
   const { taskPath } = useParams()
@@ -107,6 +114,43 @@ function ThreadsView() {
       loadNodes()
     }
   }, [currentProject, loadNodes])
+
+  // Load column configuration
+  useEffect(() => {
+    if (currentProject) {
+      loadColumns()
+    }
+  }, [currentProject])
+
+  const loadColumns = async () => {
+    if (!currentProject) return
+
+    try {
+      setIsLoadingColumns(true)
+      const threadsSettings = await projectsApi.getThreadsSettings(currentProject.id)
+      if (threadsSettings.columns && threadsSettings.columns.length > 0) {
+        setColumns(threadsSettings.columns)
+      }
+    } catch (error) {
+      console.error('Failed to load column configuration:', error)
+      // Keep using default columns
+    } finally {
+      setIsLoadingColumns(false)
+    }
+  }
+
+  const handleColumnsChange = async (newColumns: KanbanColumn[]) => {
+    if (!currentProject) return
+
+    try {
+      setColumns(newColumns)
+      await projectsApi.updateThreadsSettings(currentProject.id, { columns: newColumns })
+    } catch (error) {
+      console.error('Failed to update column configuration:', error)
+      // Revert to previous state
+      loadColumns()
+    }
+  }
 
   // Handle opening task from URL parameter
   useEffect(() => {
@@ -134,27 +178,37 @@ function ThreadsView() {
   // Get all nodes as tasks, grouped by status
   // According to DESIGN.md: "Remember that each Task is backed by a Markdown file in the Git repository and is also rendered as a Node in the Graph"
   const tasksByStatus = useMemo(() => {
-    const result: Record<TaskState, VerbweaverNode[]> = {
-      'todo': [],
-      'in-progress': [],
-      'review': [],
-      'done': [],
-      'archived': []
-    }
+    const result: Record<string, VerbweaverNode[]> = {}
+    
+    // Initialize with current columns
+    columns.forEach(column => {
+      result[column.id] = []
+    })
+    
+    // Add a special category for invalid statuses
+    result['invalid'] = []
     
     Array.from(nodes.values()).forEach(node => {
       // Only treat files as tasks, not directories
       // Directories provide context but aren't tasks themselves
       if (!node.isDirectory) {
         // Treat all files as tasks - they all represent content that can be managed
-        // If no task status is set, default to 'todo'
-        const status = node.taskStatus || 'todo'
-        result[status].push(node)
+        // If no task status is set, default to first column
+        const status = node.taskStatus || columns[0]?.id || 'todo'
+        
+        // Check if the status is valid (exists in current columns)
+        if (columns.some(col => col.id === status)) {
+          if (!result[status]) result[status] = []
+          result[status].push(node)
+        } else {
+          // Invalid status - put in invalid category
+          result['invalid'].push(node)
+        }
       }
     })
     
     return result
-  }, [nodes])
+  }, [nodes, columns])
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string)
@@ -167,17 +221,17 @@ function ThreadsView() {
     if (!over || !currentProject) return
 
     const nodePath = active.id as string
-    const newStatus = over.id as TaskState
+    const newStatus = over.id as string
 
-    updateTaskStatus(nodePath, newStatus)
+    updateTaskStatus(nodePath, newStatus as TaskState)
   }
 
-  const getTasksByStatus = (status: TaskState) => {
+  const getTasksByStatus = (status: string) => {
     return tasksByStatus[status] || []
   }
 
-  const handleCreateTask = (columnId: TaskState) => {
-    setSelectedColumn(columnId)
+  const handleCreateTask = (columnId: string) => {
+    setSelectedColumn(columnId as TaskState)
     setIsCreateModalOpen(true)
   }
 
@@ -218,13 +272,24 @@ function ThreadsView() {
             </p>
           </div>
           
-          <button
-            onClick={() => handleCreateTask('todo')}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-          >
-            <Plus className="w-4 h-4" />
-            New Task
-          </button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setIsColumnManagerOpen(true)}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <Settings className="w-4 h-4" />
+              Manage Columns
+            </Button>
+            <button
+              onClick={() => handleCreateTask('todo')}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+            >
+              <Plus className="w-4 h-4" />
+              New Task
+            </button>
+          </div>
         </div>
       </div>
 
@@ -265,6 +330,32 @@ function ThreadsView() {
                     </SortableContext>
                   </DroppableColumn>
                 ))}
+                
+                {/* Invalid Status Column */}
+                {getTasksByStatus('invalid').length > 0 && (
+                  <DroppableColumn
+                    key="invalid"
+                    id="invalid"
+                    title="Invalid Status"
+                    color="bg-red-500"
+                    onCreateTask={() => {}}
+                  >
+                    <SortableContext
+                      items={getTasksByStatus('invalid').map(node => node.path)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {getTasksByStatus('invalid').map((node) => (
+                        <TaskCard
+                          key={node.path}
+                          node={node}
+                          isDragging={activeId === node.path}
+                          onClick={handleTaskClick}
+                          hasInvalidStatus={true}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DroppableColumn>
+                )}
               </div>
 
               <DragOverlay>
@@ -296,11 +387,22 @@ function ThreadsView() {
       {isDetailModalOpen && selectedTask && (
         <TaskDetailModal
           node={selectedTask}
+          availableStatuses={columns.map(col => col.id)}
+          columns={columns}
           onClose={() => {
             setIsDetailModalOpen(false)
             setSelectedTask(null)
           }}
           onUpdate={handleTaskUpdate}
+        />
+      )}
+
+      {/* Column Manager Modal */}
+      {isColumnManagerOpen && (
+        <ColumnManager
+          columns={columns}
+          onColumnsChange={handleColumnsChange}
+          onClose={() => setIsColumnManagerOpen(false)}
         />
       )}
     </div>

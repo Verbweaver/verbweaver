@@ -1,4 +1,4 @@
-import { Calendar, User, Tag, MoreVertical, MessageSquare, Link, FileText } from 'lucide-react'
+import { Calendar, User, Tag, MoreVertical, MessageSquare, Link, FileText, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
 import { format } from 'date-fns'
 import { useSortable } from '@dnd-kit/sortable'
@@ -26,9 +26,10 @@ interface TaskCardProps {
   node: VerbweaverNode
   isDragging?: boolean
   onClick?: (node: VerbweaverNode) => void
+  hasInvalidStatus?: boolean
 }
 
-function TaskCard({ node, isDragging, onClick }: TaskCardProps) {
+function TaskCard({ node, isDragging, onClick, hasInvalidStatus }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -87,13 +88,22 @@ function TaskCard({ node, isDragging, onClick }: TaskCardProps) {
         'p-3 rounded-md border cursor-pointer transition-all group',
         getPriorityColor(priority),
         isDragging && 'opacity-50 rotate-2 scale-105',
-        !isDragging && 'hover:shadow-md'
+        !isDragging && 'hover:shadow-md',
+        hasInvalidStatus && 'border-destructive bg-destructive/5'
       )}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm line-clamp-2">{title}</h4>
+          <div className="flex items-center gap-2">
+            <h4 className="font-medium text-sm line-clamp-2">{title}</h4>
+            {hasInvalidStatus && (
+              <div className="flex items-center gap-1 text-destructive" title="Invalid status - update required">
+                <AlertTriangle className="w-3 h-3" />
+                <span className="text-xs">Invalid Status</span>
+              </div>
+            )}
+          </div>
           {/* Show folder context for files */}
           {!node.isDirectory && node.hardLinks.parent && (
             <div className="flex items-center gap-1 mt-1">
