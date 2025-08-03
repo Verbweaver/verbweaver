@@ -51,7 +51,14 @@ class ContentAggregator:
         if template_path:
             return self._process_with_template(node_paths, options, template_path, custom_variables)
         
-        # Fall back to legacy processing
+        # For Pandoc formats, use default template if none specified
+        pandoc_formats = ['pdf', 'docx', 'epub', 'odt']
+        if options.get('format') in pandoc_formats:
+            # Use simple template for Pandoc formats
+            default_template = self._get_default_template(options.get('format', 'pdf'))
+            return self._process_with_template(node_paths, options, default_template, custom_variables)
+        
+        # Fall back to legacy processing for other formats
         return self._process_legacy(node_paths, options)
     
     def _process_with_template(self, node_paths: List[str], options: Dict[str, Any],
@@ -90,7 +97,7 @@ class ContentAggregator:
                     
                     # Extract metadata and content
                     title = self._extract_title(content) or os.path.basename(path).replace('.md', '')
-                    clean_content = self._clean_content(content)
+                    clean_content = self._clean_content(content, options.get('includeMetadata', True))
                     
                     # Get node metadata
                     metadata = self._extract_metadata(content)
@@ -122,6 +129,49 @@ class ContentAggregator:
         
         # Process template with data
         return self.template_service.process_template(template_content, data)
+    
+    def _get_default_template(self, format_type: str) -> str:
+        """Get default template for a format type"""
+        if format_type == 'html':
+            return """<!DOCTYPE html>
+<html>
+<head>
+    <title>$title$</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+        h1 { color: #333; border-bottom: 2px solid #333; }
+        h2 { color: #666; margin-top: 30px; }
+        .metadata { color: #888; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <h1>$title$</h1>
+    <div class="metadata">
+        <p><strong>Author:</strong> $author$</p>
+        <p><strong>Date:</strong> $date$</p>
+    </div>
+    
+    $for(nodes)$
+    <h2>$nodes.title$</h2>
+    $nodes.content$
+    $endfor$
+</body>
+</html>"""
+        else:
+            return """---
+title: $title$
+author: $author$
+date: $date$
+---
+
+# $title$
+
+$for(nodes)$
+## $nodes.title$
+
+$nodes.content$
+
+$endfor$"""
     
     def _process_legacy(self, node_paths: List[str], options: Dict[str, Any]) -> str:
         """Legacy content aggregation (for backward compatibility)"""
@@ -176,12 +226,12 @@ class ContentAggregator:
                     sections.append(f"## {title}\n\n")
                     
                     # Add content (strip any existing headers)
-                    clean_content = self._clean_content(content)
+                    clean_content = self._clean_content(content, options.get('includeMetadata', True))
                     sections.append(clean_content)
                     
                     # Add embedded files if requested
                     if embed_files:
-                        embedded_files_section = self._add_embedded_files(content, path)
+                        embedded_files_section = self._add_embedded_files(content, path, options.get('includeMetadata', True))
                         if embedded_files_section:
                             sections.append("\n\n")
                             sections.append(embedded_files_section)
@@ -202,7 +252,7 @@ class ContentAggregator:
                 return line[2:].strip()
         return None
     
-    def _clean_content(self, content: str) -> str:
+    def _clean_content(self, content: str, include_metadata: bool = True) -> str:
         """Clean content by removing the first header if it exists and formatting metadata"""
         lines = content.split('\n')
         cleaned_lines = []
@@ -219,8 +269,8 @@ class ContentAggregator:
                 else:
                     # End of front matter
                     in_front_matter = False
-                    # Format the front matter nicely
-                    if front_matter_lines:
+                    # Format the front matter nicely only if metadata should be included
+                    if front_matter_lines and include_metadata:
                         cleaned_lines.append("### Metadata")
                         cleaned_lines.append("")
                         cleaned_lines.append("```yaml")
@@ -242,7 +292,7 @@ class ContentAggregator:
         
         return '\n'.join(cleaned_lines).strip()
     
-    def _add_embedded_files(self, content: str, node_path: str) -> Optional[str]:
+    def _add_embedded_files(self, content: str, node_path: str, include_metadata: bool = True) -> Optional[str]:
         """Add embedded files section if task has uploaded files"""
         try:
             # Parse front matter to get task metadata
@@ -273,7 +323,10 @@ class ContentAggregator:
             if not valid_files:
                 return None
             
-            # Create embedded files section
+            # Create embedded files section only if metadata should be included
+            if not include_metadata:
+                return None
+                
             sections = []
             sections.append("### Attachments\n\n")
             
