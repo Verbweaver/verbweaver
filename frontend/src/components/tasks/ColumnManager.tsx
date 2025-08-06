@@ -27,7 +27,9 @@ export interface KanbanColumn {
 
 interface ColumnManagerProps {
   columns: KanbanColumn[];
+  defaultColumnId: string;
   onColumnsChange: (columns: KanbanColumn[]) => void;
+  onDefaultChange: (defaultId: string) => void;
   onClose: () => void;
 }
 
@@ -52,7 +54,9 @@ function SortableColumnItem({
   setEditingColumn, 
   onEdit, 
   onDelete, 
-  onCancelEdit 
+  onCancelEdit,
+  isDefault,
+  onSetDefault
 }: {
   column: KanbanColumn;
   isEditing: boolean;
@@ -61,6 +65,8 @@ function SortableColumnItem({
   onEdit: () => void;
   onDelete: (id: string) => void;
   onCancelEdit: () => void;
+  isDefault: boolean;
+  onSetDefault: (id: string) => void;
 }) {
   const {
     attributes,
@@ -89,6 +95,13 @@ function SortableColumnItem({
     >
       <GripVertical className="w-4 h-4 text-muted-foreground cursor-move" />
       
+      <input
+        type="radio"
+        checked={isDefault}
+        onChange={() => onSetDefault(column.id)}
+        className="mr-2 accent-primary"
+        title="Set as default column"
+      />
       <div className={clsx('w-4 h-4 rounded-full', column.color)} />
       
       {isEditing ? (
@@ -168,8 +181,9 @@ function SortableColumnItem({
   );
 }
 
-export default function ColumnManager({ columns, onColumnsChange, onClose }: ColumnManagerProps) {
+export default function ColumnManager({ columns, defaultColumnId, onColumnsChange, onDefaultChange, onClose }: ColumnManagerProps) {
   const [editingColumn, setEditingColumn] = useState<KanbanColumn | null>(null);
+  const [defaultIdState, setDefaultIdState] = useState<string>(defaultColumnId);
   const [isAdding, setIsAdding] = useState(false);
   const [newColumn, setNewColumn] = useState<Partial<KanbanColumn>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -268,16 +282,18 @@ export default function ColumnManager({ columns, onColumnsChange, onClose }: Col
                 strategy={verticalListSortingStrategy}
               >
                 {columns.map((column) => (
-                  <SortableColumnItem
-                    key={column.id}
-                    column={column}
-                    isEditing={editingColumn?.id === column.id}
-                    editingColumn={editingColumn}
-                    setEditingColumn={setEditingColumn}
-                    onEdit={handleEditColumn}
-                    onDelete={handleDeleteColumn}
-                    onCancelEdit={handleCancelEdit}
-                  />
+                                      <SortableColumnItem
+                     key={column.id}
+                     column={column}
+                     isEditing={editingColumn?.id === column.id}
+                     editingColumn={editingColumn}
+                     setEditingColumn={setEditingColumn}
+                     onEdit={handleEditColumn}
+                     onDelete={handleDeleteColumn}
+                     onCancelEdit={handleCancelEdit}
+                     isDefault={column.id === defaultIdState}
+                     onSetDefault={(id) => { setDefaultIdState(id); onDefaultChange(id); }}
+                   />
                 ))}
               </SortableContext>
               

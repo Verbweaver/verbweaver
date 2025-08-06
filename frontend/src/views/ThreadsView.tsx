@@ -101,6 +101,7 @@ function ThreadsView() {
   const [selectedTask, setSelectedTask] = useState<VerbweaverNode | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
   const [columns, setColumns] = useState<KanbanColumn[]>(defaultColumns)
+  const [defaultColumnId, setDefaultColumnId] = useState<string>(defaultColumns[0].id)
   const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false)
   const [isLoadingColumns, setIsLoadingColumns] = useState(true)
   
@@ -131,6 +132,9 @@ function ThreadsView() {
       if (threadsSettings.columns && threadsSettings.columns.length > 0) {
         setColumns(threadsSettings.columns)
       }
+      if (threadsSettings.defaultColumnId) {
+        setDefaultColumnId(threadsSettings.defaultColumnId)
+      }
     } catch (error) {
       console.error('Failed to load column configuration:', error)
       // Keep using default columns
@@ -140,14 +144,21 @@ function ThreadsView() {
   }
 
   const handleColumnsChange = async (newColumns: KanbanColumn[]) => {
-    if (!currentProject) return
+    await saveThreadsSettings(newColumns, defaultColumnId)
+  }
 
+  const handleDefaultChange = async (newDefaultId: string) => {
+    setDefaultColumnId(newDefaultId)
+    await saveThreadsSettings(columns, newDefaultId)
+  }
+
+  const saveThreadsSettings = async (cols: KanbanColumn[], defaultId: string) => {
+    if (!currentProject) return
     try {
-      setColumns(newColumns)
-      await projectsApi.updateThreadsSettings(currentProject.id, { columns: newColumns })
+      setColumns(cols)
+      await projectsApi.updateThreadsSettings(currentProject.id, { columns: cols, defaultColumnId: defaultId })
     } catch (error) {
       console.error('Failed to update column configuration:', error)
-      // Revert to previous state
       loadColumns()
     }
   }
@@ -195,7 +206,7 @@ function ThreadsView() {
       if (!node.isDirectory) {
         // Treat all files as tasks - they all represent content that can be managed
         // If no task status is set, default to first column
-        const status = node.taskStatus || columns[0]?.id || 'todo'
+        const status = node.taskStatus || defaultColumnId || columns[0]?.id || 'todo'
         
         // Check if the status is valid (exists in current columns)
         if (columns.some(col => col.id === status)) {
@@ -400,11 +411,13 @@ function ThreadsView() {
 
       {/* Column Manager Modal */}
       {isColumnManagerOpen && (
-        <ColumnManager
-          columns={columns}
-          onColumnsChange={handleColumnsChange}
-          onClose={() => setIsColumnManagerOpen(false)}
-        />
+        <ColumnManager 
+              columns={columns}
+              defaultColumnId={defaultColumnId}
+              onColumnsChange={handleColumnsChange}
+              onDefaultChange={handleDefaultChange}
+              onClose={() => setIsColumnManagerOpen(false)}
+            />
       )}
     </div>
   )
