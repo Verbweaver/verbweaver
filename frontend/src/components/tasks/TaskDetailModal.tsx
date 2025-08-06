@@ -559,8 +559,16 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }
                                  console.log('Removing link between:', node.path, 'and', linkedNode.path)
                                  try {
                                    await useNodeStore.getState().removeSoftLink(node.path, linkedNode.path)
-                                   // Refresh the node to show updated links
-                                   onUpdate({ ...node })
+                                   // Update local node metadata to remove the link so subsequent saves stay consistent
+                                   const updatedLinks = (node.metadata.links || []).filter((id: string) => id !== linkedNode.metadata.id)
+                                   const updatedNode = {
+                                     ...node,
+                                     metadata: {
+                                       ...node.metadata,
+                                       links: updatedLinks
+                                     }
+                                   }
+                                   onUpdate(updatedNode)
                                    toast.success('Link removed')
                                  } catch (error) {
                                    console.error('Failed to remove link:', error)
