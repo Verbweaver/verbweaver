@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
-import { Save, FileText, Plus, Minus, X } from 'lucide-react'
+import { Save, FileText, Plus, Minus, X, Eye } from 'lucide-react'
+import { editorApi } from '../api/editorApi'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
 import { useThemeStore } from '../store/themeStore'
@@ -32,6 +33,8 @@ function EditorView() {
   const [content, setContent] = useState('')
   const [isModified, setIsModified] = useState(false)
   const [fontSize, setFontSize] = useState(EDITOR_DEFAULT_FONT_SIZE)
+  const [isPreview, setIsPreview] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState<string>('')
   const [localFilePath, setLocalFilePath] = useState<string | null>(null)
   const [localFileName, setLocalFileName] = useState<string | null>(null)
 
@@ -85,7 +88,7 @@ function EditorView() {
     if (value !== undefined) {
       setContent(value)
       setIsModified(true)
-      
+      if (isPreview) setPreviewHtml('')
       if (!isElectron && currentFile) {
         updateFileContent(currentFile.id, value)
       }
@@ -112,6 +115,23 @@ function EditorView() {
       }
     }
   }, [currentFile, currentProject, content, isModified, saveFile, localFilePath])
+
+  // Fetch preview when in preview mode
+  useEffect(() => {
+    const fetchPreview = async () => {
+      if (!isPreview) return
+      const filename = localFileName || currentFile?.name || ''
+      if (!filename.endsWith('.md')) return
+      try {
+        const html = await editorApi.previewMarkdown(content)
+        setPreviewHtml(html)
+      } catch (e) {
+        console.error('preview failed', e)
+      }
+    }
+    const id = setTimeout(fetchPreview, 400)
+    return () => clearTimeout(id)
+  }, [isPreview, content, localFileName, currentFile])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -191,6 +211,15 @@ function EditorView() {
         
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setIsPreview(prev => !prev)}
+            disabled={! (localFileName || currentFile?.name || '').endsWith('.md') }
+            className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Toggle preview"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+
+          <button
             onClick={handleSave}
             disabled={!isModified}
             className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
@@ -238,7 +267,10 @@ function EditorView() {
         <PanelResizeHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
         
         <Panel defaultSize={80}>
-          <Editor
+          {isPreview ? (
+            <div className="h-full w-full overflow-auto bg-background p-4 prose dark:prose-invert max-w-none mx-0" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          ) : (
+            <Editor
             value={content}
             onChange={handleEditorChange}
             language="markdown"
@@ -251,9 +283,10 @@ function EditorView() {
               scrollBeyondLastLine: false,
               automaticLayout: true,
               tabSize: 2,
-              insertSpaces: true,
-            }}
-          />
+                          insertSpaces: true,
+              }}
+            />
+          )}
         </Panel>
       </PanelGroup>
     </div>
