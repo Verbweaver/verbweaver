@@ -339,7 +339,7 @@ async def get_threads_settings(
             {"id": "review", "title": "Review", "color": "bg-purple-500"},
             {"id": "done", "title": "Done", "color": "bg-green-500"}
         ]
-        return {"threads": {"columns": default_columns}}
+        return {"threads": {"columns": default_columns, "defaultColumnId": default_columns[0]['id']}}
     
     try:
         with open(settings_file, 'r', encoding='utf-8') as f:
@@ -356,9 +356,9 @@ async def get_threads_settings(
                 {"id": "review", "title": "Review", "color": "bg-purple-500"},
                 {"id": "done", "title": "Done", "color": "bg-green-500"}
             ]
-            return {"threads": {"columns": default_columns}}
+            return {"threads": {"columns": default_columns, "defaultColumnId": default_columns[0]['id']}}
         
-        return {"threads": {"columns": columns}}
+        return {"threads": {"columns": columns, "defaultColumnId": threads_settings.get('defaultColumnId', columns[0]['id'] if columns else None)}}
         
     except Exception as e:
         logger.error(f"Error reading threads settings: {e}")
