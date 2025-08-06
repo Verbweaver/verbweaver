@@ -81,7 +81,17 @@ function EditorSidebar() {
         setFileTree(tree)
       } else {
         // For web version, use the API
-        const tree = await editorApi.getFileTree(currentProject.id)
+        const apiTree = await editorApi.getFileTree(currentProject.id)
+        // Transform API response to match local FileNode interface
+        const transformNode = (node: any): FileNode => ({
+          id: node.path,
+          name: node.name,
+          path: node.path,
+          type: node.type,
+          children: node.children ? node.children.map(transformNode) : undefined,
+          loaded: true // API returns fully loaded tree
+        })
+        const tree = apiTree.map(transformNode)
         setFileTree(tree)
       }
     } catch (error) {
@@ -235,6 +245,8 @@ Add any additional notes or references here.
         await editorApi.createFile(currentProject.id, `nodes/${fileName}`, '# New File\n\nContent goes here...')
         // Reload the file tree
         await loadFileTree()
+        toast?.success?.(`File "${fileName}" created successfully`) || 
+          alert(`File "${fileName}" created successfully`)
       }
     } catch (error) {
       console.error('Failed to create file:', error)
