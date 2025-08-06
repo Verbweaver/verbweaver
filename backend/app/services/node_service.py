@@ -243,33 +243,56 @@ class NodeService:
         await self.git_service.remove_and_commit(files_to_remove, f"Deleted node: {os.path.basename(path)}")
     
     async def create_soft_link(self, source_path: str, target_path: str) -> None:
-        """Create a soft link between two nodes."""
+        """Create a bidirectional soft link between two nodes."""
         source_node = await self.read_node(source_path)
         target_node = await self.read_node(target_path)
         
         if not source_node or not target_node:
             raise FileNotFoundError("Source or target node not found")
         
-        # Get current links
-        links = source_node['metadata'].get('links', [])
+        source_id = source_node['metadata']['id']
         target_id = target_node['metadata']['id']
         
-        # Add link if not already present
-        if target_id not in links:
-            links.append(target_id)
-            await self.update_node(source_path, {'links': links})
+        # Add link from source to target
+        source_links = source_node['metadata'].get('links', [])
+        if target_id not in source_links:
+            source_links.append(target_id)
+            await self.update_node(source_path, {'links': source_links})
+        
+        # Add link from target to source
+        target_links = target_node['metadata'].get('links', [])
+        if source_id not in target_links:
+            target_links.append(source_id)
+            await self.update_node(target_path, {'links': target_links})
     
     async def remove_soft_link(self, source_path: str, target_id: str) -> None:
-        """Remove a soft link between two nodes."""
+        """Remove a bidirectional soft link between two nodes."""
         source_node = await self.read_node(source_path)
         if not source_node:
             raise FileNotFoundError("Source node not found")
         
-        # Remove link
-        links = source_node['metadata'].get('links', [])
-        if target_id in links:
-            links.remove(target_id)
-            await self.update_node(source_path, {'links': links})
+        source_id = source_node['metadata']['id']
+        
+        # Remove link from source to target
+        source_links = source_node['metadata'].get('links', [])
+        if target_id in source_links:
+            source_links.remove(target_id)
+            await self.update_node(source_path, {'links': source_links})
+        
+        # Find and remove link from target to source
+        # We need to find the target node by ID to get its path
+        all_nodes = await self.list_nodes()
+        target_node = None
+        for node in all_nodes:
+            if node['metadata']['id'] == target_id:
+                target_node = node
+                break
+        
+        if target_node:
+            target_links = target_node['metadata'].get('links', [])
+            if source_id in target_links:
+                target_links.remove(source_id)
+                await self.update_node(target_node['path'], {'links': target_links})
     
     async def list_nodes(self, directory: Optional[str] = None, exclude_templates: bool = True) -> List[Dict[str, Any]]:
         """List all nodes in a directory (or entire project)."""

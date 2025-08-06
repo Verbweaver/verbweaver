@@ -513,12 +513,24 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     
     if (!sourceNode || !targetNode) throw new Error('Node not found');
     
-    const updatedLinks = [...(sourceNode.metadata.links || [])];
-    if (!updatedLinks.includes(targetNode.metadata.id)) {
-      updatedLinks.push(targetNode.metadata.id);
-      
+    const sourceId = sourceNode.metadata.id;
+    const targetId = targetNode.metadata.id;
+    
+    // Add link from source to target
+    const sourceLinks = [...(sourceNode.metadata.links || [])];
+    if (!sourceLinks.includes(targetId)) {
+      sourceLinks.push(targetId);
       await get().updateNode(sourcePath, {
-        metadata: { links: updatedLinks }
+        metadata: { links: sourceLinks }
+      });
+    }
+    
+    // Add link from target to source
+    const targetLinks = [...(targetNode.metadata.links || [])];
+    if (!targetLinks.includes(sourceId)) {
+      targetLinks.push(sourceId);
+      await get().updateNode(targetPath, {
+        metadata: { links: targetLinks }
       });
     }
   },
@@ -529,11 +541,37 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     
     if (!sourceNode || !targetNode) throw new Error('Node not found');
     
-    const updatedLinks = (sourceNode.metadata.links || []).filter(id => id !== targetNode.metadata.id);
+    // Create edge ID using node IDs instead of paths to avoid URL encoding issues
+    // Use a delimiter that won't appear in node IDs
+    const edgeId = `soft_${sourceNode.metadata.id}_${targetNode.metadata.id}`;
     
-    await get().updateNode(sourcePath, {
-      metadata: { links: updatedLinks }
-    });
+    // Get current project
+    const { currentProject } = useProjectStore.getState();
+    if (!currentProject) throw new Error('No project selected');
+    
+    try {
+      // Call the backend API to remove the edge
+      await apiClient.delete(`/projects/${currentProject.id}/edges/${edgeId}`);
+      
+      // Update local state using the existing updateNode function to preserve all metadata
+      const sourceId = sourceNode.metadata.id;
+      const targetId = targetNode.metadata.id;
+      
+      // Remove link from source node
+      const updatedSourceLinks = (sourceNode.metadata.links || []).filter(id => id !== targetId);
+      await get().updateNode(sourcePath, {
+        metadata: { links: updatedSourceLinks }
+      });
+      
+      // Remove link from target node
+      const updatedTargetLinks = (targetNode.metadata.links || []).filter(id => id !== sourceId);
+      await get().updateNode(targetPath, {
+        metadata: { links: updatedTargetLinks }
+      });
+    } catch (error) {
+      console.error('Failed to remove soft link:', error);
+      throw error;
+    }
   },
 
   watchForChanges: () => {

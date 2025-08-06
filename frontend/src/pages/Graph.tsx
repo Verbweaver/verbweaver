@@ -46,7 +46,7 @@ function GraphView() {
   
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; isFolder?: boolean; hasTask?: boolean } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; edgeId?: string; isFolder?: boolean; hasTask?: boolean } | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
@@ -137,22 +137,24 @@ function GraphView() {
           })
         }
         
-        // Create soft link edges
+        // Create soft link edges (only create one edge per pair to avoid duplicates)
         node.softLinks.forEach((targetId: string) => {
           // Find target node by ID
           const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
           if (targetNode) {
-            flowEdges.push({
-              id: `soft-${node.path}-${targetNode.path}`,
-              source: node.path,
-              target: targetNode.path,
-              type: 'smoothstep',
-              animated: true,
-              style: { stroke: '#3b82f6', strokeWidth: 2 },
-              markerEnd: {
-                type: MarkerType.ArrowClosed,
-              },
-            })
+            // Only create edge if source ID is lexicographically smaller than target ID
+            // This ensures we only create one edge per pair of linked nodes
+            if (node.metadata.id < targetNode.metadata.id) {
+              flowEdges.push({
+                id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
+                source: node.path,
+                target: targetNode.path,
+                type: 'smoothstep',
+                animated: true,
+                style: { stroke: '#3b82f6', strokeWidth: 2 },
+                // Remove arrows since links are bidirectional
+              })
+            }
           }
         })
       })
@@ -186,9 +188,7 @@ function GraphView() {
             type: 'smoothstep',
             animated: true,
             style: { stroke: '#3b82f6', strokeWidth: 2 },
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-            },
+            // Remove arrows since links are bidirectional
           }, eds))
           toast.success('Link created')
         })
@@ -232,6 +232,55 @@ function GraphView() {
       setPendingNodePosition(position)
     },
     []
+  )
+
+  // Handle edge context menu
+  const onEdgeContextMenu = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      console.log('Edge context menu triggered:', edge.id)
+      event.preventDefault()
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        edgeId: edge.id,
+      })
+    },
+    []
+  )
+
+  // Handle unlinking edges
+  const handleUnlinkEdge = useCallback(
+    async (edgeId: string) => {
+      console.log('handleUnlinkEdge called with:', edgeId)
+      try {
+        // Parse edge ID to get source and target node IDs
+        if (edgeId.startsWith('soft_')) {
+          const parts = edgeId.split('_', 3)
+          if (parts.length === 3) {
+            const sourceId = parts[1]
+            const targetId = parts[2]
+            
+            // Find nodes by ID
+            const sourceNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === sourceId)
+            const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
+            
+            if (sourceNode && targetNode) {
+              console.log('Removing link between:', sourceNode.path, 'and', targetNode.path)
+              await removeSoftLink(sourceNode.path, targetNode.path)
+              
+              // Remove edge from visual graph
+              setEdges((eds) => eds.filter(edge => edge.id !== edgeId))
+              
+              toast.success('Link removed')
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to remove link:', error)
+        toast.error('Failed to remove link')
+      }
+    },
+    [removeSoftLink, setEdges, verbweaverNodes]
   )
 
   // Handle creating new node
@@ -504,6 +553,7 @@ function GraphView() {
         onEdgesDelete={onEdgesDelete}
         onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={onNodeContextMenu}
+        onEdgeContextMenu={onEdgeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
         onNodeClick={onNodeClick}
         nodeTypes={nodeTypes}
@@ -546,6 +596,7 @@ function GraphView() {
           x={contextMenu.x}
           y={contextMenu.y}
           nodeId={contextMenu.nodeId}
+          edgeId={contextMenu.edgeId}
           isFolder={contextMenu.isFolder}
           hasTask={contextMenu.hasTask}
           onCreateNode={handleCreateNode}
@@ -556,6 +607,7 @@ function GraphView() {
             setContextMenu(null);
             navigate(`/threads/${encodeURIComponent(nodeId)}`);
           }}
+          onUnlinkEdge={handleUnlinkEdge}
           onClose={() => setContextMenu(null)}
         />
       )}

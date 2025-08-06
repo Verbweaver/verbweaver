@@ -158,7 +158,8 @@ function ThreadsView() {
       const decodedTaskPath = decodeURIComponent(taskPath)
       const taskNode = nodes.get(decodedTaskPath)
       
-      if (taskNode && taskNode.hasTask) {
+      if (taskNode && taskNode.isMarkdown) {
+        console.log('Opening task from URL:', decodedTaskPath, taskNode)
         setSelectedTask(taskNode)
         setIsDetailModalOpen(true)
         // Clear the URL parameter after opening the task

@@ -8,6 +8,7 @@ interface NodeContextMenuProps {
   x: number
   y: number
   nodeId?: string
+  edgeId?: string
   isFolder?: boolean
   hasTask?: boolean
   onCreateNode: (type: string, position?: { x: number; y: number }) => void
@@ -15,10 +16,11 @@ interface NodeContextMenuProps {
   onCreateChildNode?: (parentPath: string) => void
   onEditNode?: (nodeId: string) => void
   onSeeTask?: (nodeId: string) => void
+  onUnlinkEdge?: (edgeId: string) => void
   onClose: () => void
 }
 
-function NodeContextMenu({ x, y, nodeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onEditNode, onSeeTask, onClose }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onEditNode, onSeeTask, onUnlinkEdge, onClose }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -125,6 +127,18 @@ function NodeContextMenu({ x, y, nodeId, isFolder, hasTask, onCreateNode, onDele
               </button>
             ))
           )}
+        </>
+      )}
+      
+      {edgeId && onUnlinkEdge && (
+        <>
+          <button
+            onClick={() => onUnlinkEdge(edgeId)}
+            className="w-full px-3 py-1.5 text-sm text-left hover:bg-destructive hover:text-destructive-foreground flex items-center gap-2"
+          >
+            <Trash2 className="w-3 h-3" />
+            Unlink
+          </button>
         </>
       )}
       

@@ -7,6 +7,7 @@ import { TaskState } from '@verbweaver/shared'
 import { FileStorage, StoredFile } from '../../utils/fileStorage'
 import clsx from 'clsx'
 import { KanbanColumn } from './ColumnManager'
+import toast from 'react-hot-toast'
 
 // Define VerbweaverNode interface locally
 interface VerbweaverNode {
@@ -57,6 +58,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }
   const [comments, setComments] = useState<Comment[]>([])
   const [files, setFiles] = useState<StoredFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [isCreateLinkModalOpen, setIsCreateLinkModalOpen] = useState(false)
 
   useEffect(() => {
     if (node) {
@@ -506,24 +508,82 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }
             </div>
 
             {/* Soft Links */}
-            {node.softLinks.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-sm font-medium mb-2 flex items-center gap-1">
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium flex items-center gap-1">
                   <Link className="w-4 h-4" />
                   Related Content
                 </h3>
-                <div className="space-y-2">
-                  {node.softLinks.map((link, index) => (
-                    <div
-                      key={index}
-                      className="p-2 bg-muted rounded-md text-sm cursor-pointer hover:bg-accent"
-                    >
-                      {link}
-                    </div>
-                  ))}
-                </div>
+                {isEditing && (
+                  <button
+                    onClick={() => setIsCreateLinkModalOpen(true)}
+                    className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                  >
+                    Create Link
+                  </button>
+                )}
               </div>
-            )}
+                             {(node.metadata.links || []).length > 0 ? (
+                 <div className="space-y-2">
+                   {(node.metadata.links || []).map((linkId: string, index: number) => {
+                     // Find the linked node by ID
+                     const linkedNode = Array.from(useNodeStore.getState().nodes.values())
+                       .find(n => n.metadata.id === linkId)
+                     
+                     return (
+                       <div
+                         key={index}
+                         className="p-2 bg-muted rounded-md text-sm cursor-pointer hover:bg-accent flex items-center justify-between"
+                         title={linkedNode?.path || linkId}
+                       >
+                         <button
+                           onClick={() => {
+                             if (linkedNode) {
+                               console.log('Navigating to task:', linkedNode.path)
+                               console.log('Current URL before navigation:', window.location.href)
+                               onClose()
+                               // Navigate to the related task - use the correct path
+                               const newPath = `/threads/${encodeURIComponent(linkedNode.path)}`
+                               console.log('Navigating to:', newPath)
+                               navigate(newPath)
+                             }
+                           }}
+                           className="flex-1 text-left"
+                         >
+                           {linkedNode?.metadata.title || linkedNode?.name || linkId}
+                         </button>
+                         {isEditing && (
+                           <button
+                             onClick={async () => {
+                               if (linkedNode) {
+                                 console.log('Removing link between:', node.path, 'and', linkedNode.path)
+                                 try {
+                                   await useNodeStore.getState().removeSoftLink(node.path, linkedNode.path)
+                                   // Refresh the node to show updated links
+                                   onUpdate({ ...node })
+                                   toast.success('Link removed')
+                                 } catch (error) {
+                                   console.error('Failed to remove link:', error)
+                                   toast.error('Failed to remove link')
+                                 }
+                               }
+                             }}
+                             className="p-1 text-muted-foreground hover:text-destructive"
+                             title="Remove link"
+                           >
+                             <X className="w-3 h-3" />
+                           </button>
+                         )}
+                       </div>
+                     )
+                   })}
+                 </div>
+               ) : (
+                 <p className="text-sm text-muted-foreground">
+                   No related content. {isEditing && "Click 'Create Link' to add connections to other nodes."}
+                 </p>
+               )}
+            </div>
 
             {/* Save Button */}
             {isEditing && (
@@ -588,6 +648,93 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }
               </div>
             </div>
           </div>
+        </div>
+      </div>
+      
+      {/* Create Link Modal */}
+      {isCreateLinkModalOpen && (
+        <CreateLinkModal
+          currentNode={node}
+          onClose={() => setIsCreateLinkModalOpen(false)}
+          onLinkCreated={() => {
+            setIsCreateLinkModalOpen(false)
+            // Refresh the node to show new links
+            if (node) {
+              onUpdate({ ...node })
+            }
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Simple CreateLinkModal component
+interface CreateLinkModalProps {
+  currentNode: VerbweaverNode | null
+  onClose: () => void
+  onLinkCreated: () => void
+}
+
+function CreateLinkModal({ currentNode, onClose, onLinkCreated }: CreateLinkModalProps) {
+  const { nodes, createSoftLink } = useNodeStore()
+  const [selectedNodePath, setSelectedNodePath] = useState('')
+  
+     const availableNodes = Array.from(nodes.values()).filter(node => 
+     node.path !== currentNode?.path && node.isMarkdown
+   )
+   
+   console.log('Available nodes for linking:', availableNodes.length, availableNodes.map(n => ({ path: n.path, title: n.metadata.title || n.name })))
+  
+  const handleCreateLink = async () => {
+    if (!currentNode || !selectedNodePath) return
+    
+    try {
+      await createSoftLink(currentNode.path, selectedNodePath)
+      onLinkCreated()
+    } catch (error) {
+      console.error('Failed to create link:', error)
+    }
+  }
+  
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-background border border-border rounded-lg w-96 p-6">
+        <h3 className="text-lg font-semibold mb-4">Create Link</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Link this task to another task
+        </p>
+        
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-2">Select Task</label>
+          <select
+            value={selectedNodePath}
+            onChange={(e) => setSelectedNodePath(e.target.value)}
+            className="w-full p-2 border border-input rounded-md bg-background"
+          >
+            <option value="">Choose a task...</option>
+            {availableNodes.map((node) => (
+              <option key={node.path} value={node.path}>
+                {node.metadata.title || node.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-input rounded-md hover:bg-accent"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleCreateLink}
+            disabled={!selectedNodePath}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
+          >
+            Create Link
+          </button>
         </div>
       </div>
     </div>
