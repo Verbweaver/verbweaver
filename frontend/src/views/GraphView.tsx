@@ -71,22 +71,24 @@ function GraphView() {
             })
           }
           
-          // Create soft link edges
+          // Create soft link edges (only create one edge per pair to avoid duplicates)
           node.softLinks.forEach((targetId) => {
             // Find target node by ID
             const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
             if (targetNode) {
+                          // Only create edge if source ID is lexicographically smaller than target ID
+            // This ensures we only create one edge per pair of linked nodes
+            if (node.metadata.id < targetNode.metadata.id) {
               flowEdges.push({
-                id: `soft-${node.path}-${targetNode.path}`,
+                id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
                 source: node.path,
                 target: targetNode.path,
                 type: 'smoothstep',
                 animated: true,
                 style: { stroke: '#3b82f6', strokeWidth: 2 },
-                markerEnd: {
-                  type: MarkerType.ArrowClosed,
-                },
+                // Remove arrows since links are bidirectional
               })
+            }
             }
           })
         })
@@ -121,9 +123,7 @@ function GraphView() {
             type: 'smoothstep',
             animated: true,
             style: { stroke: '#3b82f6', strokeWidth: 2 },
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-            },
+            // Remove arrows since links are bidirectional
           }, eds))
           toast.success('Link created')
         })

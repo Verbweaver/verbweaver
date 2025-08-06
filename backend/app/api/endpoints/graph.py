@@ -348,7 +348,7 @@ async def create_edge(
         )
 
 
-@router.delete("/projects/{project_id}/edges/{edge_id}")
+@router.delete("/projects/{project_id}/edges/{edge_id:path}")
 async def delete_edge(
     project_id: str,
     edge_id: str,
@@ -356,6 +356,7 @@ async def delete_edge(
     db: AsyncSession = Depends(get_db)
 ):
     """Delete an edge from the graph."""
+    print(f"DEBUG: DELETE endpoint hit with project_id: {project_id}, edge_id: {edge_id}")
     # Check project access
     result = await db.execute(
         select(Project).where(
@@ -372,33 +373,48 @@ async def delete_edge(
         )
     
     # Parse edge ID to get source and target
-    if not edge_id.startswith("soft-"):
+    if not edge_id.startswith("soft_"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only soft links can be deleted"
         )
     
     # Extract source and target from edge ID
-    # Format: soft-source-target
-    parts = edge_id.split("-", 2)
+    # Format: soft_source_id_target_id (using node IDs instead of paths)
+    print(f"DEBUG: Received edge_id: {edge_id}")
+    parts = edge_id.split("_", 3)
+    print(f"DEBUG: Split parts: {parts}")
     if len(parts) < 3:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid edge ID format"
         )
     
-    source_path = parts[1]
-    target_path = parts[2]
+    source_id = parts[1]
+    target_id = parts[2]
+    print(f"DEBUG: Node IDs - source: {source_id}, target: {target_id}")
     
     # Delete soft link using NodeService
     node_service = NodeService(project)
     try:
-        # Get target node to find its ID
-        target_node = await node_service.read_node(target_path)
+        # Find source and target nodes by ID
+        all_nodes = await node_service.list_nodes()
+        source_node = None
+        target_node = None
+        
+        for node in all_nodes:
+            if node['metadata']['id'] == source_id:
+                source_node = node
+            elif node['metadata']['id'] == target_id:
+                target_node = node
+        
+        if not source_node:
+            raise FileNotFoundError("Source node not found")
         if not target_node:
             raise FileNotFoundError("Target node not found")
         
-        await node_service.remove_soft_link(source_path, target_node["metadata"]["id"])
+        print(f"DEBUG: Removing soft link from {source_node['path']} to {target_node['path']}")
+        await node_service.remove_soft_link(source_node['path'], target_id)
         return {"message": "Edge deleted", "edge_id": edge_id}
     except FileNotFoundError as e:
         raise HTTPException(
