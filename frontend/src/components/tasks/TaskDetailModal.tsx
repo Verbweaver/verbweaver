@@ -664,10 +664,11 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }
         <CreateLinkModal
           currentNode={node}
           onClose={() => setIsCreateLinkModalOpen(false)}
-          onLinkCreated={() => {
+          onLinkCreated={(updatedNode?: VerbweaverNode) => {
             setIsCreateLinkModalOpen(false)
-            // Refresh the node to show new links
-            if (node) {
+            if (updatedNode) {
+              onUpdate(updatedNode)
+            } else if (node) {
               onUpdate({ ...node })
             }
           }}
@@ -681,7 +682,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }
 interface CreateLinkModalProps {
   currentNode: VerbweaverNode | null
   onClose: () => void
-  onLinkCreated: () => void
+  onLinkCreated: (updatedNode?: VerbweaverNode) => void
 }
 
 function CreateLinkModal({ currentNode, onClose, onLinkCreated }: CreateLinkModalProps) {
@@ -699,7 +700,21 @@ function CreateLinkModal({ currentNode, onClose, onLinkCreated }: CreateLinkModa
     
     try {
       await createSoftLink(currentNode.path, selectedNodePath)
-      onLinkCreated()
+      // Update current node's metadata locally so subsequent Save keeps the link
+      const selectedNode = nodes.get(selectedNodePath)
+      if (selectedNode) {
+        const updatedLinks = [...(currentNode.metadata.links || []), selectedNode.metadata.id]
+        const updatedNode = {
+          ...currentNode,
+          metadata: {
+            ...currentNode.metadata,
+            links: updatedLinks
+          }
+        }
+        onLinkCreated(updatedNode)
+      } else {
+        onLinkCreated()
+      }
     } catch (error) {
       console.error('Failed to create link:', error)
     }
