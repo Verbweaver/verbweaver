@@ -154,7 +154,9 @@ function EditorView() {
           <button
             onClick={() => setIsPreview(prev => !prev)}
             disabled={!currentFile.name.endsWith('.md')}
-            className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed ${
+              isPreview ? 'bg-accent border border-primary' : ''
+            }`}
             title="Toggle preview"
           >
             <Eye className="w-4 h-4" />
