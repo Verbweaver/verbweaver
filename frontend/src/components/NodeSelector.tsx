@@ -59,22 +59,31 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
         const tree = buildFileTree(files)
         setFileTree(tree)
       } else {
-        // Use web API
-        const response = await editorApi.getFileTree()
-        let files = response.data
+        // For web version, use the API
+        const apiTree = await editorApi.getFileTree(currentProject!.id)
+        // Transform API response to match local FileNode interface
+        const transformNode = (node: any): FileNode => ({
+          id: node.path,
+          name: node.name,
+          path: node.path,
+          type: node.type,
+          children: node.children ? node.children.map(transformNode) : undefined,
+          loaded: true // API returns fully loaded tree
+        })
+        let tree = apiTree.map(transformNode)
         
         // Filter to only show nodes directory if showNodesOnly is true
         if (showNodesOnly) {
-          files = files.filter((file: any) => {
+          tree = tree.filter(node => {
             // Include the nodes directory itself
-            if (file.path === 'nodes') return true
+            if (node.path === 'nodes') return true
             // Include all files and subdirectories within nodes
-            if (file.path.startsWith('nodes/')) return true
+            if (node.path.startsWith('nodes/')) return true
             return false
           })
         }
         
-        setFileTree(files)
+        setFileTree(tree)
       }
     } catch (error) {
       console.error('Failed to load file tree:', error)

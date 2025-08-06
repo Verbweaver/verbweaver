@@ -197,7 +197,7 @@ function EditorView() {
         
         <Panel defaultSize={80}>
           {isPreview ? (
-            <div className="h-full w-full overflow-auto bg-background p-4 prose dark:prose-invert max-w-none mx-0" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            <div className="h-full w-full overflow-auto bg-background p-4" dangerouslySetInnerHTML={{ __html: previewHtml }} />
           ) : (
             <Editor
               value={content}
