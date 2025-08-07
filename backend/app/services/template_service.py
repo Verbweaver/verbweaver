@@ -157,7 +157,7 @@ class TemplateService:
         )
     
     def convert_with_pandoc(self, markdown_content: str, output_format: str, 
-                           output_file: str) -> Tuple[bool, str]:
+                           output_file: str, working_dir: str = None) -> Tuple[bool, str]:
         """Convert markdown content to target format using Pandoc"""
         try:
             # Check if Pandoc is available
@@ -195,15 +195,21 @@ class TemplateService:
                     # Kindle format (requires calibre)
                     return False, "MOBI format requires Calibre. Please install Calibre to use this feature."
                 
-                # Run pandoc
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                # Run pandoc with working directory if provided
+                if working_dir:
+                    result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir)
+                else:
+                    result = subprocess.run(cmd, capture_output=True, text=True)
                 
                 if result.returncode != 0:
                     error_msg = result.stderr.strip()
                     if "xelatex" in error_msg and output_format == 'pdf':
                         # Try with pdflatex as fallback
                         cmd = ['pandoc', temp_file_path, '-o', output_file, '--pdf-engine=pdflatex']
-                        result = subprocess.run(cmd, capture_output=True, text=True)
+                        if working_dir:
+                            result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir)
+                        else:
+                            result = subprocess.run(cmd, capture_output=True, text=True)
                         if result.returncode != 0:
                             return False, f"Pandoc PDF conversion failed: {result.stderr}"
                     else:
