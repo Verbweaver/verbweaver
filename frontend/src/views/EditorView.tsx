@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
-import { Save, FileText, Settings, X, Eye } from 'lucide-react'
+import { Save, FileText, Settings, X, Eye, HelpCircle } from 'lucide-react'
 import { editorApi } from '../api/editorApi'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
@@ -150,17 +150,25 @@ function EditorView() {
           {isModified && <span className="text-xs text-muted-foreground">(modified)</span>}
         </div>
         
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsPreview(prev => !prev)}
-            disabled={!currentFile.name.endsWith('.md')}
-            className={`p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed ${
-              isPreview ? 'bg-accent border border-primary' : ''
-            }`}
-            title="Toggle preview"
-          >
-            <Eye className="w-4 h-4" />
-          </button>
+                 <div className="flex items-center gap-2">
+           <button
+             onClick={() => window.open('https://pandoc.org/MANUAL.html#pandocs-markdown', '_blank')}
+             className="p-1.5 rounded hover:bg-accent"
+             title="Formatting guidelines - Pandocs Markdown"
+           >
+             <HelpCircle className="w-4 h-4" />
+           </button>
+           
+           <button
+             onClick={() => setIsPreview(prev => !prev)}
+             disabled={!currentFile.name.endsWith('.md')}
+             className={`p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed ${
+               isPreview ? 'bg-accent border border-primary' : ''
+             }`}
+             title="Toggle preview"
+           >
+             <Eye className="w-4 h-4" />
+           </button>
 
           <button
             onClick={handleSave}
