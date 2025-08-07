@@ -105,6 +105,8 @@ class ContentAggregator:
                     attachments = []
                     if options.get('embedUploadedFiles', True):
                         attachments = self._get_attachments(content, path)
+                        # Process image embeddings in content
+                        clean_content = self._process_image_embeddings(clean_content, path, attachments)
                     
                     node_data = {
                         'title': title,
@@ -349,7 +351,9 @@ class ContentAggregator:
                         valid_files.append({
                             'name': file_name,
                             'size': self._format_file_size(file_info.get('size', 0)),
-                            'uploadedAt': file_info.get('uploadedAt', '')
+                            'uploadedAt': file_info.get('uploadedAt', ''),
+                            'path': file_info.get('path', ''),  # Add file path for image embedding
+                            'mimeType': file_info.get('mimeType', '')
                         })
             
             return valid_files
@@ -357,6 +361,57 @@ class ContentAggregator:
         except Exception as e:
             print(f"Error processing attachments for {node_path}: {e}")
             return []
+
+    def _process_image_embeddings(self, content: str, node_path: str, attachments: List[Dict[str, Any]]) -> str:
+        """Process image embeddings in content and add image references for attachments"""
+        import os
+        from pathlib import Path
+        
+        # Get the directory of the current node for relative path resolution
+        node_dir = os.path.dirname(os.path.join(self.project_path, node_path))
+        
+        # Process existing image references to ensure they're relative to project root
+        def fix_image_paths(match):
+            img_path = match.group(2)
+            alt_text = match.group(1)
+            title = match.group(3) if match.group(3) else ""
+            
+            # If it's already an absolute path or URL, leave it as is
+            if img_path.startswith(('http://', 'https://', '/')):
+                return match.group(0)
+            
+            # Make path relative to project root
+            full_img_path = os.path.join(node_dir, img_path)
+            if os.path.exists(full_img_path):
+                # Convert to relative path from project root
+                rel_path = os.path.relpath(full_img_path, self.project_path)
+                return f"![{alt_text}]({rel_path}{title})"
+            
+            return match.group(0)
+        
+        # Fix existing image references
+        import re
+        content = re.sub(r'!\[([^\]]*)\]\(([^)]+)(?:\s+"([^"]*)")?\)', fix_image_paths, content)
+        
+        # Add image references for image attachments
+        image_attachments = [att for att in attachments if att.get('mimeType', '').startswith('image/')]
+        
+        if image_attachments:
+            # Add a section for embedded images if not already present
+            if "### Attachments" not in content:
+                content += "\n\n### Attachments\n\n"
+            
+            for attachment in image_attachments:
+                file_name = attachment.get('name', 'Unknown')
+                file_path = attachment.get('path', '')
+                
+                if file_path and os.path.exists(file_path):
+                    # Make path relative to project root
+                    rel_path = os.path.relpath(file_path, self.project_path)
+                    # Add image reference
+                    content += f"\n![{file_name}]({rel_path})\n"
+        
+        return content
 
 
 
@@ -383,9 +438,9 @@ class PandocExporter:
         print(f"PandocExporter: Output file: {output_file}")
         
         try:
-            # Convert using Pandoc
+            # Convert using Pandoc with proper working directory
             success, message = self.template_service.convert_with_pandoc(
-                content, output_format, output_file
+                content, output_format, output_file, self.project_path
             )
             
             print(f"PandocExporter: Conversion result - Success: {success}, Message: {message}")
