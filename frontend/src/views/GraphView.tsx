@@ -16,6 +16,7 @@ import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { NODE_TYPES } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 
@@ -31,6 +32,7 @@ function GraphView() {
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string } | null>(null)
+  const [confirmState, setConfirmState] = useState<{ open: boolean; nodeId?: string; nodeName?: string }>({ open: false })
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
 
   // Load and convert nodes when project changes
@@ -203,14 +205,8 @@ function GraphView() {
   // Handle deleting node
   const handleDeleteNode = useCallback(
     async (nodeId: string) => {
-      try {
-        await deleteNode(nodeId)
-        setNodes((nds) => nds.filter((n) => n.id !== nodeId))
-        setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
-      } catch (error) {
-        toast.error('Failed to delete node')
-      }
-      
+      const nodeName = nodeId.split('/').pop() || nodeId
+      setConfirmState({ open: true, nodeId, nodeName })
       setContextMenu(null)
     },
     [deleteNode, setNodes, setEdges]
@@ -285,6 +281,23 @@ function GraphView() {
           onClose={() => setContextMenu(null)}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={confirmState.open}
+        title="Delete node"
+        message={`Are you sure you want to delete "${confirmState.nodeName || ''}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={async () => {
+          if (!confirmState.nodeId) return
+          try {
+            await deleteNode(confirmState.nodeId)
+          } finally {
+            setConfirmState({ open: false })
+          }
+        }}
+        onCancel={() => setConfirmState({ open: false })}
+      />
     </div>
   )
 }
