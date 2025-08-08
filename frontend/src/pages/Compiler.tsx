@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { FileDown, FileText, Book, Package, Globe, Code, Loader2, FileType } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { EXPORT_FORMATS } from '@verbweaver/shared'
@@ -114,6 +114,16 @@ function CompilerView() {
     margins: 'normal',
     lineSpacing: '1.5'
   })
+
+  // Stable callbacks to avoid re-running child effects on every render
+  const handleOrderChange = useCallback((paths: string[]) => {
+    setOrderedNodes(paths)
+  }, [])
+
+  const handleRemoveNodes = useCallback((removed: string[]) => {
+    if (removed.length === 0) return
+    setSelectedNodes(prev => prev.filter(p => !removed.includes(p)))
+  }, [])
 
   useEffect(() => {
     if (currentProject) {
@@ -279,7 +289,8 @@ function CompilerView() {
       <div className="w-1/3 border-r border-border">
         <NodeOrderingPanel
           selectedNodes={selectedNodes}
-          onOrderChange={setOrderedNodes}
+          onOrderChange={handleOrderChange}
+          onRemoveNodes={handleRemoveNodes}
         />
       </div>
 

@@ -8,6 +8,8 @@ import clsx from 'clsx'
 interface NodeOrderingPanelProps {
   selectedNodes: string[]
   onOrderChange: (orderedNodes: string[]) => void
+  // Notify parent about removal so Select Files panel can be de-synced
+  onRemoveNodes?: (removedPaths: string[]) => void
 }
 
 interface OrderedNode {
@@ -72,7 +74,7 @@ const sortOptions: SortOption[] = [
   }
 ]
 
-function NodeOrderingPanel({ selectedNodes, onOrderChange }: NodeOrderingPanelProps) {
+function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes }: NodeOrderingPanelProps) {
   const { getNode } = useNodeStore()
   const { theme } = useThemeStore()
   const { 
@@ -295,8 +297,10 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange }: NodeOrderingPanelPr
 
   const removeNode = (index: number) => {
     const newOrderedNodes = orderedNodes.filter((_, i) => i !== index)
+    const removed = [orderedNodes[index]?.path].filter(Boolean) as string[]
     setOrderedNodes(newOrderedNodes)
     onOrderChange(newOrderedNodes.map(node => node.path))
+    onRemoveNodes?.(removed)
     
     // Update selection indices
     const newSelectedIndices = new Set<number>()
@@ -313,15 +317,30 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange }: NodeOrderingPanelPr
   const removeSelectedNodes = useCallback(() => {
     const indicesToRemove = Array.from(selectedNodeIndices || []).sort((a, b) => b - a)
     let newOrderedNodes = [...orderedNodes]
+    const removed: string[] = []
     
     for (const index of indicesToRemove) {
-      newOrderedNodes.splice(index, 1)
+      const [spliced] = newOrderedNodes.splice(index, 1)
+      if (spliced?.path) removed.push(spliced.path)
     }
     
     setOrderedNodes(newOrderedNodes)
     onOrderChange(newOrderedNodes.map(node => node.path))
     clearSelection()
+    if (removed.length) onRemoveNodes?.(removed)
   }, [orderedNodes, selectedNodeIndices, onOrderChange, clearSelection])
+
+  // Handle Delete key to remove selected
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Remove only if focus is within this panel (heuristic: body as fallback)
+        removeSelectedNodes()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [removeSelectedNodes])
 
   const selectedCount = selectedNodeIndices?.size || 0
   const hasSelection = selectedCount > 0
