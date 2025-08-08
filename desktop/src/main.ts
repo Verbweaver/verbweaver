@@ -1288,10 +1288,17 @@ task:
         }
       }
 
-      // Delete the node file itself
+      // Delete the node file or directory itself
       if (existsSync(absoluteFilePath)) {
-        await fs.unlink(absoluteFilePath);
-        console.log(`[graph:deleteNodeFile] Deleted file: ${absoluteFilePath}`);
+        const stat = await fs.stat(absoluteFilePath)
+        if (stat.isDirectory()) {
+          // Recursively remove directory
+          await fs.rm(absoluteFilePath, { recursive: true, force: true })
+          console.log(`[graph:deleteNodeFile] Deleted directory: ${absoluteFilePath}`)
+        } else {
+          await fs.unlink(absoluteFilePath)
+          console.log(`[graph:deleteNodeFile] Deleted file: ${absoluteFilePath}`)
+        }
       }
 
       // Delete potential sidecar metadata file for non-markdown files
