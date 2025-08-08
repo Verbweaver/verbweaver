@@ -1,4 +1,5 @@
 import { Calendar, User, Tag, MoreVertical, MessageSquare, Link, FileText, AlertTriangle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { format } from 'date-fns'
@@ -34,6 +35,7 @@ interface TaskCardProps {
 function TaskCard({ node, isDragging, onClick, onRequestDelete, hasInvalidStatus }: TaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -154,6 +156,15 @@ function TaskCard({ node, isDragging, onClick, onRequestDelete, hasInvalidStatus
                 }}
               >
                 View details
+              </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={() => {
+                  setMenuOpen(false)
+                  navigate(`/editor/${encodeURIComponent(node.path)}`)
+                }}
+              >
+                Go to node in Editor
               </button>
               <div className="h-px bg-border my-1" />
               <button
