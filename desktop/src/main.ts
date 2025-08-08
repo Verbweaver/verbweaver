@@ -1124,13 +1124,36 @@ task:
       [key: string]: any; // Allow other properties from template
     }
 
+    // Deep clone templateFrontmatter to avoid mutating original
+    const safeTemplateFrontmatter = JSON.parse(JSON.stringify(templateFrontmatter || {}));
+    const mergedFrontmatter: Record<string, any> = {
+      ...safeTemplateFrontmatter,
+      ...(initialMetadata || {}),
+    };
+
+    // Remove undefined values recursively (js-yaml cannot dump undefined)
+    const removeUndefined = (obj: any): any => {
+      if (Array.isArray(obj)) {
+        return obj.map(removeUndefined);
+      } else if (obj && typeof obj === 'object') {
+        const result: any = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (v === undefined) continue;
+          result[k] = removeUndefined(v as any);
+        }
+        return result;
+      }
+      return obj;
+    };
+
+    const cleanedFrontmatter = removeUndefined(mergedFrontmatter);
+
     const newNodeFrontmatter: NodeFrontmatter = {
-      ...templateFrontmatter, // Start with template's metadata
+      ...cleanedFrontmatter,
       id: `node-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       title: finalNewNodeName,
       created: now,
       modified: now,
-      ...(initialMetadata || {}), // Apply overrides and additions like position
     };
 
     // Ensure we don't lose the user-provided title
