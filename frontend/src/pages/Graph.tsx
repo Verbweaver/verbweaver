@@ -24,6 +24,8 @@ import { templatesApi, Template as ApiTemplate } from '../api/templates';
 import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
+import { FileStorage, StoredFile } from '../utils/fileStorage'
+import { Paperclip } from 'lucide-react'
 import LayoutControls from '../components/graph/LayoutControls'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { NODE_TYPES } from '@verbweaver/shared'
@@ -54,6 +56,7 @@ function GraphView() {
   const [pendingNodePosition, setPendingNodePosition] = useState<{ x: number; y: number } | undefined>()
   const [parentPathForNewNode, setParentPathForNewNode] = useState<string>('')
   const [confirmState, setConfirmState] = useState<{ open: boolean; nodeId?: string; nodeName?: string }>({ open: false })
+  const [attachTarget, setAttachTarget] = useState<string | null>(null)
 
   // Connect WebSocket for real-time updates
   const projectId = currentProject?.id?.toString()
@@ -65,6 +68,19 @@ function GraphView() {
       loadNodes()
     }
   }, [currentProject, loadNodes])
+
+  // When an attach target is set, programmatically open the file picker
+  useEffect(() => {
+    if (attachTarget) {
+      const openPicker = () => {
+        const input = document.getElementById('graph-attach-input') as HTMLInputElement | null
+        input?.click()
+      }
+      // Defer to ensure the input is in the DOM
+      const id = setTimeout(openPicker, 0)
+      return () => clearTimeout(id)
+    }
+  }, [attachTarget])
 
   // Load and convert nodes when project changes or nodes update
   useEffect(() => {
@@ -606,6 +622,7 @@ function GraphView() {
             navigate(`/threads/${encodeURIComponent(nodeId)}`);
           }}
           onUnlinkEdge={handleUnlinkEdge}
+          onAttachFiles={(nodeId) => setAttachTarget(nodeId)}
           onClose={() => setContextMenu(null)}
         />
       )}
@@ -639,6 +656,47 @@ function GraphView() {
         onSelectTemplate={handleTemplateSelected}
         parentPath={parentPathForNewNode}
       />
+
+      {/* Hidden file input for attachments */}
+      {attachTarget && (
+        <input
+          type="file"
+          multiple
+          style={{ display: 'none' }}
+          id="graph-attach-input"
+          onChange={async (e) => {
+            const files = e.target.files
+            const targetPath = attachTarget
+            setAttachTarget(null)
+            if (!files || !targetPath) return
+            try {
+              const node = verbweaverNodes.get(targetPath)
+              if (!node) return
+              const existingFiles = ((node.metadata as any)?.task?.files) || []
+              const uploaded: StoredFile[] = []
+              for (const f of Array.from(files)) {
+                const sf = await FileStorage.uploadFile(f, targetPath)
+                if (sf) uploaded.push(sf)
+              }
+              const updatedTask = {
+                ...(node.metadata.task || {}),
+                files: [...existingFiles, ...uploaded],
+              }
+              await updateNode(targetPath, { metadata: { task: updatedTask } as any })
+              toast.success('Files attached')
+            } catch (err) {
+              console.error('Attach files failed', err)
+              toast.error('Failed to attach files')
+            } finally {
+              // reset the input value so same file can be uploaded again later
+              const input = document.getElementById('graph-attach-input') as HTMLInputElement | null
+              if (input) input.value = ''
+            }
+          }}
+          onClick={(e) => e.stopPropagation()}
+          autoFocus
+        />
+      )}
     </div>
   )
 }
