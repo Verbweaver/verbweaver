@@ -122,12 +122,12 @@ function EditorView() {
       if (!isPreview) return
       const filename = localFileName || currentFile?.name || ''
       if (!filename.endsWith('.md')) return
-      try {
-        const html = await editorApi.previewMarkdown(content)
-        setPreviewHtml(html)
-      } catch (e) {
-        console.error('preview failed', e)
-      }
+             try {
+         const html = await editorApi.previewMarkdown(content, currentProjectPath || undefined)
+         setPreviewHtml(html)
+       } catch (e) {
+         console.error('preview failed', e)
+       }
     }
     const id = setTimeout(fetchPreview, 400)
     return () => clearTimeout(id)

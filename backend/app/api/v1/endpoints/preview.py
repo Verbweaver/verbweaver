@@ -1,35 +1,67 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Response
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from app.services.template_service import TemplateService
+from pydantic import BaseModel
 
 router = APIRouter()
 
-import subprocess, tempfile
+import subprocess, tempfile, os
+
+class PreviewRequest(BaseModel):
+    markdown_text: str
+    project_path: Optional[str] = None
 
 @router.post("/preview", response_class=Response)
-async def preview_markdown(
-    markdown_text: str = Body(..., media_type="text/markdown")
-):
+async def preview_markdown(request: PreviewRequest):
     """Convert Pandoc-flavoured Markdown to standalone HTML for live preview."""
     try:
-        result = subprocess.run(
-            [
-                "pandoc",
-                "-f", "markdown",
-                "-t", "html",
-                "--standalone",
-                "--self-contained",
-            ],
-            input=markdown_text,
-            text=True,
-            capture_output=True
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "Pandoc conversion failed")
+        # Build pandoc command
+        cmd = [
+            "pandoc",
+            "-f", "markdown",
+            "-t", "html",
+            "--standalone",
+            "--self-contained",
+        ]
+        
+        # Create temporary markdown file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', 
+                                       delete=False, encoding='utf-8') as temp_file:
+            temp_file.write(request.markdown_text)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Run pandoc with working directory if project path is provided
+            if request.project_path and os.path.exists(request.project_path):
+                result = subprocess.run(
+                    cmd + [temp_file_path],
+                    text=True,
+                    capture_output=True,
+                    cwd=request.project_path
+                )
+            else:
+                # Fallback to stdin method if no project path
+                result = subprocess.run(
+                    cmd,
+                    input=request.markdown_text,
+                    text=True,
+                    capture_output=True
+                )
+            
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or "Pandoc conversion failed")
+            
+            # Get the output
+            output = result.stdout
+            
+        finally:
+            # Clean up temporary file
+            if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
         
         # Extract just the body content, removing Pandoc's CSS
         import re
-        body_match = re.search(r'<body[^>]*>(.*?)</body>', result.stdout, re.DOTALL | re.IGNORECASE)
+        body_match = re.search(r'<body[^>]*>(.*?)</body>', output, re.DOTALL | re.IGNORECASE)
         if body_match:
             body_content = body_match.group(1)
             # Create clean HTML with scoped styling
@@ -117,7 +149,7 @@ async def preview_markdown(
             return Response(content=clean_html, media_type="text/html")
         else:
             # Fallback to original HTML if body extraction fails
-            return Response(content=result.stdout, media_type="text/html")
+            return Response(content=output, media_type="text/html")
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Pandoc not installed on server")
     except Exception as e:
