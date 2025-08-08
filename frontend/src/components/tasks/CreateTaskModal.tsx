@@ -1,10 +1,12 @@
-﻿import { useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
-import { useTaskStore } from '../../store/taskStore'
 import { useNodeStore } from '../../store/nodeStore'
 import { format } from 'date-fns'
-import { TaskState, TaskStatus, MarkdownMetadata } from '@verbweaver/shared'
+import { TaskState, MarkdownMetadata } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
+import { useProjectStore } from '../../store/projectStore'
+import { templatesApi, Template } from '../../api/templates'
+import { createNodeFromTemplateDesktop, desktopTemplatesApi } from '../../api/desktop-templates'
 
 interface CreateTaskModalProps {
   projectId?: string
@@ -16,8 +18,8 @@ interface CreateTaskModalProps {
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
 
 function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalProps) {
-  const { createTask } = useTaskStore()
-  const { createNode } = useNodeStore()
+  const { currentProjectPath } = useProjectStore()
+  const { loadNodes } = useNodeStore()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
@@ -25,6 +27,32 @@ function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalP
   const [assignee, setAssignee] = useState('')
   const [tags, setTags] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
+  const [selectedTemplatePath, setSelectedTemplatePath] = useState<string | null>(null)
+
+  useEffect(() => {
+    const loadTemplates = async () => {
+      try {
+        setIsLoadingTemplates(true)
+        if (isElectron && currentProjectPath) {
+          const list = await desktopTemplatesApi.listTemplates(currentProjectPath)
+          setTemplates(list)
+        } else if (!isElectron && projectId) {
+          const list = await templatesApi.listTemplates(projectId)
+          setTemplates(list)
+        } else {
+          setTemplates([])
+        }
+      } catch (e) {
+        console.error('Failed to load templates', e)
+        setTemplates([])
+      } finally {
+        setIsLoadingTemplates(false)
+      }
+    }
+    loadTemplates()
+  }, [currentProjectPath, projectId])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,53 +62,56 @@ function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalP
       return
     }
 
+    if (!selectedTemplatePath) {
+      toast.error('Please choose a template')
+      return
+    }
+
     setIsSubmitting(true)
     try {
-      if (isElectron) {
-        // In Electron mode, create a node with task metadata
-        const metadata: Partial<MarkdownMetadata> = {
-          title,
-          description,
-          tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-          task: {
-            status: defaultStatus as TaskState,
-            priority: priority as 'low' | 'medium' | 'high',
-            assignee: assignee || undefined,
-            dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
-            completedDate: undefined
-          }
+      const initialMetadata: Partial<MarkdownMetadata> = {
+        title,
+        description,
+        tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+        task: {
+          status: defaultStatus as TaskState,
+          priority: priority as 'low' | 'medium' | 'high',
+          assignee: assignee || undefined,
+          dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+          completedDate: undefined
         }
-        
-        await createNode('nodes', title, 'file', metadata, `# ${title}\n\n${description || ''}`)
-        toast.success('Task created')
-        onClose()
-      } else if (projectId) {
-        // Web mode - use the existing task store
-        // Convert TaskState to TaskStatus
-        const statusMap: Record<string, TaskStatus> = {
-          'todo': TaskStatus.TODO,
-          'in-progress': TaskStatus.IN_PROGRESS,
-          'review': TaskStatus.REVIEW,
-          'done': TaskStatus.DONE,
-          'archived': TaskStatus.DONE // map archived to done
-        }
-        
-        await createTask(parseInt(projectId), {
+      }
+
+      // Desktop
+      if (isElectron && currentProjectPath && window.electronAPI) {
+        await createNodeFromTemplateDesktop(
+          selectedTemplatePath,
           title,
-          description,
-          status: statusMap[defaultStatus] || TaskStatus.TODO,
-          priority: priority as any,
-          assignee,
-          tags: [],
-          dueDate: dueDate ? new Date(dueDate) : undefined
+          'nodes',
+          initialMetadata
+        )
+      } else if (!isElectron && projectId) {
+        // Web: use templates API
+        const templateName = selectedTemplatePath
+          .replace(/^templates\//, '')
+          .replace(/\.md$/, '')
+        await templatesApi.createNodeFromTemplate(projectId, {
+          template_name: templateName,
+          node_name: title,
+          parent_path: 'nodes',
+          initial_metadata: initialMetadata,
         })
-        onClose()
       } else {
         toast.error('No project context available')
+        return
       }
-    } catch (error) {
-      console.error('Failed to create task:', error)
-      toast.error('Failed to create task')
+
+      await loadNodes()
+      toast.success('Task created')
+      onClose()
+    } catch (error: any) {
+      console.error('Failed to create task from template:', error)
+      toast.error(error?.message || 'Failed to create task')
     } finally {
       setIsSubmitting(false)
     }
@@ -125,6 +156,26 @@ function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalP
               rows={3}
               placeholder="Enter task description"
             />
+          </div>
+
+          {/* Template selection */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Template</label>
+            <select
+              className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm"
+              value={selectedTemplatePath || ''}
+              onChange={(e) => setSelectedTemplatePath(e.target.value || null)}
+              disabled={isLoadingTemplates || templates.length === 0}
+            >
+              <option value="" disabled>
+                {isLoadingTemplates ? 'Loading templates...' : 'Select a template...'}
+              </option>
+              {templates.map((t) => (
+                <option key={t.path} value={t.path}>
+                  {t.metadata?.title || t.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -193,6 +244,7 @@ function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalP
           </div>
         </form>
       </div>
+      {/* No separate dialog; templates are selected from dropdown */}
     </div>
   )
 }
