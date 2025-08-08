@@ -1,4 +1,5 @@
 import { Calendar, User, Tag, MoreVertical, MessageSquare, Link, FileText, AlertTriangle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { format } from 'date-fns'
 import { useSortable } from '@dnd-kit/sortable'
@@ -26,10 +27,25 @@ interface TaskCardProps {
   node: VerbweaverNode
   isDragging?: boolean
   onClick?: (node: VerbweaverNode) => void
+  onRequestDelete?: (node: VerbweaverNode) => void
   hasInvalidStatus?: boolean
 }
 
-function TaskCard({ node, isDragging, onClick, hasInvalidStatus }: TaskCardProps) {
+function TaskCard({ node, isDragging, onClick, onRequestDelete, hasInvalidStatus }: TaskCardProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    if (menuOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [menuOpen])
   const {
     attributes,
     listeners,
@@ -114,9 +130,44 @@ function TaskCard({ node, isDragging, onClick, hasInvalidStatus }: TaskCardProps
             </div>
           )}
         </div>
-        <button className="p-0.5 rounded hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity">
-          <MoreVertical className="w-4 h-4" />
-        </button>
+        <div className="relative" ref={menuRef}>
+          <button
+            className="p-0.5 rounded hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation()
+              setMenuOpen((v) => !v)
+            }}
+            title="Task actions"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+          {menuOpen && (
+            <div
+              className="absolute right-0 mt-1 w-36 rounded-md border bg-popover text-popover-foreground shadow focus:outline-none z-20"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={() => {
+                  setMenuOpen(false)
+                  onClick?.(node)
+                }}
+              >
+                View details
+              </button>
+              <div className="h-px bg-border my-1" />
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-destructive hover:text-destructive-foreground"
+                onClick={() => {
+                  setMenuOpen(false)
+                  onRequestDelete?.(node)
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Description */}

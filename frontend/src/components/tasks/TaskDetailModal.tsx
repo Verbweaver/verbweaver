@@ -39,9 +39,10 @@ interface TaskDetailModalProps {
   onUpdate: (node: VerbweaverNode) => void
   availableStatuses?: string[]
   columns?: KanbanColumn[]
+  onDelete?: () => void
 }
 
-function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }: TaskDetailModalProps) {
+function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, onDelete }: TaskDetailModalProps) {
   const { updateNode, getNode } = useNodeStore()
   const { addEditorTab } = useTabStore()
   const navigate = useNavigate()
@@ -261,12 +262,14 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns }
             >
               <Edit3 className="w-4 h-4" />
             </button>
-            <button
-              onClick={handleOpenInEditor}
-              className="p-2 rounded hover:bg-accent"
-            >
+            <button onClick={handleOpenInEditor} className="p-2 rounded hover:bg-accent">
               <FileText className="w-4 h-4" />
             </button>
+            {onDelete && (
+              <button onClick={onDelete} className="p-2 rounded hover:bg-accent" title="Delete task">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-2 rounded hover:bg-accent"
