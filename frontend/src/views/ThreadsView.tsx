@@ -17,6 +17,7 @@ import {
 import { Plus, MoreHorizontal, Calendar, User, Tag, MessageSquare, Link, Settings } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { projectsApi } from '../api/projects'
 import { TaskState } from '@verbweaver/shared'
 import TaskCard from '../components/tasks/TaskCard'
@@ -94,7 +95,7 @@ const defaultColumns: KanbanColumn[] = [
 
 function ThreadsView() {
   const { currentProject } = useProjectStore()
-  const { nodes, loadNodes, updateTaskStatus, isLoading } = useNodeStore()
+  const { nodes, loadNodes, updateTaskStatus, deleteNode, isLoading } = useNodeStore()
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [selectedColumn, setSelectedColumn] = useState<TaskState | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -104,6 +105,7 @@ function ThreadsView() {
   const [defaultColumnId, setDefaultColumnId] = useState<string>(defaultColumns[0].id)
   const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false)
   const [isLoadingColumns, setIsLoadingColumns] = useState(true)
+  const [confirmState, setConfirmState] = useState<{ open: boolean; nodePath?: string; nodeName?: string }>({ open: false })
   
   // Handle URL parameters for opening specific tasks
   const { taskPath } = useParams()
@@ -252,6 +254,11 @@ function ThreadsView() {
     setIsDetailModalOpen(true)
   }
 
+  const handleRequestDelete = (node: VerbweaverNode) => {
+    const name = node.metadata?.title || node.name
+    setConfirmState({ open: true, nodePath: node.path, nodeName: name })
+  }
+
   const handleTaskUpdate = (updatedNode: VerbweaverNode) => {
     setSelectedTask(updatedNode)
     // The nodeStore will handle the update automatically
@@ -337,6 +344,7 @@ function ThreadsView() {
                           node={node}
                           isDragging={activeId === node.path}
                           onClick={handleTaskClick}
+                          onRequestDelete={handleRequestDelete}
                         />
                       ))}
                     </SortableContext>
@@ -362,6 +370,7 @@ function ThreadsView() {
                           node={node}
                           isDragging={activeId === node.path}
                           onClick={handleTaskClick}
+                          onRequestDelete={handleRequestDelete}
                           hasInvalidStatus={true}
                         />
                       ))}
@@ -406,6 +415,9 @@ function ThreadsView() {
             setSelectedTask(null)
           }}
           onUpdate={handleTaskUpdate}
+          onDelete={() => {
+            if (selectedTask) handleRequestDelete(selectedTask)
+          }}
         />
       )}
 
@@ -419,6 +431,27 @@ function ThreadsView() {
               onClose={() => setIsColumnManagerOpen(false)}
             />
       )}
+      <ConfirmDialog
+      isOpen={confirmState.open}
+      title="Delete task"
+      message={`Are you sure you want to delete "${confirmState.nodeName || ''}"? This action cannot be undone.`}
+      confirmLabel="Delete"
+      cancelLabel="Cancel"
+      onConfirm={async () => {
+        if (!confirmState.nodePath) return
+        try {
+          await deleteNode(confirmState.nodePath)
+          // If deleted task was open in details, close it
+          if (selectedTask?.path === confirmState.nodePath) {
+            setIsDetailModalOpen(false)
+            setSelectedTask(null)
+          }
+        } finally {
+          setConfirmState({ open: false })
+        }
+      }}
+      onCancel={() => setConfirmState({ open: false })}
+      />
     </div>
   )
 }
