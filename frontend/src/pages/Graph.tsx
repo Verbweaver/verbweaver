@@ -369,25 +369,20 @@ function GraphView() {
   const handleCreateFolder = useCallback(
     async (folderName: string) => {
       if (!folderName) return
-      
+      const baseParent = parentPathForNewNode && parentPathForNewNode.length > 0 ? parentPathForNewNode : 'nodes'
       try {
         if (isElectron && currentProjectPath && window.electronAPI) {
-          // In Electron mode, create a folder by creating a hidden file inside it
-          // This will automatically create the directory structure
-          const dummyFilePath = `nodes/${folderName}/.gitkeep`
-          const absolutePath = `${currentProjectPath}/${dummyFilePath}`.replace(/\/+/g, '/')
+          const dummyFilePath = `${baseParent}/${folderName}/.gitkeep`.replace(/\\/g, '/').replace(/\/\//g, '/')
+          const absolutePath = `${currentProjectPath}/${dummyFilePath}`.replace(/\\/g, '/').replace(/\/\//g, '/')
           await window.electronAPI.writeFile(absolutePath, '')
           await loadNodes()
           toast.success('Folder created')
         } else if (!isElectron && currentProject?.id) {
-          // Web mode - use API
           const response = await apiClient.post(`/projects/${currentProject.id}/folders`, {
-            parent_path: 'nodes',
+            parent_path: baseParent,
             folder_name: folderName
           })
-          
           if (response.status !== 200) throw new Error('Failed to create folder')
-          
           await loadNodes()
           toast.success('Folder created')
         } else {
@@ -396,9 +391,12 @@ function GraphView() {
       } catch (error) {
         console.error('Failed to create folder:', error)
         toast.error('Failed to create folder')
+      } finally {
+        // Reset parent path after creation
+        setParentPathForNewNode('')
       }
     },
-    [currentProject, currentProjectPath, loadNodes]
+    [currentProject, currentProjectPath, loadNodes, parentPathForNewNode]
   )
 
   // Handle creating child node in folder
@@ -406,6 +404,16 @@ function GraphView() {
     async (parentPath: string) => {
       setParentPathForNewNode(parentPath)
       setTemplateDialogOpen(true)
+      setContextMenu(null)
+    },
+    []
+  )
+
+  // Handle creating child folder in folder
+  const handleCreateChildFolder = useCallback(
+    async (parentPath: string) => {
+      setParentPathForNewNode(parentPath)
+      setFolderDialogOpen(true)
       setContextMenu(null)
     },
     []
@@ -721,6 +729,7 @@ function GraphView() {
           }}
           onDeleteMultiple={() => setMultiDeleteOpen(true)}
           multiCount={selectedNodeIds.size > 1 ? selectedNodeIds.size : 0}
+          onCreateChildFolder={handleCreateChildFolder}
           onEditNode={handleEditNode}
           onCreateChildNode={handleCreateChildNode}
           onSeeTask={(nodeId) => {

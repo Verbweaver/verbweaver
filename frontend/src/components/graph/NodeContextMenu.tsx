@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { desktopTemplatesApi } from '../../api/desktop-templates'
 import { templatesApi, Template } from '../../api/templates'
 import { useProjectStore } from '../../store/projectStore'
-import { Plus, Trash2, Edit, Link, Folder, FolderPlus, Loader2, CheckSquare, Paperclip } from 'lucide-react'
+import { Plus, Trash2, Edit, Link, FolderPlus, CheckSquare, Paperclip, Loader2 } from 'lucide-react'
 
 interface NodeContextMenuProps {
   x: number
@@ -15,6 +15,7 @@ interface NodeContextMenuProps {
   onDeleteNode: (nodeId: string) => void
   onDeleteMultiple?: () => void
   onCreateChildNode?: (parentPath: string) => void
+  onCreateChildFolder?: (parentPath: string) => void
   onEditNode?: (nodeId: string) => void
   onSeeTask?: (nodeId: string) => void
   onUnlinkEdge?: (edgeId: string) => void
@@ -23,7 +24,7 @@ interface NodeContextMenuProps {
   onClose: () => void
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onDeleteMultiple, multiCount = 0, onClose }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onDeleteMultiple, multiCount = 0, onClose }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -169,6 +170,16 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
               >
                 <Plus className="w-3 h-3" />
                 Create Node in Folder
+              </button>
+              <button
+                onClick={() => {
+                  // Open the folder creation dialog scoped to this folder
+                  onCreateChildFolder && onCreateChildFolder(nodeId)
+                }}
+                className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+              >
+                <FolderPlus className="w-3 h-3" />
+                Create Folder in Folder
               </button>
               <div className="h-px bg-border my-1" />
             </>
