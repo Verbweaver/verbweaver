@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
-import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2 } from 'lucide-react'
+import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip } from 'lucide-react'
 import { editorApi } from '../api/editorApi'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
@@ -13,6 +13,7 @@ import toast from 'react-hot-toast'
 import { EDITOR_DEFAULT_FONT_SIZE } from '@verbweaver/shared'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useNodeStore } from '../store/nodeStore'
+import { FileStorage, StoredFile } from '../utils/fileStorage'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
@@ -41,6 +42,7 @@ function EditorView() {
   const [localFilePath, setLocalFilePath] = useState<string | null>(null)
   const [localFileName, setLocalFileName] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<{ open: boolean }>({ open: false })
+  const [attachOpen, setAttachOpen] = useState(false)
 
   // Load file when filePath changes (web) or in Electron
   useEffect(() => {
@@ -120,6 +122,15 @@ function EditorView() {
       }
     }
   }, [currentFile, currentProject, content, isModified, saveFile, localFilePath])
+
+  // Attachment picker
+  useEffect(() => {
+    if (attachOpen) {
+      const input = document.getElementById('editor-attach-input') as HTMLInputElement | null
+      input?.click()
+      setAttachOpen(false)
+    }
+  }, [attachOpen])
 
   // Fetch preview when in preview mode
   useEffect(() => {
@@ -313,6 +324,14 @@ function EditorView() {
            </button>
 
           <button
+            onClick={() => setAttachOpen(true)}
+            className="p-1.5 rounded hover:bg-accent"
+            title="Attach files"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+
+          <button
             onClick={handleSave}
             disabled={!isModified}
             className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
@@ -400,6 +419,95 @@ function EditorView() {
       cancelLabel="Cancel"
       onConfirm={handleConfirmDelete}
       onCancel={() => setConfirmState({ open: false })}
+      />
+
+      {/* Hidden file input for attachments */}
+      <input
+        id="editor-attach-input"
+        type="file"
+        multiple
+        style={{ display: 'none' }}
+        onChange={async (e) => {
+          const files = e.target.files
+          if (!files) return
+          try {
+            // Determine the node path in project-relative form
+            let nodePath: string | null = null
+            if (isElectron && filePath) {
+              const decoded = (() => { try { return decodeURIComponent(filePath) } catch { return filePath } })()
+              if (currentProjectPath) {
+                const normProject = currentProjectPath.replace(/\\/g, '/').replace(/\/$/, '')
+                const normFile = decoded.replace(/\\/g, '/')
+                if (normFile.startsWith(normProject + '/')) {
+                  nodePath = normFile.substring(normProject.length + 1)
+                } else {
+                  nodePath = decoded
+                }
+              } else {
+                nodePath = decoded
+              }
+            } else if (!isElectron && currentFile) {
+              nodePath = (currentFile as any).path || currentFile.id
+            }
+            if (!nodePath) return
+
+            // Ensure the node is present in the store (Editor may open before nodes are loaded)
+            let store = useNodeStore.getState()
+            if (!store.nodes.get(nodePath)) {
+              try { await store.loadNodes() } catch {}
+              // Re-read fresh state after async load
+              store = useNodeStore.getState()
+            }
+            if (!store.nodes.get(nodePath)) {
+              toast.error('This file is not a Node (or nodes not loaded). Open a node under nodes/ to attach files.')
+              return
+            }
+
+            const uploaded: StoredFile[] = []
+            for (const f of Array.from(files)) {
+              const sf = await FileStorage.uploadFile(f, nodePath)
+              if (sf) uploaded.push(sf)
+            }
+
+            await store.updateNode(nodePath, {
+              metadata: {
+                task: {
+                  ...((store.nodes.get(nodePath)?.metadata as any)?.task || {}),
+                  files: [
+                    ...((((store.nodes.get(nodePath)?.metadata as any)?.task || {}).files) || []),
+                    ...uploaded,
+                  ],
+                } as any,
+              },
+            })
+            toast.success('Files attached')
+
+            // Refresh Editor content so updated frontmatter is visible immediately
+            if (isElectron && window.electronAPI) {
+              try {
+                // Prefer the already-known absolute localFilePath if available
+                let absolute: string | null = localFilePath
+                if (!absolute && filePath) {
+                  const decoded = (() => { try { return decodeURIComponent(filePath) } catch { return filePath } })()
+                  absolute = decoded
+                }
+                if (absolute) {
+                  const latest = await window.electronAPI.readFile(absolute)
+                  setContent(latest)
+                  setIsModified(false)
+                }
+              } catch (e) {
+                console.warn('Failed to refresh editor content after attachments:', e)
+              }
+            }
+          } catch (err) {
+            console.error('Attach files failed', err)
+            toast.error('Failed to attach files')
+          } finally {
+            const input = document.getElementById('editor-attach-input') as HTMLInputElement | null
+            if (input) input.value = ''
+          }
+        }}
       />
     </div>
   )

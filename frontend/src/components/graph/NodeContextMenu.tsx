@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { desktopTemplatesApi } from '../../api/desktop-templates'
 import { templatesApi, Template } from '../../api/templates'
 import { useProjectStore } from '../../store/projectStore'
-import { Plus, Trash2, Edit, Link, Folder, FolderPlus, Loader2, CheckSquare } from 'lucide-react'
+import { Plus, Trash2, Edit, Link, Folder, FolderPlus, Loader2, CheckSquare, Paperclip } from 'lucide-react'
 
 interface NodeContextMenuProps {
   x: number
@@ -17,10 +17,11 @@ interface NodeContextMenuProps {
   onEditNode?: (nodeId: string) => void
   onSeeTask?: (nodeId: string) => void
   onUnlinkEdge?: (edgeId: string) => void
+  onAttachFiles?: (nodeId: string) => void
   onClose: () => void
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onEditNode, onSeeTask, onUnlinkEdge, onClose }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onClose }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -178,6 +179,18 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
           >
             <Link className="w-3 h-3" />
             Create Link
+          </button>
+
+          {/* Attach files */}
+          <button
+            onClick={() => {
+              onAttachFiles && nodeId && onAttachFiles(nodeId)
+              onClose()
+            }}
+            className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+          >
+            <Paperclip className="w-3 h-3" />
+            Attach files
           </button>
 
           {hasTask && onSeeTask && (
