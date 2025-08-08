@@ -25,6 +25,7 @@ import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 import LayoutControls from '../components/graph/LayoutControls'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { NODE_TYPES } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { createNodeFromTemplateDesktop } from '../api/desktop-templates';
@@ -52,7 +53,8 @@ function GraphView() {
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
   const [pendingNodePosition, setPendingNodePosition] = useState<{ x: number; y: number } | undefined>()
   const [parentPathForNewNode, setParentPathForNewNode] = useState<string>('')
-  
+  const [confirmState, setConfirmState] = useState<{ open: boolean; nodeId?: string; nodeName?: string }>({ open: false })
+
   // Connect WebSocket for real-time updates
   const projectId = currentProject?.id?.toString()
   useWebSocket(projectId)
@@ -383,8 +385,13 @@ function GraphView() {
             metadataForNewNode 
           });
           
+          // Convert template path to template name expected by API (strip prefix and extension)
+          const templateName = templatePath
+            .replace(/^templates\//, '')
+            .replace(/\.md$/, '')
+          
           nodeResponseData = await templatesApi.createNodeFromTemplate(projectId, {
-            template_path: templatePath,       // Relative path to template, e.g., "templates/Empty.md"
+            template_name: templateName,
             node_name: nodeName,
             parent_path: targetParentPath,     // Relative to 'nodes' dir, or 'nodes' for root of nodes
             initial_metadata: metadataForNewNode,
@@ -430,20 +437,11 @@ function GraphView() {
   );
 
   // Handle deleting node
-  const handleDeleteNode = useCallback(
-    async (nodeId: string) => {
-      try {
-        await deleteNode(nodeId)
-        // Nodes and edges will be removed automatically via store update
-        toast.success('Node deleted')
-      } catch (error) {
-        toast.error('Failed to delete node')
-      }
-      
-      setContextMenu(null)
-    },
-    [deleteNode]
-  )
+  const handleDeleteNode = useCallback((nodeId: string) => {
+    const nodeName = nodeId.split('/').pop() || nodeId
+    setConfirmState({ open: true, nodeId, nodeName })
+    setContextMenu(null)
+  }, [])
 
   // Handle editing node
   const handleEditNode = useCallback(
@@ -611,6 +609,23 @@ function GraphView() {
           onClose={() => setContextMenu(null)}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={confirmState.open}
+        title="Delete node"
+        message={`Are you sure you want to delete "${confirmState.nodeName || ''}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={async () => {
+          if (!confirmState.nodeId) return
+          try {
+            await deleteNode(confirmState.nodeId)
+          } finally {
+            setConfirmState({ open: false })
+          }
+        }}
+        onCancel={() => setConfirmState({ open: false })}
+      />
       
       <FolderCreateDialog
         isOpen={folderDialogOpen}

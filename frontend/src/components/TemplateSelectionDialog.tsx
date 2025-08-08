@@ -96,12 +96,16 @@ export function TemplateSelectionDialog({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+    >
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       
       {/* Dialog */}
-      <div className="relative bg-background border rounded-lg shadow-lg w-full max-w-4xl max-h-[80vh] flex flex-col">
+      <div
+        className="relative bg-background border rounded-lg shadow-lg w-full max-w-4xl max-h-[80vh] flex flex-col"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
           <div>
@@ -187,7 +191,9 @@ export function TemplateSelectionDialog({
               onChange={(e) => setNodeName(e.target.value)}
               placeholder="Enter node name..."
               className="mt-1 w-full px-3 py-2 border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              autoFocus
               onKeyDown={(e) => {
+                e.stopPropagation()
                 if (e.key === 'Enter' && nodeName.trim() && selectedTemplate) {
                   handleCreate()
                 }
