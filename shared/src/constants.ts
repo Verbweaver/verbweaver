@@ -121,6 +121,7 @@ export const STORAGE_KEYS = {
   THEME: 'verbweaver_theme',
   SIDEBAR_WIDTH: 'verbweaver_sidebar_width',
   COMPILER_SELECTION: 'verbweaver_compiler_selection',
+  EDITOR_HIDE_METADATA: 'verbweaver_editor_hide_metadata',
 } as const;
 
 // Regex patterns
