@@ -44,6 +44,15 @@ function EditorSidebar() {
     }
   }, [currentProject, currentProjectPath])
 
+  // Listen for external refresh events (e.g., after deletion from Editor)
+  useEffect(() => {
+    const handleRefresh = () => {
+      loadFileTree()
+    }
+    window.addEventListener('refresh-file-tree', handleRefresh as EventListener)
+    return () => window.removeEventListener('refresh-file-tree', handleRefresh as EventListener)
+  }, [])
+
   const loadFileTree = async () => {
     if (!currentProject) return
     
