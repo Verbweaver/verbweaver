@@ -6,6 +6,7 @@ import { editorApi } from '../../api/editorApi'
 import { TemplateSelectionDialog } from '../TemplateSelectionDialog'
 import { FolderCreateDialog } from '../FolderCreateDialog'
 import { templatesApi } from '../../api/templates'
+import { createNodeFromTemplateDesktop } from '../../api/desktop-templates'
 import { apiClient } from '../../api/client'
 import clsx from 'clsx'
 import FileCreateDialog from './FileCreateDialog'
@@ -295,34 +296,42 @@ Add any additional notes or references here.
   const handleTemplateSelected = async (templatePath: string, nodeName: string, parentPath: string) => {
     if (!currentProject) return
     
+    const targetParentPath = parentPath || selectedFolder || 'nodes'
+    const metadataForNewNode: Record<string, any> = {}
+    
     try {
-      // Extract template name from path (e.g., "templates/MyTemplate.md" -> "MyTemplate")
-      const templateName = templatePath
-        .replace(/^templates\//, '')
-        .replace(/\.md$/, '');
-
-      console.log('Creating node with:', {
-        projectId: currentProject.id,
-        templateName,
-        nodeName,
-        parentPath: parentPath || 'nodes'
-      });
-
-      await templatesApi.createNodeFromTemplate(currentProject.id.toString(), {
-        template_name: templateName,
-        node_name: nodeName,
-        parent_path: parentPath || 'nodes'
-      });
-      
-      // Reload the file tree
-      await loadFileTree();
-      toast.success('Node created');
+      let response
+      if (window.electronAPI && currentProjectPath) {
+        // Desktop path: use IPC helper
+        response = await createNodeFromTemplateDesktop(
+          templatePath,
+          nodeName,
+          targetParentPath,
+          metadataForNewNode
+        )
+      } else if (!window.electronAPI && currentProject?.id) {
+        // Web path: convert template path to name
+        const templateName = templatePath
+          .replace(/^templates\//, '')
+          .replace(/\.md$/, '')
+        response = await templatesApi.createNodeFromTemplate(currentProject.id.toString(), {
+          template_name: templateName,
+          node_name: nodeName,
+          parent_path: targetParentPath,
+          initial_metadata: metadataForNewNode,
+        })
+      } else {
+        toast.error('Project context not available for creating node')
+        return
+      }
+      // Refresh files to show new node
+      await loadFileTree()
+      toast.success('Node created from template')
     } catch (error: any) {
-      console.error('Failed to create node:', error);
-      const errorDetail = error.response?.data?.detail || error.message;
-      toast.error(`Failed to create node: ${errorDetail}`);
+      console.error('Failed to create node from template:', error)
+      toast.error(error?.message || 'Failed to create node')
     }
-  };
+  }
 
   const handleDragStart = useCallback((e: React.DragEvent, node: FileNode) => {
     setDraggedNode(node)
