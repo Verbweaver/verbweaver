@@ -10,10 +10,12 @@ import { useTabStore } from '../store/tabStore'
 import EditorSidebar from '../components/editor/EditorSidebar'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import toast from 'react-hot-toast'
-import { EDITOR_DEFAULT_FONT_SIZE } from '@verbweaver/shared'
+import { EDITOR_DEFAULT_FONT_SIZE, STORAGE_KEYS } from '@verbweaver/shared'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useNodeStore } from '../store/nodeStore'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
@@ -43,6 +45,16 @@ function EditorView() {
   const [localFileName, setLocalFileName] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<{ open: boolean }>({ open: false })
   const [attachOpen, setAttachOpen] = useState(false)
+
+  // Persisted preference: hide YAML frontmatter in editor and preview
+  interface EditorPrefsState { hideMetadata: boolean; setHideMetadata: (v: boolean) => void }
+  const useEditorPrefs = create<EditorPrefsState>()(
+    persist(
+      (set) => ({ hideMetadata: false, setHideMetadata: (v) => set({ hideMetadata: v }) }),
+      { name: STORAGE_KEYS.EDITOR_HIDE_METADATA }
+    )
+  )
+  const { hideMetadata, setHideMetadata } = useEditorPrefs()
 
   // Load file when filePath changes (web) or in Electron
   useEffect(() => {
@@ -139,7 +151,8 @@ function EditorView() {
       const filename = localFileName || currentFile?.name || ''
       if (!filename.endsWith('.md')) return
              try {
-         const html = await editorApi.previewMarkdown(content, currentProjectPath || undefined)
+         const source = hideMetadata ? content.replace(/^---\s*[\s\S]*?\n---\s*\n?/, '') : content
+         const html = await editorApi.previewMarkdown(source, currentProjectPath || undefined)
          setPreviewHtml(html)
        } catch (e) {
          console.error('preview failed', e)
@@ -147,7 +160,7 @@ function EditorView() {
     }
     const id = setTimeout(fetchPreview, 400)
     return () => clearTimeout(id)
-  }, [isPreview, content, localFileName, currentFile])
+  }, [isPreview, content, localFileName, currentFile, hideMetadata])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -323,13 +336,23 @@ function EditorView() {
              <Eye className="w-4 h-4" />
            </button>
 
-          <button
+            <button
             onClick={() => setAttachOpen(true)}
             className="p-1.5 rounded hover:bg-accent"
             title="Attach files"
           >
             <Paperclip className="w-4 h-4" />
           </button>
+
+            <label className="flex items-center gap-1 text-xs border-l pl-2 ml-1 cursor-pointer" title="Hide YAML metadata">
+              <input
+                type="checkbox"
+                className="accent-primary"
+                checked={hideMetadata}
+                onChange={(e) => setHideMetadata(e.target.checked)}
+              />
+              Hide Metadata
+            </label>
 
           <button
             onClick={handleSave}
@@ -392,7 +415,7 @@ function EditorView() {
             <div className="h-full w-full overflow-auto bg-background p-4" dangerouslySetInnerHTML={{ __html: previewHtml }} />
           ) : (
             <Editor
-            value={content}
+            value={hideMetadata ? content.replace(/^---\s*[\s\S]*?\n---\s*\n?/, '') : content}
             onChange={handleEditorChange}
             language="markdown"
             theme={theme === 'dark' ? 'vs-dark' : 'light'}
