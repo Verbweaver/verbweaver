@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
-import { Save, FileText, Plus, Minus, X, Eye, HelpCircle } from 'lucide-react'
+import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2 } from 'lucide-react'
 import { editorApi } from '../api/editorApi'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
@@ -11,6 +11,8 @@ import EditorSidebar from '../components/editor/EditorSidebar'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import toast from 'react-hot-toast'
 import { EDITOR_DEFAULT_FONT_SIZE } from '@verbweaver/shared'
+import ConfirmDialog from '../components/ConfirmDialog'
+import { useNodeStore } from '../store/nodeStore'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
@@ -20,6 +22,7 @@ function EditorView() {
   const navigate = useNavigate()
   const { currentProject, currentProjectPath } = useProjectStore()
   const { theme } = useThemeStore()
+  const { deleteNode } = useNodeStore()
   const { 
     currentFile, 
     openFiles, 
@@ -37,8 +40,9 @@ function EditorView() {
   const [previewHtml, setPreviewHtml] = useState<string>('')
   const [localFilePath, setLocalFilePath] = useState<string | null>(null)
   const [localFileName, setLocalFileName] = useState<string | null>(null)
+  const [confirmState, setConfirmState] = useState<{ open: boolean }>({ open: false })
 
-  // Load file when nodeId or filePath changes
+  // Load file when filePath changes (web) or in Electron
   useEffect(() => {
     const loadContent = async () => {
       if (isElectron && filePath && window.electronAPI) {
@@ -54,9 +58,10 @@ function EditorView() {
           toast.error('Failed to load file')
           navigate('/editor')
         }
-      } else if (nodeId && currentProject) {
-        // For web version, use the API
-        loadFile(currentProject.id, nodeId)
+      } else if (!isElectron && filePath && currentProject) {
+        // For web version, use the API with path from route
+        const decoded = decodeURIComponent(filePath)
+        loadFile(currentProject.id, decoded)
           .then((file) => {
             setContent(file.content)
             setIsModified(false)
@@ -69,7 +74,7 @@ function EditorView() {
     }
     
     loadContent()
-  }, [nodeId, filePath, currentProject, loadFile, navigate])
+  }, [filePath, currentProject, loadFile, navigate])
 
   // Update tab modified state
   useEffect(() => {
@@ -199,6 +204,84 @@ function EditorView() {
 
   const displayFileName = isElectron ? localFileName : currentFile?.name
 
+  const handleRequestDelete = useCallback(() => {
+    setConfirmState({ open: true })
+  }, [])
+
+  const resolveDeletePath = (): string | null => {
+    // Electron: use route filePath if present; compute relative to project if possible
+    if (isElectron && filePath) {
+      const decoded = (() => { try { return decodeURIComponent(filePath) } catch { return filePath } })()
+      if (currentProjectPath) {
+        const normProject = currentProjectPath.replace(/\\/g, '/').replace(/\/$/, '')
+        const normFile = decoded.replace(/\\/g, '/')
+        if (normFile.startsWith(normProject + '/')) {
+          return normFile.substring(normProject.length + 1)
+        }
+      }
+      return decoded
+    }
+    // Electron: fallback to localFilePath if set
+    if (isElectron && localFilePath) {
+      if (currentProjectPath) {
+        const normProject = currentProjectPath.replace(/\\/g, '/').replace(/\/$/, '')
+        const normFile = localFilePath.replace(/\\/g, '/')
+        if (normFile.startsWith(normProject + '/')) {
+          return normFile.substring(normProject.length + 1)
+        }
+      }
+      return localFilePath
+    }
+    // Web: prefer API-provided path, else route param, else id
+    if (!isElectron && currentFile && (currentFile as any).path) {
+      return (currentFile as any).path as string
+    }
+    if (!isElectron && filePath) {
+      try {
+        return decodeURIComponent(filePath)
+      } catch {
+        return filePath
+      }
+    }
+    if (!isElectron && currentFile) {
+      return (currentFile.id || '').toString()
+    }
+    return null
+  }
+
+  const handleConfirmDelete = useCallback(async () => {
+    const path = resolveDeletePath()
+    console.log('[Editor] Delete requested. Resolved path =', path, {
+      isElectron,
+      routeFilePath: filePath,
+      editorCurrentFile: currentFile,
+      localFilePath,
+      currentProjectPath,
+    })
+    if (!path) {
+      toast.error('Could not resolve path for deletion.')
+      setConfirmState({ open: false })
+      return
+    }
+    try {
+      console.log('[Editor] Calling deleteNode with path:', path)
+      await deleteNode(path)
+      // Notify the file tree to refresh
+      window.dispatchEvent(new Event('refresh-file-tree'))
+      // Close the file/tab and navigate away
+      if (currentFile) {
+        handleCloseFile()
+      } else {
+        navigate('/editor')
+      }
+    } catch (e) {
+      // Error toast handled by store
+      console.error('[Editor] deleteNode failed:', e)
+    } finally {
+      setConfirmState({ open: false })
+    }
+  }, [deleteNode, currentFile, handleCloseFile, navigate])
+
   return (
     <div className="h-full flex flex-col">
       {/* Editor Header */}
@@ -265,6 +348,15 @@ function EditorView() {
           >
             <X className="w-4 h-4" />
           </button>
+          {/* Delete Node */}
+          <button
+            onClick={handleRequestDelete}
+            className="p-1.5 rounded hover:bg-accent ml-1"
+            title="Delete node"
+            disabled={!displayFileName}
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -299,6 +391,16 @@ function EditorView() {
           )}
         </Panel>
       </PanelGroup>
+      {/* Confirm Delete Dialog */}
+      <ConfirmDialog
+      isOpen={confirmState.open}
+      title="Delete node"
+      message={`Are you sure you want to delete "${displayFileName || 'this file'}"? This action cannot be undone.`}
+      confirmLabel="Delete"
+      cancelLabel="Cancel"
+      onConfirm={handleConfirmDelete}
+      onCancel={() => setConfirmState({ open: false })}
+      />
     </div>
   )
 }
