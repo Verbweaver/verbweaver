@@ -458,25 +458,42 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     
     try {
       if (isElectron && window.electronAPI && currentProjectPath) {
-        // Build absolute path for Electron
-        const absolutePath = path.startsWith(currentProjectPath) ? path : joinPaths(currentProjectPath, path);
-        await window.electronAPI.deleteFile(absolutePath);
-        // Also try to delete metadata file if it exists
-        try {
-          const absoluteMetadataPath = joinPaths(currentProjectPath, `${path}.metadata.md`);
-          await window.electronAPI.deleteFile(absoluteMetadataPath);
-        } catch (e) {
-          // Ignore error if metadata file doesn't exist
+        // Prefer dedicated Node deletion handler that also cleans backlinks
+        if (window.electronAPI.deleteNodeFile) {
+          await window.electronAPI.deleteNodeFile(path);
+        } else {
+          // Fallback to raw file delete (no backlink cleanup)
+          const absolutePath = path.startsWith(currentProjectPath) ? path : joinPaths(currentProjectPath, path);
+          await window.electronAPI.deleteFile(absolutePath);
         }
       } else if (!isElectron) {
         await apiClient.delete(`/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}`);
       }
       
-      // Remove from store
+      // Remove from store and strip backlinks locally for immediate UI consistency
+      const deletedNode = get().nodes.get(path);
+      const deletedId = deletedNode?.metadata?.id;
       set(state => {
         const newNodes = new Map(state.nodes);
         newNodes.delete(path);
-        return { nodes: newNodes };
+        if (deletedId) {
+          for (const [nodePath, node] of newNodes) {
+            const links = Array.isArray(node.metadata?.links) ? node.metadata.links : [];
+            if (links.includes(deletedId)) {
+              const filtered = links.filter((id: string) => id !== deletedId);
+              const updated = {
+                ...node,
+                metadata: {
+                  ...node.metadata,
+                  links: filtered,
+                },
+                softLinks: filtered,
+              } as any;
+              newNodes.set(nodePath, updated);
+            }
+          }
+        }
+        return { nodes: newNodes } as any;
       });
       
       toast.success('Node deleted');
