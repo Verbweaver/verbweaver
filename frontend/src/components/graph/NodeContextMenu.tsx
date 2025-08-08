@@ -181,44 +181,48 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
                 <FolderPlus className="w-3 h-3" />
                 Create Folder in Folder
               </button>
-              <div className="h-px bg-border my-1" />
             </>
           )}
           
-          <button
-            onClick={() => {
-              // TODO: Open in editor
-              onEditNode && onEditNode(nodeId)
-              onClose()
-            }}
-            className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-          >
-            <Edit className="w-3 h-3" />
-            Edit
-          </button>
-          
-          <button
-            onClick={() => {
-              // TODO: Create link
-              onClose()
-            }}
-            className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-          >
-            <Link className="w-3 h-3" />
-            Create Link
-          </button>
+          {!isFolder && (
+            <>
+              <button
+                onClick={() => {
+                  onEditNode && onEditNode(nodeId)
+                  onClose()
+                }}
+                className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+              >
+                <Edit className="w-3 h-3" />
+                Edit
+              </button>
+              
+              <button
+                onClick={() => {
+                  // Future: create link
+                  onClose()
+                }}
+                className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+              >
+                <Link className="w-3 h-3" />
+                Create Link
+              </button>
+            </>
+          )}
 
           {/* Attach files */}
-          <button
-            onClick={() => {
-              onAttachFiles && nodeId && onAttachFiles(nodeId)
-              onClose()
-            }}
-            className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-          >
-            <Paperclip className="w-3 h-3" />
-            Attach files
-          </button>
+          {!isFolder && (
+            <button
+              onClick={() => {
+                onAttachFiles && nodeId && onAttachFiles(nodeId)
+                onClose()
+              }}
+              className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+            >
+              <Paperclip className="w-3 h-3" />
+              Attach files
+            </button>
+          )}
 
           {/* Multi-delete entry if multiple nodes are selected - consumer can decide visibility */}
 
