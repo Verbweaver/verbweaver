@@ -13,15 +13,17 @@ interface NodeContextMenuProps {
   hasTask?: boolean
   onCreateNode: (type: string, position?: { x: number; y: number }) => void
   onDeleteNode: (nodeId: string) => void
+  onDeleteMultiple?: () => void
   onCreateChildNode?: (parentPath: string) => void
   onEditNode?: (nodeId: string) => void
   onSeeTask?: (nodeId: string) => void
   onUnlinkEdge?: (edgeId: string) => void
   onAttachFiles?: (nodeId: string) => void
+  multiCount?: number
   onClose: () => void
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onClose }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onDeleteMultiple, multiCount = 0, onClose }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -143,7 +145,21 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
         </>
       )}
       
-      {nodeId && (
+      {/* If multiple are selected, show a simplified multi-select menu */}
+      {multiCount > 1 ? (
+        <>
+          <button
+            onClick={() => {
+              onDeleteMultiple && onDeleteMultiple();
+              onClose();
+            }}
+            className="w-full px-3 py-1.5 text-sm text-left hover:bg-destructive hover:text-destructive-foreground flex items-center gap-2"
+          >
+            <Trash2 className="w-3 h-3" />
+            Delete {multiCount} nodes
+          </button>
+        </>
+      ) : nodeId ? (
         <>
           {isFolder && onCreateChildNode && (
             <>
@@ -193,6 +209,8 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
             Attach files
           </button>
 
+          {/* Multi-delete entry if multiple nodes are selected - consumer can decide visibility */}
+
           {hasTask && onSeeTask && (
             <>
               <div className="h-px bg-border my-1" />
@@ -216,7 +234,7 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
             Delete
           </button>
         </>
-      )}
+      ) : null}
     </div>
   )
 }

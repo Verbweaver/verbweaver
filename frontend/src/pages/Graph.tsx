@@ -57,6 +57,11 @@ function GraphView() {
   const [parentPathForNewNode, setParentPathForNewNode] = useState<string>('')
   const [confirmState, setConfirmState] = useState<{ open: boolean; nodeId?: string; nodeName?: string }>({ open: false })
   const [attachTarget, setAttachTarget] = useState<string | null>(null)
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set())
+  const [multiDeleteOpen, setMultiDeleteOpen] = useState(false)
+  const [isShiftMarquee, setIsShiftMarquee] = useState(false)
+  const [selectionBase, setSelectionBase] = useState<Set<string> | null>(null)
+  const [ctrlMetaPressed, setCtrlMetaPressed] = useState(false)
 
   // Connect WebSocket for real-time updates
   const projectId = currentProject?.id?.toString()
@@ -68,6 +73,46 @@ function GraphView() {
       loadNodes()
     }
   }, [currentProject, loadNodes])
+
+  // Track Ctrl/Cmd modifier globally for selection union/toggle semantics
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') setCtrlMetaPressed(true)
+    }
+    const up = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') setCtrlMetaPressed(false)
+    }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+    }
+  }, [])
+
+  // Keyboard: Delete selected nodes
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeIds.size > 0) {
+        e.preventDefault()
+        if (selectedNodeIds.size === 1) {
+          const only = Array.from(selectedNodeIds)[0]
+          const isFolder = !!verbweaverNodes.get(only)?.isDirectory
+          if (isFolder) {
+            // Show bulk dialog for folder so contents are listed
+            setMultiDeleteOpen(true)
+          } else {
+            const name = only.split('/').pop() || only
+            setConfirmState({ open: true, nodeId: only, nodeName: name })
+          }
+        } else {
+          setMultiDeleteOpen(true)
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selectedNodeIds])
 
   // When an attach target is set, programmatically open the file picker
   useEffect(() => {
@@ -557,7 +602,22 @@ function GraphView() {
   }
 
   return (
-    <div className="h-full w-full">
+    <div
+      className="h-full w-full"
+      onMouseDown={(e) => {
+        if (e.shiftKey) {
+          setIsShiftMarquee(true)
+          setSelectionBase(new Set(selectedNodeIds))
+        } else {
+          setIsShiftMarquee(false)
+          setSelectionBase(null)
+        }
+      }}
+      onMouseUp={() => {
+        setIsShiftMarquee(false)
+        setSelectionBase(null)
+      }}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -568,8 +628,44 @@ function GraphView() {
         onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={onNodeContextMenu}
         onEdgeContextMenu={onEdgeContextMenu}
-        onPaneContextMenu={onPaneContextMenu}
-        onNodeClick={onNodeClick}
+        onPaneContextMenu={(e) => {
+          // If multiselect exists, opening pane menu should show multi menu as well
+          onPaneContextMenu(e)
+        }}
+        onNodeClick={(event, node) => {
+          // Let ReactFlow set selection; we'll adjust in onSelectionChange using modifiers
+          setSelectedNode(node.id)
+        }}
+        onSelectionChange={(params) => {
+          const clicked = new Set((params.nodes || []).map(n => n.id))
+          if (isShiftMarquee && selectionBase) {
+            const union = new Set(selectionBase)
+            clicked.forEach(id => union.add(id))
+            setSelectedNodeIds(union)
+            setNodes(prev => prev.map(n => ({ ...n, selected: union.has(n.id) })))
+            return
+          }
+          if (ctrlMetaPressed) {
+            setSelectedNodeIds(prev => {
+              const next = new Set(prev)
+              if (clicked.size === 1) {
+                const id = Array.from(clicked)[0]
+                if (next.has(id)) next.delete(id); else next.add(id)
+              } else {
+                clicked.forEach(id => next.add(id))
+              }
+              setNodes(prevNodes => prevNodes.map(n => ({ ...n, selected: next.has(n.id) })))
+              return next
+            })
+            return
+          }
+          // default replace behavior
+          setSelectedNodeIds(clicked)
+          setNodes(prev => prev.map(n => ({ ...n, selected: clicked.has(n.id) })))
+        }}
+        selectNodesOnDrag
+        multiSelectionKeyCode={null as any}
+        deleteKeyCode={null as any}
         nodeTypes={nodeTypes}
         fitView
         className="bg-background"
@@ -614,7 +710,17 @@ function GraphView() {
           isFolder={contextMenu.isFolder}
           hasTask={contextMenu.hasTask}
           onCreateNode={handleCreateNode}
-          onDeleteNode={handleDeleteNode}
+          onDeleteNode={(id) => {
+            const isFolder = !!verbweaverNodes.get(id)?.isDirectory
+            // If folder (even single), or multiple selected including this node, show multi-delete to list contents
+            if (isFolder || (selectedNodeIds.size > 1 && selectedNodeIds.has(id))) {
+              setMultiDeleteOpen(true)
+            } else {
+              handleDeleteNode(id)
+            }
+          }}
+          onDeleteMultiple={() => setMultiDeleteOpen(true)}
+          multiCount={selectedNodeIds.size > 1 ? selectedNodeIds.size : 0}
           onEditNode={handleEditNode}
           onCreateChildNode={handleCreateChildNode}
           onSeeTask={(nodeId) => {
@@ -637,11 +743,91 @@ function GraphView() {
           if (!confirmState.nodeId) return
           try {
             await deleteNode(confirmState.nodeId)
+            await loadNodes()
           } finally {
             setConfirmState({ open: false })
           }
         }}
         onCancel={() => setConfirmState({ open: false })}
+      />
+
+      {/* Multi-delete confirmation */}
+      <ConfirmDialog
+        isOpen={multiDeleteOpen}
+        title="Delete nodes"
+        message={(() => {
+          const paths = Array.from(selectedNodeIds)
+          const folders = paths.filter(p => verbweaverNodes.get(p)?.isDirectory)
+          const files = paths.filter(p => !verbweaverNodes.get(p)?.isDirectory)
+          if (folders.length > 0 && files.length > 0) {
+            return `You have selected both folders and files. Folders will not be deleted in a mixed selection. This will delete ${files.length} file(s).`
+          }
+          if (folders.length > 0) {
+            return `You are about to delete ${folders.length} folder(s) and all of their contents. This action cannot be undone.`
+          }
+          return `Are you sure you want to delete these ${files.length} file(s)? This action cannot be undone.`
+        })()}
+        items={(() => {
+          const paths = Array.from(selectedNodeIds)
+          const folders = paths.filter(p => verbweaverNodes.get(p)?.isDirectory)
+          const files = paths.filter(p => !verbweaverNodes.get(p)?.isDirectory)
+          if (folders.length > 0 && files.length > 0) {
+            // mixed: show only files
+            return files.map(id => ({
+              label: verbweaverNodes.get(id)?.metadata?.title || verbweaverNodes.get(id)?.name || id.split('/').pop() || id,
+              subLabel: id,
+            }))
+          }
+          if (folders.length > 0) {
+            // folders only: expand contents listing (basic approximation using child hard links approximation from store paths)
+            const items: { label: string; subLabel?: string }[] = []
+            folders.forEach(folderPath => {
+              items.push({ label: folderPath, subLabel: '(folder)' })
+              // naive expansion: list immediate children in our node map by prefix
+              Array.from(verbweaverNodes.keys())
+                .filter(p => p.startsWith(folderPath + '/'))
+                .forEach(p => items.push({ label: '  ' + (verbweaverNodes.get(p)?.metadata?.title || verbweaverNodes.get(p)?.name || p.split('/').pop() || p), subLabel: p }))
+            })
+            return items
+          }
+          // files only
+          return files.map(id => ({
+            label: verbweaverNodes.get(id)?.metadata?.title || verbweaverNodes.get(id)?.name || id.split('/').pop() || id,
+            subLabel: id,
+          }))
+        })()}
+        confirmLabel="Delete All"
+        cancelLabel="Cancel"
+        onConfirm={async () => {
+          try {
+            const paths = Array.from(selectedNodeIds)
+            const hasFolder = paths.some(p => verbweaverNodes.get(p)?.isDirectory)
+            const hasFile = paths.some(p => !verbweaverNodes.get(p)?.isDirectory)
+            if (hasFolder && hasFile) {
+              // mixed: delete files only
+              for (const id of paths) {
+                if (!verbweaverNodes.get(id)?.isDirectory) {
+                  await deleteNode(id)
+                }
+              }
+            } else if (hasFolder) {
+              // folders only
+              for (const id of paths) {
+                await deleteNode(id)
+              }
+            } else {
+              // files only
+              for (const id of paths) {
+                await deleteNode(id)
+              }
+            }
+            setSelectedNodeIds(new Set())
+            await loadNodes()
+          } finally {
+            setMultiDeleteOpen(false)
+          }
+        }}
+        onCancel={() => setMultiDeleteOpen(false)}
       />
       
       <FolderCreateDialog
