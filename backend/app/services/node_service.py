@@ -221,6 +221,23 @@ class NodeService:
         if not os.path.exists(full_path):
             raise FileNotFoundError(f"Node not found: {path}")
         
+        # Before deleting, remove soft links pointing to this node from all other nodes
+        try:
+            node_to_delete = await self.read_node(path)
+            target_id = node_to_delete['metadata'].get('id') if node_to_delete else None
+            if target_id:
+                all_nodes = await self.list_nodes()
+                for other in all_nodes:
+                    if other['path'] == path:
+                        continue
+                    other_links = other['metadata'].get('links', [])
+                    if target_id in other_links:
+                        cleaned_links = [lid for lid in other_links if lid != target_id]
+                        await self.update_node(other['path'], {'links': cleaned_links})
+        except Exception:
+            # Don't block deletion if cleanup fails
+            pass
+        
         files_to_remove = [path]
         
         # Check for metadata file

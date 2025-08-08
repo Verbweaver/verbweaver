@@ -1223,18 +1223,82 @@ task:
       throw new Error('No project path set. Cannot delete node file.');
     }
 
-    // The relativeFilePath is expected to be relative to the project root, 
-    // typically starting with 'nodes/', e.g., 'nodes/my-file.md'
-    const absoluteFilePath = path.join(projectPath, relativeFilePath);
+    // Normalize to forward slashes for consistency
+    const normalizedRel = relativeFilePath.replace(/\\/g, '/');
+    const absoluteFilePath = path.join(projectPath, normalizedRel);
 
     try {
-      if (!existsSync(absoluteFilePath)) {
-        // If file doesn't exist, it might have been already deleted. Log and succeed.
-        console.warn(`[graph:deleteNodeFile] File not found, possibly already deleted: ${absoluteFilePath}`);
-        return; // Consider this a success for idempotent deletion
+      let deletedNodeId: string | undefined;
+      if (existsSync(absoluteFilePath)) {
+        try {
+          const content = await fs.readFile(absoluteFilePath, 'utf8');
+          const parsed = matter(content);
+          if (parsed && parsed.data && typeof parsed.data === 'object') {
+            deletedNodeId = (parsed.data as any).id;
+          }
+        } catch (readErr) {
+          console.warn(`[graph:deleteNodeFile] Failed to read node before deletion: ${absoluteFilePath}`, readErr);
+        }
       }
-      await fs.unlink(absoluteFilePath);
-      console.log(`[graph:deleteNodeFile] Deleted file: ${absoluteFilePath}`);
+
+      // Helper to clean undefined recursively (avoid yaml dump issues elsewhere if reused)
+      const removeUndefined = (obj: any): any => {
+        if (typeof obj !== 'object' || obj === null) return obj;
+        if (Array.isArray(obj)) return obj.map(removeUndefined);
+        const out: Record<string, any> = {};
+        for (const k of Object.keys(obj)) {
+          const v = (obj as any)[k];
+          if (v !== undefined) out[k] = removeUndefined(v);
+        }
+        return out;
+      };
+
+      // If we know the deleted node's id, scan other nodes and remove backlinks
+      if (deletedNodeId) {
+        const nodesDir = path.join(projectPath, 'nodes');
+        const walk = async (dir: string) => {
+          const entries = await fs.readdir(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.name.startsWith('.')) continue;
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+              await walk(full);
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+              // Skip the file being deleted
+              if (path.resolve(full) === path.resolve(absoluteFilePath)) continue;
+              try {
+                const fc = await fs.readFile(full, 'utf8');
+                const parsed = matter(fc);
+                const fm = (parsed.data || {}) as any;
+                const links: any[] = Array.isArray(fm.links) ? fm.links : [];
+                if (links.includes(deletedNodeId)) {
+                  const newLinks = links.filter((l: any) => l !== deletedNodeId);
+                  const newFrontmatter = removeUndefined({ ...fm, links: newLinks });
+                  const newContent = matter.stringify(parsed.content || '', newFrontmatter);
+                  await fs.writeFile(full, newContent, 'utf8');
+                }
+              } catch (e) {
+                console.warn(`[graph:deleteNodeFile] Failed to update backlinks in ${full}:`, e);
+              }
+            }
+          }
+        };
+        if (existsSync(nodesDir)) {
+          await walk(nodesDir);
+        }
+      }
+
+      // Delete the node file itself
+      if (existsSync(absoluteFilePath)) {
+        await fs.unlink(absoluteFilePath);
+        console.log(`[graph:deleteNodeFile] Deleted file: ${absoluteFilePath}`);
+      }
+
+      // Delete potential sidecar metadata file for non-markdown files
+      const sidecar = `${absoluteFilePath}.metadata.md`;
+      if (existsSync(sidecar)) {
+        try { await fs.unlink(sidecar); } catch {}
+      }
     } catch (error) {
       console.error(`Failed to delete node file ${absoluteFilePath}:`, error);
       throw error; // Re-throw to be caught by the renderer
