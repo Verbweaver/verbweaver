@@ -14,7 +14,7 @@ import { EDITOR_DEFAULT_FONT_SIZE } from '@verbweaver/shared'
 function EditorView() {
   const { nodeId } = useParams()
   const navigate = useNavigate()
-  const { currentProject } = useProjectStore()
+  const { currentProject, currentProjectPath } = useProjectStore()
   const { theme } = useThemeStore()
   const { 
     currentFile, 
@@ -73,12 +73,12 @@ function EditorView() {
   useEffect(() => {
     const fetchPreview = async () => {
       if (!isPreview || !currentFile || !currentFile.name.endsWith('.md')) return
-      try {
-        const html = await editorApi.previewMarkdown(content)
-        setPreviewHtml(html)
-      } catch (err) {
-        console.error('Preview failed', err)
-      }
+             try {
+         const html = await editorApi.previewMarkdown(content, currentProjectPath || undefined)
+         setPreviewHtml(html)
+       } catch (err) {
+         console.error('Preview failed', err)
+       }
     }
     const id = setTimeout(fetchPreview, 400) // debounce 400ms
     return () => clearTimeout(id)

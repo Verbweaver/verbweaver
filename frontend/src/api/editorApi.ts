@@ -16,9 +16,13 @@ export interface FileCreate {
 }
 
 export const editorApi = {
-  previewMarkdown: async (markdown: string): Promise<string> => {
-    const response = await apiClient.post('/preview', markdown, {
-      headers: { 'Content-Type': 'text/markdown' },
+  previewMarkdown: async (markdown: string, projectPath?: string): Promise<string> => {
+    const requestBody = {
+      markdown_text: markdown,
+      project_path: projectPath
+    }
+    
+    const response = await apiClient.post('/preview', requestBody, {
       responseType: 'text',
     })
     return response.data as string
