@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical, RefreshCcw } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { editorApi } from '../../api/editorApi'
 import { TemplateSelectionDialog } from '../TemplateSelectionDialog'
@@ -459,6 +459,13 @@ Add any additional notes or references here.
           )}
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={loadFileTree}
+            className="p-1 rounded hover:bg-accent"
+            title="Refresh files"
+          >
+            <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
           <button
             onClick={() => setShowFolderDialog(true)}
             className="p-1 rounded hover:bg-accent"
