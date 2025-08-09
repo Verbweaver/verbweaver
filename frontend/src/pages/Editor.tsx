@@ -57,6 +57,7 @@ function EditorView() {
   // Refs to avoid stale closures inside Monaco event handlers
   const resolvedNodePathRef = useRef<string | null>(null)
   const isModifiedRef = useRef<boolean>(false)
+  const pendingAnchorRef = useRef<string | null>(null)
   // Defer assignments to avoid temporal dead zone; effects below are defined after variables
   const navigateToRelRef = useRef<(p: string) => void>()
   const scheduleDecorationRefresh = useCallback(() => {
@@ -137,6 +138,9 @@ function EditorView() {
   }, [openEditorForPath])
 
   const resolveRelativePath = useCallback((baseProjectRelativePath: string, rawHref: string) => {
+    // Split anchor if present
+    const [hrefPathRaw, anchorRaw] = rawHref.split('#', 2)
+    const hrefPath = hrefPathRaw || ''
     const normalize = (baseFileRel: string, rel: string) => {
       const base = baseFileRel.replace(/\\/g,'/').replace(/\/$/, '')
       const parts = base.split('/')
@@ -150,7 +154,16 @@ function EditorView() {
       }
       return parts.join('/')
     }
-    return normalize(baseProjectRelativePath, rawHref)
+    let projectRel: string
+    if (hrefPath.startsWith('/')) {
+      projectRel = hrefPath.replace(/^\/+/, '') // absolute repo-relative
+    } else if (hrefPath === '' && anchorRaw) {
+      // pure anchor link
+      projectRel = baseProjectRelativePath
+    } else {
+      projectRel = normalize(baseProjectRelativePath, hrefPath)
+    }
+    return { path: projectRel, anchor: anchorRaw || null }
   }, [])
 
   const requestNavigateTo = useCallback((projectRelativePath: string) => {
@@ -174,12 +187,15 @@ function EditorView() {
     if (!rawHref) return
     // External or hash/mailto links: allow default
     const lower = rawHref.toLowerCase()
-    if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('mailto:') || lower.startsWith('#')) {
+    if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('mailto:')) {
       return
     }
+    // For pure anchor (#section) in preview, let browser handle default scrolling
+    if (rawHref.startsWith('#')) return
     e.preventDefault()
     if (!resolvedNodePath) return
-    const projectRel = resolveRelativePath(resolvedNodePath, rawHref)
+    const { path: projectRel, anchor: anchorName } = resolveRelativePath(resolvedNodePath, rawHref)
+    pendingAnchorRef.current = anchorName
     requestNavigateTo(projectRel)
   }, [resolvedNodePath, resolveRelativePath, requestNavigateTo])
 
@@ -324,6 +340,38 @@ function EditorView() {
       }
     }
   }, [currentFile, currentProject, content, isModified, saveFile, localFilePath])
+
+  // After navigation, if an anchor was requested, scroll to it in the editor
+  useEffect(() => {
+    if (!editorRef.current) return
+    const anchor = pendingAnchorRef.current
+    if (!anchor) return
+    // Give editor time to render
+    const id = setTimeout(() => {
+      scrollToAnchorInEditor(anchor)
+      pendingAnchorRef.current = null
+    }, 100)
+    return () => clearTimeout(id)
+  }, [resolvedNodePath])
+
+  function scrollToAnchorInEditor(anchorName: string) {
+    const ed = editorRef.current
+    const model = ed?.getModel?.()
+    if (!ed || !model) return
+    const total = model.getLineCount()
+    const anchorLower = anchorName.toLowerCase()
+    // Heuristic: match markdown headings that include the anchor slug
+    // Common anchors: github-style, lowercase, spaces->-, remove punctuation. We'll try simple contains first.
+    for (let line = 1; line <= total; line++) {
+      const text = model.getLineContent(line)
+      if (/^\s*#/.test(text) && text.toLowerCase().includes(anchorLower)) {
+        ed.revealLineInCenter(line)
+        ed.setPosition({ lineNumber: line, column: 1 })
+        ed.focus()
+        return
+      }
+    }
+  }
 
   // Attachment picker
   useEffect(() => {
@@ -803,14 +851,20 @@ function EditorView() {
                   if (!foundHref) return
                   const lower = foundHref.toLowerCase()
                   if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('mailto:') || lower.startsWith('#')) {
+                    // Pure anchor (#section) in edit mode: scroll in current editor
+                    if (foundHref.startsWith('#')) {
+                      const anchorName = foundHref.slice(1)
+                      scrollToAnchorInEditor(anchorName)
+                    }
                     return
                   }
                   e.event.preventDefault()
                   e.event.stopPropagation()
                     const basePath = resolvedNodePathRef.current
                     if (!basePath) return
-                    const projectRel = resolveRelativePath(basePath, foundHref)
-                    navigateToRelRef.current?.(projectRel)
+                  const { path: projectRel, anchor: anchorName } = resolveRelativePath(basePath, foundHref)
+                  pendingAnchorRef.current = anchorName
+                  navigateToRelRef.current?.(projectRel)
                   })
                 }
                 attachLinkHandler()
