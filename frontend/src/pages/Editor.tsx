@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip, ChevronDown, ChevronRight, Link as LinkIcon } from 'lucide-react'
@@ -46,6 +46,27 @@ function EditorView() {
   const [confirmState, setConfirmState] = useState<{ open: boolean }>({ open: false })
   const [attachOpen, setAttachOpen] = useState(false)
   const [trackingBusy, setTrackingBusy] = useState(false)
+  const [navConfirmOpen, setNavConfirmOpen] = useState(false)
+  const [navTargetPath, setNavTargetPath] = useState<string | null>(null)
+  const editorRef = useRef<any>(null)
+  const monacoRef = useRef<any>(null)
+  const decorationIdsRef = useRef<string[]>([])
+  const decorationHrefMapRef = useRef<Map<string, string>>(new Map())
+  const updateLinkDecorationsRef = useRef<null | (() => void)>(null)
+  const linkMouseHandlerRef = useRef<any>(null)
+  // Refs to avoid stale closures inside Monaco event handlers
+  const resolvedNodePathRef = useRef<string | null>(null)
+  const isModifiedRef = useRef<boolean>(false)
+  // Defer assignments to avoid temporal dead zone; effects below are defined after variables
+  const navigateToRelRef = useRef<(p: string) => void>()
+  const scheduleDecorationRefresh = useCallback(() => {
+    // Immediate attempt
+    try { updateLinkDecorationsRef.current?.() } catch {}
+    // Re-attempt on next tick
+    setTimeout(() => {
+      try { updateLinkDecorationsRef.current?.() } catch {}
+    }, 50)
+  }, [])
   const [linksExpanded, setLinksExpanded] = useState(false)
 
   // Resolve current node path (project-relative in Electron; API path in web)
@@ -100,6 +121,47 @@ function EditorView() {
     }
   }, [navigate, currentProjectPath])
 
+  // Now that dependencies exist, wire ref-updaters
+  useEffect(() => { resolvedNodePathRef.current = resolvedNodePath }, [resolvedNodePath])
+  useEffect(() => { isModifiedRef.current = isModified }, [isModified])
+  useEffect(() => {
+    const navigateFn = (projectRelativePath: string) => {
+      if (isModifiedRef.current) {
+        setNavTargetPath(projectRelativePath)
+        setNavConfirmOpen(true)
+      } else {
+        openEditorForPath(projectRelativePath)
+      }
+    }
+    navigateToRelRef.current = navigateFn
+  }, [openEditorForPath])
+
+  const resolveRelativePath = useCallback((baseProjectRelativePath: string, rawHref: string) => {
+    const normalize = (baseFileRel: string, rel: string) => {
+      const base = baseFileRel.replace(/\\/g,'/').replace(/\/$/, '')
+      const parts = base.split('/')
+      // remove filename
+      parts.pop()
+      const segs = rel.replace(/\\/g,'/').split('/')
+      for (const s of segs) {
+        if (s === '' || s === '.') continue
+        if (s === '..') { if (parts.length > 0) parts.pop(); continue }
+        parts.push(s)
+      }
+      return parts.join('/')
+    }
+    return normalize(baseProjectRelativePath, rawHref)
+  }, [])
+
+  const requestNavigateTo = useCallback((projectRelativePath: string) => {
+    if (isModified) {
+      setNavTargetPath(projectRelativePath)
+      setNavConfirmOpen(true)
+    } else {
+      openEditorForPath(projectRelativePath)
+    }
+  }, [isModified, openEditorForPath])
+
   // Handle clicks on links inside preview HTML
   const handlePreviewClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     let el = e.target as HTMLElement | null
@@ -116,42 +178,10 @@ function EditorView() {
       return
     }
     e.preventDefault()
-    // Resolve relative path against current file directory
-    const normalize = (baseDir: string, rel: string) => {
-      const base = baseDir.replace(/\\/g,'/').replace(/\/$/, '')
-      const parts = base.split('/')
-      const segs = rel.replace(/\\/g,'/').split('/')
-      // Remove filename segment from base
-      parts.pop()
-      for (const s of segs) {
-        if (s === '' || s === '.') continue
-        if (s === '..') { if (parts.length > 0) parts.pop(); continue }
-        parts.push(s)
-      }
-      return parts.join('/')
-    }
-    let basePath: string | null = null
-    if (isElectron) {
-      const abs = localFilePath || (filePath ? (() => { try { return decodeURIComponent(filePath) } catch { return filePath } })() : null)
-      basePath = abs || null
-      if (basePath && currentProjectPath && basePath.replace(/\\/g,'/').startsWith(currentProjectPath.replace(/\\/g,'/') + '/')) {
-        // keep absolute for navigation
-      }
-    } else if (resolvedNodePath) {
-      basePath = resolvedNodePath
-    }
-    if (!basePath) return
-    const resolved = normalize(basePath, rawHref)
-    // Convert to project-relative for navigation
-    if (isElectron && currentProjectPath) {
-      const pr = currentProjectPath.replace(/\\/g,'/')
-      const rp = resolved.replace(/\\/g,'/')
-      const projectRel = rp.startsWith(pr + '/') ? rp.slice(pr.length + 1) : rp
-      openEditorForPath(projectRel)
-    } else {
-      openEditorForPath(resolved)
-    }
-  }, [isElectron, localFilePath, filePath, resolvedNodePath, currentProjectPath, openEditorForPath])
+    if (!resolvedNodePath) return
+    const projectRel = resolveRelativePath(resolvedNodePath, rawHref)
+    requestNavigateTo(projectRel)
+  }, [resolvedNodePath, resolveRelativePath, requestNavigateTo])
 
   // Persisted preference: hide YAML frontmatter in editor and preview
   interface EditorPrefsState { hideMetadata: boolean; setHideMetadata: (v: boolean) => void }
@@ -162,6 +192,17 @@ function EditorView() {
     )
   )
   const { hideMetadata, setHideMetadata } = useEditorPrefs()
+
+  // Inject underline style for markdown links in editor
+  useEffect(() => {
+    const id = 'vw-md-link-style'
+    if (!document.getElementById(id)) {
+      const style = document.createElement('style')
+      style.id = id
+      style.textContent = `.monaco-md-link { text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }`
+      document.head.appendChild(style)
+    }
+  }, [])
 
   // Load file when filePath changes (web) or in Electron
   useEffect(() => {
@@ -175,6 +216,10 @@ function EditorView() {
           setLocalFilePath(decodedPath)
           setLocalFileName(decodedPath.split(/[/\\]/).pop() || 'Unknown')
           setIsModified(false)
+          try { console.debug('[Editor] loaded content (electron), scheduling decoration refresh') } catch {}
+          // Ensure decorations after content set
+          setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
+          setTimeout(() => updateLinkDecorationsRef.current?.(), 50)
         } catch (error) {
           toast.error('Failed to load file')
           navigate('/editor')
@@ -186,6 +231,9 @@ function EditorView() {
           .then((file) => {
             setContent(file.content)
             setIsModified(false)
+            try { console.debug('[Editor] loaded content (web), scheduling decoration refresh') } catch {}
+            setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
+            setTimeout(() => updateLinkDecorationsRef.current?.(), 50)
           })
           .catch(() => {
             toast.error('Failed to load file')
@@ -211,6 +259,9 @@ function EditorView() {
           if (readme) {
             const abs = `${currentProjectPath}/${readme.name}`.replace(/\\/g, '/').replace(/\//g, '/')
             navigate(`/editor/${encodeURIComponent(abs)}`)
+            // Schedule decoration refresh post-navigation
+            setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
+            setTimeout(() => updateLinkDecorationsRef.current?.(), 50)
           }
         } else if (!isElectron && currentProject) {
           // Fetch root listing via editor API
@@ -218,6 +269,8 @@ function EditorView() {
           const readme = (Array.isArray(tree) ? tree : []).find((n: any) => n?.name?.toLowerCase?.() === 'readme.md')
           if (readme && readme.path) {
             navigate(`/editor/${encodeURIComponent(readme.path)}`)
+            setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
+            setTimeout(() => updateLinkDecorationsRef.current?.(), 50)
           }
         }
       } catch (e) {
@@ -280,6 +333,20 @@ function EditorView() {
       setAttachOpen(false)
     }
   }, [attachOpen])
+
+  // Ensure link decorations update after content is loaded or preview toggled
+  useEffect(() => {
+    // Fire after content changes settle
+    const id = setTimeout(() => {
+      try { console.log('[Editor] effect: content/preview change -> refresh link decorations (0ms)') } catch {}
+      updateLinkDecorationsRef.current?.()
+      setTimeout(() => {
+        try { console.log('[Editor] effect: second refresh (50ms)') } catch {}
+        updateLinkDecorationsRef.current?.()
+      }, 50)
+    }, 0)
+    return () => clearTimeout(id)
+  }, [content, isPreview])
 
   // Fetch preview when in preview mode
   useEffect(() => {
@@ -638,6 +705,125 @@ function EditorView() {
               automaticLayout: true,
               tabSize: 2,
                           insertSpaces: true,
+                // Ensure Ctrl/Cmd is free for link navigation from first render
+                multiCursorModifier: 'alt',
+              }}
+              onMount={(editorInstance, monaco) => {
+                editorRef.current = editorInstance
+                monacoRef.current = monaco
+                // Avoid Ctrl/Cmd creating multi-cursors so we can use it for link navigation
+                try { editorInstance.updateOptions({ multiCursorModifier: 'alt' }) } catch {}
+                // Decorations for relative markdown links
+                const updateLinkDecorations = () => {
+                  const ed = editorRef.current
+                  const mc = monacoRef.current
+                  if (!ed || !mc) return
+                  const model = ed.getModel()
+                  if (!model) return
+                  const newDecs: any[] = []
+                  const hrefs: string[] = []
+                  const lineCount = model.getLineCount()
+                  for (let line = 1; line <= lineCount; line++) {
+                    const lineText = model.getLineContent(line)
+                    const regex = /\[[^\]]*\]\(([^)]+)\)/g
+                    let match: RegExpExecArray | null
+                    while ((match = regex.exec(lineText))) {
+                      const href = match[1] || ''
+                      const lower = href.toLowerCase()
+                      if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('mailto:') || lower.startsWith('#')) {
+                        continue
+                      }
+                      const startColumn = match.index + 1
+                      const endColumn = match.index + match[0].length + 1
+                      newDecs.push({
+                        range: new (mc as any).Range(line, startColumn, line, endColumn),
+                        options: {
+                          inlineClassName: 'monaco-md-link',
+                          hoverMessage: [{ value: 'Ctrl/Cmd+Click to open link' }],
+                        },
+                      })
+                      hrefs.push(href)
+                    }
+                  }
+                  decorationIdsRef.current = ed.deltaDecorations(decorationIdsRef.current, newDecs)
+                  decorationHrefMapRef.current.clear()
+                  decorationIdsRef.current.forEach((id: string, idx: number) => {
+                    const href = hrefs[idx]
+                    if (href) decorationHrefMapRef.current.set(id, href)
+                  })
+                  // Debug: report counts
+                  try { console.log('[Editor] Link decorations updated', { decCount: decorationIdsRef.current.length }) } catch {}
+                }
+                // Initial decorations (may be empty on first mount)
+                try { console.log('[Editor] onMount: applying link decorations') } catch {}
+                updateLinkDecorations()
+                // Expose to external effects
+                updateLinkDecorationsRef.current = updateLinkDecorations
+                // Re-apply shortly after mount to catch async content set
+                setTimeout(() => updateLinkDecorations(), 0)
+                setTimeout(() => updateLinkDecorations(), 50)
+                const subContent = editorInstance.onDidChangeModelContent(() => updateLinkDecorations())
+                const subModel = editorInstance.onDidChangeModel(() => updateLinkDecorations())
+
+                const attachLinkHandler = () => {
+                  try { linkMouseHandlerRef.current?.dispose?.() } catch {}
+                  linkMouseHandlerRef.current = editorInstance.onMouseDown((e: any) => {
+                  const isModifiedClick = e.event.ctrlKey || e.event.metaKey
+                  if (!isModifiedClick) return
+                  // Fallback: use model to find markdown link under mouse
+                  const bx = e?.event?.browserEvent?.clientX
+                  const by = e?.event?.browserEvent?.clientY
+                  const hoverTarget = (typeof editorInstance.getTargetAtClientPoint === 'function') ? editorInstance.getTargetAtClientPoint(bx, by) : null
+                  const pos = hoverTarget?.position || e.target.position || editorInstance.getPosition()
+                  const model = editorInstance.getModel()
+                  if (!model || !pos) return
+                  // Prefer decoration hit-test at position
+                  const RangeCtor = (monaco as any).Range
+                  const pointRange = new RangeCtor(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
+                  const decsAt = model.getDecorationsInRange ? model.getDecorationsInRange(pointRange) : []
+                  let foundHref: string | null = null
+                  for (const d of decsAt || []) {
+                    const href = decorationHrefMapRef.current.get(d.id)
+                    if (href) { foundHref = href; break }
+                  }
+                  // Fallback: regex on the line
+                  if (!foundHref) {
+                    const lineText = model.getLineContent(pos.lineNumber)
+                    const regex = /\[[^\]]*\]\(([^)]+)\)/g
+                    let match: RegExpExecArray | null
+                    while ((match = regex.exec(lineText))) {
+                      const start = match.index
+                      const end = regex.lastIndex
+                      if (pos.column >= start + 1 && pos.column <= end) {
+                        foundHref = match[1]
+                        break
+                      }
+                    }
+                  }
+                  if (!foundHref) return
+                  const lower = foundHref.toLowerCase()
+                  if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('mailto:') || lower.startsWith('#')) {
+                    return
+                  }
+                  e.event.preventDefault()
+                  e.event.stopPropagation()
+                    const basePath = resolvedNodePathRef.current
+                    if (!basePath) return
+                    const projectRel = resolveRelativePath(basePath, foundHref)
+                    navigateToRelRef.current?.(projectRel)
+                  })
+                }
+                attachLinkHandler()
+                // Re-attach handler on model changes (some Monaco flows detach listeners)
+                editorInstance.onDidChangeModel(() => attachLinkHandler())
+
+                // Clean up
+                editorInstance.onDidDispose(() => {
+                  try { editorInstance.deltaDecorations(decorationIdsRef.current, []) } catch {}
+                  try { linkMouseHandlerRef.current?.dispose?.() } catch {}
+                  try { subContent?.dispose?.() } catch {}
+                  try { subModel?.dispose?.() } catch {}
+                })
               }}
             />
           )}
@@ -681,6 +867,26 @@ function EditorView() {
       cancelLabel="Cancel"
       onConfirm={handleConfirmDelete}
       onCancel={() => setConfirmState({ open: false })}
+      />
+
+      {/* Unsaved changes confirm before navigation */}
+      <ConfirmDialog
+        isOpen={navConfirmOpen}
+        title="Unsaved changes"
+        message="You have unsaved changes. Do you want to proceed without saving?"
+        confirmLabel="Proceed"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          setNavConfirmOpen(false)
+          if (navTargetPath) {
+            openEditorForPath(navTargetPath)
+            setNavTargetPath(null)
+          }
+        }}
+        onCancel={() => {
+          setNavConfirmOpen(false)
+          setNavTargetPath(null)
+        }}
       />
 
       {/* Hidden file input for attachments */}
