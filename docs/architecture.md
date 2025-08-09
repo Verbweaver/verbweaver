@@ -375,5 +375,5 @@ services:
 - Operational Transform for real-time editing
 - Presence indicators
 - Voice/video integration
-- Comment threads with notifications
+- Comment discussions with notifications
 - Desktop: P2P sync for offline collaboration 

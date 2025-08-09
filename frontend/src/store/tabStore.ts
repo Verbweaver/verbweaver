@@ -5,7 +5,7 @@ export interface Tab {
   id: string
   path: string
   title: string
-  type: 'graph' | 'editor' | 'threads' | 'version' | 'compiler' | 'dashboard' | 'settings' | 'help'
+  type: 'graph' | 'editor' | 'tasks' | 'version' | 'compiler' | 'dashboard' | 'settings' | 'help'
   metadata?: {
     filePath?: string // For editor tabs
     isModified?: boolean // Track if file has unsaved changes
@@ -134,7 +134,25 @@ export const useTabStore = create<TabState>()(
       }
     }),
     {
-      name: 'verbweaver-tabs'
+      name: 'verbweaver-tabs',
+      version: 2,
+      migrate: (persistedState: any, version: number) => {
+        // Map legacy 'threads' tabs to 'tasks' and update paths
+        if (!persistedState || !persistedState.tabs) return persistedState
+        const migrated = { ...persistedState }
+        migrated.tabs = persistedState.tabs.map((tab: any) => {
+          if (tab?.type === 'threads') {
+            return {
+              ...tab,
+              type: 'tasks',
+              path: typeof tab.path === 'string' ? tab.path.replace(/^\/threads\b/, '/tasks') : tab.path,
+              title: tab.title === 'Threads' ? 'Tasks' : tab.title,
+            }
+          }
+          return tab
+        })
+        return migrated
+      }
     }
   )
 ) 

@@ -88,14 +88,25 @@ export const projectsApi = {
     await apiClient.put(`/projects/${projectId}/settings/compiler`, compilerSettings)
   },
 
-  // Get threads settings
-  getThreadsSettings: async (projectId: string): Promise<Record<string, any>> => {
-    const response = await apiClient.get(`/projects/${projectId}/settings/threads`)
-    return response.data.threads
+  // Get tasks settings (fallback to legacy threads)
+  getTasksSettings: async (projectId: string): Promise<Record<string, any>> => {
+    try {
+      const response = await apiClient.get(`/projects/${projectId}/settings/tasks`)
+      return response.data.tasks
+    } catch (e: any) {
+      // Fallback to legacy
+      const response = await apiClient.get(`/projects/${projectId}/settings/threads`)
+      return response.data.threads
+    }
   },
 
-  // Update threads settings
-  updateThreadsSettings: async (projectId: string, threadsSettings: Record<string, any>): Promise<void> => {
-    await apiClient.put(`/projects/${projectId}/settings/threads`, threadsSettings)
+  // Update tasks settings (also mirror to legacy for one release)
+  updateTasksSettings: async (projectId: string, tasksSettings: Record<string, any>): Promise<void> => {
+    try {
+      await apiClient.put(`/projects/${projectId}/settings/tasks`, tasksSettings)
+    } finally {
+      // Best-effort legacy mirror
+      try { await apiClient.put(`/projects/${projectId}/settings/threads`, tasksSettings) } catch {}
+    }
   },
 } 

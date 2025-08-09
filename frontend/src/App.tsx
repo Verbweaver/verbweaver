@@ -5,7 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Dashboard from './pages/Dashboard'
 import Editor from './pages/Editor'
 import Graph from './pages/Graph'
-import Threads from './views/ThreadsView'
+import Tasks from './views/TasksView'
 import Version from './pages/Version'
 import Compiler from './pages/Compiler'
 import Settings from './pages/Settings'
@@ -73,8 +73,11 @@ function App() {
         <Route path="editor" element={<Editor />} />
         <Route path="editor/:filePath" element={<Editor />} />
         <Route path="graph" element={<Graph />} />
-        <Route path="threads" element={<Threads />} />
-        <Route path="threads/:taskPath" element={<Threads />} />
+        <Route path="tasks" element={<Tasks />} />
+        <Route path="tasks/:taskPath" element={<Tasks />} />
+        {/* Backward compatibility redirects */}
+        <Route path="threads" element={<Navigate to="/tasks" replace />} />
+        <Route path="threads/:taskPath" element={<Navigate to="/tasks/:taskPath" replace />} />
         <Route path="version" element={<Version />} />
         <Route path="compiler" element={<Compiler />} />
         <Route path="settings" element={<Settings />}>

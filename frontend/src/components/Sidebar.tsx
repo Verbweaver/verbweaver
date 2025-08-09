@@ -29,7 +29,7 @@ function Sidebar({ isCollapsed }: SidebarProps) {
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, type: 'dashboard' as const },
     { name: 'Editor', href: '/editor', icon: FileText, type: 'editor' as const },
     { name: 'Graph', href: '/graph', icon: Share2, type: 'graph' as const },
-    { name: 'Threads', href: '/threads', icon: MessageSquare, type: 'threads' as const },
+    { name: 'Tasks', href: '/tasks', icon: MessageSquare, type: 'tasks' as const },
     { name: 'Version Control', href: '/version', icon: GitBranch, type: 'version' as const },
     { name: 'Compiler', href: '/compiler', icon: Package, type: 'compiler' as const },
   ]
