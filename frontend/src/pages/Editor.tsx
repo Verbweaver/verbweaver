@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
-import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip, ChevronDown, ChevronRight, Link as LinkIcon } from 'lucide-react'
+import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip, ChevronDown, ChevronRight, Link as LinkIcon, Type } from 'lucide-react'
 import { editorApi } from '../api/editorApi'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
@@ -569,13 +569,26 @@ function EditorView() {
         </div>
         
                  <div className="flex items-center gap-2">
-           <button
-             onClick={() => window.open('https://pandoc.org/MANUAL.html#pandocs-markdown', '_blank')}
-             className="p-1.5 rounded hover:bg-accent"
-             title="Formatting guidelines - Pandocs Markdown"
-           >
-             <HelpCircle className="w-4 h-4" />
-           </button>
+            {/* Formatting reference (Pandoc manual) */}
+            <button
+              onClick={() => window.open('https://pandoc.org/MANUAL.html#pandocs-markdown', '_blank')}
+              className="p-1.5 rounded hover:bg-accent"
+              title="Formatting guidelines (Pandoc Markdown)"
+            >
+              <Type className="w-4 h-4" />
+            </button>
+
+            {/* Editor user guide in Help view */}
+            <button
+              onClick={() => {
+                // Route to Help with doc filter to open Editor guide
+                navigate('/help?doc=editor.md')
+              }}
+              className="p-1.5 rounded hover:bg-accent"
+              title="Open Editor User Guide"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
            
            <button
              onClick={() => setIsPreview(prev => !prev)}
