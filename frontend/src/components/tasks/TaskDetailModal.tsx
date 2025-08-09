@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Send, Paperclip, Link, User, Calendar, Tag, MessageSquare, Edit3, Download, Trash2, FileText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useNodeStore } from '../../store/nodeStore'
@@ -43,7 +43,7 @@ interface TaskDetailModalProps {
 }
 
 function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, onDelete }: TaskDetailModalProps) {
-  const { updateNode, getNode } = useNodeStore()
+  const { updateNode, getNode, loadNodes } = useNodeStore()
   const { addEditorTab } = useTabStore()
   const navigate = useNavigate()
   const [isEditing, setIsEditing] = useState(false)
@@ -60,6 +60,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   const [files, setFiles] = useState<StoredFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isCreateLinkModalOpen, setIsCreateLinkModalOpen] = useState(false)
+  const dueDateInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (node) {
@@ -69,6 +70,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
       setPriority(task.priority || node.metadata.priority || 'medium')
       setStatus(node.taskStatus || task.status || 'todo')
       setAssignee(task.assignee || node.metadata.assignee || '')
+      // Prefer task.dueDate; migrate legacy metadata.dueDate
       setDueDate(task.dueDate || node.metadata.dueDate || '')
       setTags(node.metadata.tags || [])
       setComments(task.comments || [])
@@ -100,37 +102,38 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   const handleSave = async () => {
     if (!node) return
 
-    const updatedMetadata = {
+    const updatedMetadata: any = {
       ...node.metadata,
       title,
       description,
       priority,
       assignee,
-      dueDate,
+      // Remove legacy top-level dueDate to enforce single source under task
+      // dueDate,
       tags,
       task: {
         ...node.metadata.task,
         status,
         priority,
         assignee,
-        dueDate,
+        dueDate: dueDate || undefined,
         comments,
         files
       }
     }
 
+    // Clean legacy field if present
+    if ('dueDate' in updatedMetadata) delete updatedMetadata.dueDate
+
     await updateNode(node.path, { metadata: updatedMetadata })
-    
-    // Create updated node with new taskStatus
-    const updatedNode = { 
-      ...node, 
-      metadata: updatedMetadata,
-      taskStatus: status as TaskState // Update the taskStatus directly
-    }
-    
+    try {
+      await loadNodes()
+    } catch {}
+
+    const fresh = getNode ? (getNode(node.path) as any) : null
+    const updatedNode = fresh || { ...node, metadata: updatedMetadata, taskStatus: status as TaskState }
     onUpdate(updatedNode)
-    
-    // Update local state to reflect the new status immediately
+
     setStatus(status)
     setIsEditing(false)
   }
@@ -345,14 +348,22 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                 <label className="block text-sm font-medium mb-1">Due Date</label>
                 {isEditing ? (
                   <input
+                    ref={dueDateInputRef}
                     type="date"
-                    value={dueDate}
+                    value={dueDate || ''}
                     onChange={(e) => setDueDate(e.target.value)}
+                    onFocus={() => { try { (dueDateInputRef.current as any)?.showPicker?.() } catch {} }}
+                    onClick={() => { try { (dueDateInputRef.current as any)?.showPicker?.() } catch {} }}
                     className="w-full p-2 border border-input rounded-md bg-background"
                   />
                 ) : (
                   <span className="text-sm text-muted-foreground">
-                    {dueDate ? new Date(dueDate).toLocaleDateString() : 'No due date'}
+                    {(() => {
+                      if (!dueDate) return 'No due date'
+                      const [y,m,d] = dueDate.split('-').map(Number)
+                      const dt = new Date(y, (m || 1)-1, d || 1)
+                      return dt.toLocaleDateString()
+                    })()}
                   </span>
                 )}
               </div>

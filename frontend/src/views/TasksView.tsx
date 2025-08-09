@@ -545,12 +545,12 @@ function TasksView() {
                       .filter(t => !statusFilter || statusFilter.includes(col.id))
                   
                     tasks.forEach(t => {
-                      const due = new Date(t.metadata.task.dueDate)
-                      if (!isNaN(due.getTime())) {
+                      const dueStr: string | undefined = t.metadata?.task?.dueDate
+                      if (dueStr) {
                         events.push({
                           id: t.path,
                           title: t.metadata?.title || t.name,
-                          start: formatISO(due, { representation: 'date' }),
+                          start: dueStr, // pass date-only string to avoid timezone shift
                           allDay: true,
                           color: undefined,
                           textColor: undefined,
@@ -575,9 +575,9 @@ function TasksView() {
                   const nodePath = info.event.id
                   const node = nodes.get(nodePath)
                   if (node) {
-                    const nextDate = info.event.start
-                    if (nextDate) {
-                      const updated = { ...(node.metadata.task || {}), dueDate: nextDate.toISOString() }
+                    const startStr = (info.event.startStr || '').split('T')[0] || undefined
+                    if (startStr) {
+                      const updated = { ...(node.metadata.task || {}), dueDate: startStr }
                       await useNodeStore.getState().updateNode(node.path, { metadata: { task: updated } as any })
                     }
                   }
@@ -585,10 +585,10 @@ function TasksView() {
                 eventReceive={async (info) => {
                   // External drop from Unscheduled list
                   const nodePath = info.event.id
-                  const droppedDate = info.event.start
+                  const droppedDateStr = (info.event.startStr || '').split('T')[0] || undefined
                   const node = nodes.get(nodePath)
-                  if (node && droppedDate) {
-                    const updated = { ...(node.metadata.task || {}), dueDate: droppedDate.toISOString() }
+                  if (node && droppedDateStr) {
+                    const updated = { ...(node.metadata.task || {}), dueDate: droppedDateStr }
                     await useNodeStore.getState().updateNode(node.path, { metadata: { task: updated } as any })
                   }
                 }}
@@ -643,8 +643,13 @@ function TasksView() {
           onClose={() => {
             setIsDetailModalOpen(false)
             setSelectedTask(null)
+            try { useNodeStore.getState().loadNodes() } catch {}
           }}
-          onUpdate={handleTaskUpdate}
+          onUpdate={(n) => {
+            handleTaskUpdate(n)
+            // Refresh calendar data to reflect updates immediately
+            try { useNodeStore.getState().loadNodes() } catch {}
+          }}
           onDelete={() => {
             if (selectedTask) handleRequestDelete(selectedTask)
           }}
@@ -676,6 +681,7 @@ function TasksView() {
             setIsDetailModalOpen(false)
             setSelectedTask(null)
           }
+          try { await useNodeStore.getState().loadNodes() } catch {}
         } finally {
           setConfirmState({ open: false })
         }
