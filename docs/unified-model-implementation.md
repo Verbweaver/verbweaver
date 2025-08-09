@@ -46,7 +46,7 @@ The unified model ensures that:
 3. **Updated Views**
    - **Graph View**: Now uses NodeStore instead of GraphStore
    - **Editor View**: Works with nodes as files
-   - **Threads View**: Tasks are nodes with task metadata
+   - **Tasks View**: Tasks are nodes with task metadata
    - All views update automatically when underlying files change
 
 ## Data Model

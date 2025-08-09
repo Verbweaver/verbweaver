@@ -507,7 +507,7 @@ Add any additional notes or references here.
                     }
                   }
                   await loadFileTree()
-                  // Also refresh nodes so Graph/Threads pick them up
+                  // Also refresh nodes so Graph/Tasks pick them up
                   try { (await import('../../store/nodeStore')).useNodeStore.getState().loadNodes() } catch {}
                   toast.success('File(s) uploaded')
                 } catch (err) {

@@ -739,7 +739,7 @@ Task-specific information (like status, due date) is stored in the metadata (fro
 
 - **Graph** - Visual representation of relationships between content in \`nodes/\`.
 - **Editor** - Edit content and metadata of files in \`nodes/\`.
-- **Threads** - Task management view that operates on items in \`nodes/\` based on their metadata.
+ - **Tasks** - Task management view that operates on items in \`nodes/\` based on their metadata.
 - **Version Control** - Git integration for tracking changes.
 - **Compiler** - Export content to various formats.
 

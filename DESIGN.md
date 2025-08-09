@@ -34,9 +34,9 @@ The application is primarily designed to enable the user to do the following:
 * Ensure all data elements in a Project are transparent, sharable, and version-controlled via Git. This is primarily accomplished by using Markdown files, with metadata headers that define its Verbweaver context and relationship to other nodes.
 * Manage projects with common task-management tools where the Tasks are the nodes in the graph. This allows the user's every idea (a node) to be tracked as a task to complete. This helps writers by letting them keep track of their ideas and ensure they end up implemented. It also helps teams by allowing them to brainstorm ideas in a place where their ideas will be preserved.
 
-Ultimately, we want a node in the graph and a task to be backed by the same Markdown file and its metadata header. That way, if I were to change a node in the Graph or in Threads or in Editor it would all be the same data and the changes would be reflected between views. The reason for this is because of our workflow using Verbweaver. We want to be able to design something using Graph as a mindmap and have all of our nodes automatically be Tasks whose state is tracked for project management purposes. And then I could do into the Editor to add content to the node.
+Ultimately, we want a node in the graph and a task to be backed by the same Markdown file and its metadata header. That way, if I were to change a node in the Graph or in Tasks or in Editor it would all be the same data and the changes would be reflected between views. The reason for this is because of our workflow using Verbweaver. We want to be able to design something using Graph as a mindmap and have all of our nodes automatically be Tasks whose state is tracked for project management purposes. And then I could do into the Editor to add content to the node.
 
-For example, I could have a project where I am writing a story. I would design the plot points and how they relate to each other in the Graph. I would then be able to keep track of what I needed to do in the Threads view. And if I wanted to write a narrative, I could go to each plot point in the Editor, add a section to the Markdown, and then start writing.
+For example, I could have a project where I am writing a story. I would design the plot points and how they relate to each other in the Graph. I would then be able to keep track of what I needed to do in the Tasks view. And if I wanted to write a narrative, I could go to each plot point in the Editor, add a section to the Markdown, and then start writing.
 
 All of this should be backed by git version control. The git repository should be able to be anywhere the server can access. By default it should be storable on Verbweaver's local filesystem itself. But it should also be possible to source from a location the user specified. Or the user can provide credentials to a git repository. That would enable them to keep it on GitHub or somewhere else where it is hosted. In that case you would have a local working copy and changes can be pushed by the user or automatically (if they have configured their settings to allow automatic pushes).
 
@@ -55,7 +55,7 @@ At the bottom of the sidebar should also be buttons for "Help" (to take them to 
 The Views are:
 
 * Graph
-* Threads (Tasks)
+* Tasks
 * Editor
 * Version Control
 * Compiler
@@ -72,7 +72,7 @@ There should be an Appearance section of the settings that lets the user pick be
 
 ##### Editor
 
-The Editor panel allows the user to edit files. This allows the user to write content and designs. The files they are editing are the same files in the Git repository for the Project that are also represented by the Graph view and compose the Tasks. As such, any changes they make in the editor should automatically be reflected in the Graph and in Threads for project management purposes.
+The Editor panel allows the user to edit files. This allows the user to write content and designs. The files they are editing are the same files in the Git repository for the Project that are also represented by the Graph view and compose the Tasks. As such, any changes they make in the editor should automatically be reflected in the Graph and in Tasks for project management purposes.
 
 Use the open-source projects "Visual Studio Code" and "Obsidian" as inspiration when designing the interface of the Editor.
 
@@ -92,7 +92,7 @@ The user should be able to open the graph settings for a project and configure i
 
 There should be an option to render the graph in "Multi-Project Mode". The user should be warned that this mode can use significant resources and slow the interface. In this mode, the graphs of all of the user's Projects should be rendered.
 
-##### Threads - Project Management
+##### Tasks - Project Management
 
 The task tracking system should be fully functional, have state tracking, comments, file upload, and Markdown formatting. Kanban boards. And relationships (soft links) to other content should be visible. Clicking on the linked content should take the user to that content.
 

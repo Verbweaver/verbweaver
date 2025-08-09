@@ -298,13 +298,13 @@ async def get_compiler_settings(
         )
 
 
-@router.get("/{project_id}/settings/threads")
-async def get_threads_settings(
+@router.get("/{project_id}/settings/tasks")
+async def get_tasks_settings(
     project_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get threads-specific settings (Kanban columns)"""
+    """Get tasks-specific settings (Kanban columns). Falls back to legacy 'threads' key."""
     # Get project to verify access
     result = await db.execute(
         select(Project)
@@ -339,14 +339,14 @@ async def get_threads_settings(
             {"id": "review", "title": "Review", "color": "bg-purple-500"},
             {"id": "done", "title": "Done", "color": "bg-green-500"}
         ]
-        return {"threads": {"columns": default_columns, "defaultColumnId": default_columns[0]['id']}}
+        return {"tasks": {"columns": default_columns, "defaultColumnId": default_columns[0]['id']}}
     
     try:
         with open(settings_file, 'r', encoding='utf-8') as f:
             settings = yaml.safe_load(f) or {}
         
-        threads_settings = settings.get('threads', {})
-        columns = threads_settings.get('columns', [])
+        tasks_settings = settings.get('tasks') or settings.get('threads', {})
+        columns = tasks_settings.get('columns', [])
         
         # Return default columns if none are configured
         if not columns:
@@ -356,26 +356,37 @@ async def get_threads_settings(
                 {"id": "review", "title": "Review", "color": "bg-purple-500"},
                 {"id": "done", "title": "Done", "color": "bg-green-500"}
             ]
-            return {"threads": {"columns": default_columns, "defaultColumnId": default_columns[0]['id']}}
+            return {"tasks": {"columns": default_columns, "defaultColumnId": default_columns[0]['id']}}
         
-        return {"threads": {"columns": columns, "defaultColumnId": threads_settings.get('defaultColumnId', columns[0]['id'] if columns else None)}}
+        return {"tasks": {"columns": columns, "defaultColumnId": tasks_settings.get('defaultColumnId', columns[0]['id'] if columns else None)}}
         
     except Exception as e:
-        logger.error(f"Error reading threads settings: {e}")
+        logger.error(f"Error reading tasks settings: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error reading threads settings"
+            detail="Error reading tasks settings"
         )
 
 
-@router.put("/{project_id}/settings/threads")
-async def update_threads_settings(
+@router.get("/{project_id}/settings/threads")
+async def get_threads_settings_legacy(
     project_id: str,
-    threads_settings: Dict[str, Any],
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update threads-specific settings (Kanban columns)"""
+    """Legacy endpoint: proxy to tasks settings for backward compatibility."""
+    resp = await get_tasks_settings(project_id, db, current_user)
+    # Map tasks -> threads shape
+    return {"threads": resp.get("tasks", {})}
+
+@router.put("/{project_id}/settings/tasks")
+async def update_tasks_settings(
+    project_id: str,
+    tasks_settings: Dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update tasks-specific settings (Kanban columns). Also mirror to legacy 'threads' key."""
     # Get project to verify access
     result = await db.execute(
         select(Project)
@@ -409,24 +420,35 @@ async def update_threads_settings(
         else:
             settings = {}
         
-        # Update threads settings
-        settings['threads'] = threads_settings
+        # Update tasks settings and mirror to legacy
+        settings['tasks'] = tasks_settings
+        settings['threads'] = tasks_settings
         
         # Write back to file
         with open(settings_file, 'w', encoding='utf-8') as f:
             yaml.dump(settings, f, default_flow_style=False, allow_unicode=True)
         
         # Commit changes to git
-        await git_service.commit_changes("Update threads settings", [str(settings_file)])
+        await git_service.commit_changes("Update tasks settings", [str(settings_file)])
         
-        return {"message": "Threads settings updated successfully"}
+        return {"message": "Tasks settings updated successfully"}
         
     except Exception as e:
-        logger.error(f"Error updating threads settings: {e}")
+        logger.error(f"Error updating tasks settings: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error updating threads settings"
+            detail="Error updating tasks settings"
         )
+
+@router.put("/{project_id}/settings/threads")
+async def update_threads_settings_legacy(
+    project_id: str,
+    threads_settings: Dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Legacy endpoint: writes to tasks and threads keys for compatibility."""
+    return await update_tasks_settings(project_id, threads_settings, db, current_user)
 
 
 @router.put("/{project_id}/settings/compiler")

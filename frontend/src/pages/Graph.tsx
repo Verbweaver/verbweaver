@@ -737,7 +737,7 @@ function GraphView() {
           onCreateChildNode={handleCreateChildNode}
           onSeeTask={(nodeId) => {
             setContextMenu(null);
-            navigate(`/threads/${encodeURIComponent(nodeId)}`);
+            navigate(`/tasks/${encodeURIComponent(nodeId)}`);
           }}
           onUnlinkEdge={handleUnlinkEdge}
           onAttachFiles={(nodeId) => setAttachTarget(nodeId)}

@@ -35,7 +35,7 @@ export const DEFAULT_VIEW = 'graph';
 // Views
 export const VIEWS = {
   GRAPH: 'graph',
-  THREADS: 'threads',
+  TASKS: 'tasks',
   EDITOR: 'editor',
   VERSION_CONTROL: 'version-control',
   COMPILER: 'compiler',

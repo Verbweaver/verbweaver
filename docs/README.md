@@ -49,7 +49,7 @@ Each project in Verbweaver is backed by a Git repository, giving you:
 Verbweaver provides multiple views to work with your content:
 - **Graph View**: Visualize relationships
 - **Editor View**: Write and edit content
-- **Threads View**: Manage tasks
+- **Tasks View**: Manage tasks
 - **Version Control View**: Track changes
 - **Compiler View**: Export your work
 

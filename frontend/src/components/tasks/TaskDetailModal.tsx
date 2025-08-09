@@ -546,7 +546,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                                console.log('Current URL before navigation:', window.location.href)
                                onClose()
                                // Navigate to the related task - use the correct path
-                               const newPath = `/threads/${encodeURIComponent(linkedNode.path)}`
+                                const newPath = `/tasks/${encodeURIComponent(linkedNode.path)}`
                                console.log('Navigating to:', newPath)
                                navigate(newPath)
                              }

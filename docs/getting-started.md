@@ -328,7 +328,7 @@ To reset all settings and data:
 3. **Start Creating**
    - Use the Graph view to create nodes
    - Switch to Editor view to write content
-   - Create tasks in the Threads view
+   - Create tasks in the Tasks view
 
 ## Basic Concepts
 
@@ -344,7 +344,7 @@ To reset all settings and data:
 ### Views
 - **Graph**: Visual representation of your project
 - **Editor**: Write and edit files
-- **Threads**: Task management
+- **Tasks**: Task management
 - **Version Control**: Git history and operations
 - **Compiler**: Export your project
 
