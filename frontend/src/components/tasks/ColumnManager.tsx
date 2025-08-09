@@ -89,7 +89,8 @@ function SortableColumnItem({
       {...attributes}
       {...listeners}
       className={clsx(
-        "flex items-center gap-3 p-3 border border-border rounded-lg",
+        "flex items-center gap-3 p-3 border rounded-lg",
+        isDefault ? "border-primary ring-2 ring-primary/30 bg-primary/5" : "border-border",
         isDragging && "opacity-50"
       )}
     >
@@ -99,7 +100,10 @@ function SortableColumnItem({
         type="radio"
         checked={isDefault}
         onChange={() => onSetDefault(column.id)}
-        className="mr-2 accent-primary"
+        className={clsx(
+          "mr-2 accent-primary h-4 w-4 shrink-0",
+          isDefault && "ring-2 ring-primary/50 rounded-full"
+        )}
         title="Set as default column"
       />
       <div className={clsx('w-4 h-4 rounded-full', column.color)} />
@@ -157,7 +161,14 @@ function SortableColumnItem({
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-between">
-          <span className="font-medium">{column.title}</span>
+          <span className="font-medium flex items-center gap-2">
+            {column.title}
+            {isDefault && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary text-primary-foreground uppercase tracking-wide">
+                Default
+              </span>
+            )}
+          </span>
           <div className="flex items-center gap-1">
             <Button
               onClick={() => setEditingColumn(column)}
