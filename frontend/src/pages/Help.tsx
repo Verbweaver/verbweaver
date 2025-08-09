@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -19,6 +20,7 @@ export default function Help() {
   const [docContent, setDocContent] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
 
   const loadDocumentationStructure = useCallback(async () => {
     setIsLoading(true);
@@ -33,7 +35,15 @@ export default function Help() {
         files = response.data;
       }
       setDocFiles(files);
-      if (files.length > 0 && files[0].type === 'file') {
+      const requested = searchParams.get('doc');
+      if (requested) {
+        const match = files.find(f => f.type === 'file' && f.path.toLowerCase() === requested.toLowerCase());
+        if (match) {
+          setSelectedDocPath(match.path);
+        } else if (files.length > 0 && files[0].type === 'file') {
+          setSelectedDocPath(files[0].path);
+        }
+      } else if (files.length > 0 && files[0].type === 'file') {
         setSelectedDocPath(files[0].path);
       } else if (files.length === 0) {
         setError('No documentation files found.');
@@ -44,7 +54,7 @@ export default function Help() {
       setError(errorMsg);
     }
     setIsLoading(false);
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     loadDocumentationStructure();
