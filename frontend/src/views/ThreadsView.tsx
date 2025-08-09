@@ -206,6 +206,10 @@ function ThreadsView() {
       // Only treat files as tasks, not directories
       // Directories provide context but aren't tasks themselves
       if (!node.isDirectory && node.hasTask) {
+        // Exclude any files under uploads/nodes from appearing as tasks
+        if (node.path.startsWith('uploads/nodes/')) {
+          return
+        }
         // Treat all files as tasks - they all represent content that can be managed
         // If no task status is set, default to first column
         const status = node.taskStatus || defaultColumnId || columns[0]?.id || 'todo'
