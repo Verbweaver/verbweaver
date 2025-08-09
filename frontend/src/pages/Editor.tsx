@@ -115,6 +115,36 @@ function EditorView() {
     loadContent()
   }, [filePath, currentProject, loadFile, navigate])
 
+  // Default open: if no file specified, try to open README.md in project root
+  useEffect(() => {
+    const tryOpenReadme = async () => {
+      if (!currentProject) return
+      // Only when no file is open/targeted
+      const noTarget = !filePath && !currentFile && !localFilePath
+      if (!noTarget) return
+      try {
+        if (isElectron && window.electronAPI && currentProjectPath) {
+          const items = await window.electronAPI.readDirectory(currentProjectPath)
+          const readme = (items || []).find((it: any) => it.type === 'file' && it.name?.toLowerCase() === 'readme.md')
+          if (readme) {
+            const abs = `${currentProjectPath}/${readme.name}`.replace(/\\/g, '/').replace(/\//g, '/')
+            navigate(`/editor/${encodeURIComponent(abs)}`)
+          }
+        } else if (!isElectron && currentProject) {
+          // Fetch root listing via editor API
+          const tree = await editorApi.getFileTree(currentProject.id)
+          const readme = (Array.isArray(tree) ? tree : []).find((n: any) => n?.name?.toLowerCase?.() === 'readme.md')
+          if (readme && readme.path) {
+            navigate(`/editor/${encodeURIComponent(readme.path)}`)
+          }
+        }
+      } catch (e) {
+        // ignore, fallback to empty state
+      }
+    }
+    tryOpenReadme()
+  }, [currentProject, currentProjectPath, filePath, currentFile, localFilePath, navigate])
+
   // Update tab modified state
   useEffect(() => {
     if (localFilePath) {
