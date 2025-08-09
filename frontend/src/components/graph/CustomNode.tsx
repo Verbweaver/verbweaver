@@ -101,9 +101,9 @@ function CustomNode({ data, selected }: CustomNodeProps) {
         </div>
         <div className="text-sm font-medium flex items-center gap-1">
           <span>{data.label}</span>
-          {!data.isDirectory && (
-            <span title={data.hasTask ? 'Tracked as Task' : 'Not tracked as Task'} className="inline-flex items-center">
-              <span className={clsx('inline-block w-2 h-2 rounded-full', data.hasTask ? 'bg-green-500' : 'bg-muted-foreground/40')} />
+          {!data.isDirectory && data.hasTask && (
+            <span title="Tracked as Task" className="inline-flex items-center">
+              <CheckCircle className="w-3 h-3 text-green-500" />
             </span>
           )}
         </div>
