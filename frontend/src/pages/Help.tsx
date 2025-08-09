@@ -131,6 +131,11 @@ export default function Help() {
               remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
               rehypePlugins={[rehypeHighlight]}
               components={{ 
+                pre: ({ children, ...props }: any) => (
+                  <pre {...props} className="bg-muted p-4 rounded-lg overflow-x-auto text-sm">
+                    {children}
+                  </pre>
+                ),
                 a: ({ node, href, children, ...props }) => {
                   if (href && !href.startsWith('http') && !href.startsWith('#')) {
                     const cleanedHref = href.replace(/^\.?\//, '');
@@ -184,12 +189,11 @@ export default function Help() {
                       </code>
                     );
                   }
+                  // For block code, react-markdown wraps this in <pre>, so render only <code>
                   return (
-                    <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-sm">
-                      <code {...props} className={className}>
-                        {children}
-                      </code>
-                    </pre>
+                    <code {...props} className={className}>
+                      {children}
+                    </code>
                   );
                 },
               }}
