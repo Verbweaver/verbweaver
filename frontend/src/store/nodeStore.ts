@@ -186,6 +186,7 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
     }
   }
   
+  const tracked = (metadata as any)?.task?.tracked !== false
   return {
     path: normalizedPath,
     name,
@@ -195,8 +196,8 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
     content,
     hardLinks: { parent, children },
     softLinks: metadata.links || [],
-    hasTask: !!metadata.task,
-    taskStatus: metadata.task?.status
+    hasTask: !isDirectory && tracked,
+    taskStatus: (metadata as any).task?.status
   };
 }
 
@@ -346,8 +347,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         content,
         hardLinks: { parent: parentPath || null, children: [] },
         softLinks: metadata.links || [],
-        hasTask: !!metadata.task,
-        taskStatus: metadata.task?.status
+        hasTask: (metadata as any)?.task?.tracked !== false,
+        taskStatus: (metadata as any).task?.status
       };
       
       // Update the store
@@ -394,8 +395,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           metadata: updatedMetadata,
           content: updatedContent,
           softLinks: updatedMetadata.links || [],
-          hasTask: !!updatedMetadata.task,
-          taskStatus: updatedMetadata.task?.status
+          hasTask: !node.isDirectory && ((updatedMetadata as any)?.task?.tracked !== false),
+          taskStatus: (updatedMetadata as any).task?.status
         };
         
         set(state => ({
@@ -425,8 +426,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           ...node,
           metadata: updatedMetadata,
           softLinks: updatedMetadata.links || [],
-          hasTask: !!updatedMetadata.task,
-          taskStatus: updatedMetadata.task?.status
+          hasTask: !node.isDirectory && ((updatedMetadata as any)?.task?.tracked !== false),
+          taskStatus: (updatedMetadata as any).task?.status
         };
         
         set(state => ({
@@ -443,8 +444,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         ...node,
         metadata: updatedMetadata,
         softLinks: updatedMetadata.links || [],
-        hasTask: !!updatedMetadata.task,
-        taskStatus: updatedMetadata.task?.status
+        hasTask: !node.isDirectory && ((updatedMetadata as any)?.task?.tracked !== false),
+        taskStatus: (updatedMetadata as any).task?.status
       };
       
       set(state => ({

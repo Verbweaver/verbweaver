@@ -10,6 +10,7 @@ interface CustomNodeProps {
     type: string
     metadata?: any
     isDirectory?: boolean
+    hasTask?: boolean
   }
   selected?: boolean
 }
@@ -98,7 +99,14 @@ function CustomNode({ data, selected }: CustomNodeProps) {
         <div className={clsx('p-1 rounded', colorClass)}>
           <Icon className="w-4 h-4 text-white" />
         </div>
-        <div className="text-sm font-medium">{data.label}</div>
+        <div className="text-sm font-medium flex items-center gap-1">
+          <span>{data.label}</span>
+          {!data.isDirectory && (
+            <span title={data.hasTask ? 'Tracked as Task' : 'Not tracked as Task'} className="inline-flex items-center">
+              <span className={clsx('inline-block w-2 h-2 rounded-full', data.hasTask ? 'bg-green-500' : 'bg-muted-foreground/40')} />
+            </span>
+          )}
+        </div>
       </div>
       
       {data.metadata?.tags && data.metadata.tags.length > 0 && (
