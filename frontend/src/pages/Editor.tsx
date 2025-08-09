@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip } from 'lucide-react'
@@ -45,6 +45,31 @@ function EditorView() {
   const [localFileName, setLocalFileName] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<{ open: boolean }>({ open: false })
   const [attachOpen, setAttachOpen] = useState(false)
+  const [trackingBusy, setTrackingBusy] = useState(false)
+
+  // Resolve current node path (project-relative in Electron; API path in web)
+  const resolvedNodePath = useMemo(() => {
+    if (isElectron) {
+      const abs = localFilePath || (filePath ? (() => { try { return decodeURIComponent(filePath) } catch { return filePath } })() : null)
+      if (!abs) return null
+      if (currentProjectPath && abs.replace(/\\/g,'/').startsWith(currentProjectPath.replace(/\\/g,'/') + '/')) {
+        return abs.replace(/\\/g,'/').slice(currentProjectPath.replace(/\\/g,'/').length + 1)
+      }
+      return abs
+    }
+    if (currentFile) {
+      return (currentFile as any).path || currentFile.id
+    }
+    return null
+  }, [isElectron, localFilePath, filePath, currentProjectPath, currentFile])
+
+  // Get live tracked state from store
+  const trackedState = useNodeStore((s) => {
+    if (!resolvedNodePath) return null as null | boolean
+    const n = s.nodes.get(resolvedNodePath)
+    if (!n || n.isDirectory) return null
+    return (n.metadata as any)?.task?.tracked !== false
+  })
 
   // Persisted preference: hide YAML frontmatter in editor and preview
   interface EditorPrefsState { hideMetadata: boolean; setHideMetadata: (v: boolean) => void }
@@ -336,12 +361,74 @@ function EditorView() {
              <Eye className="w-4 h-4" />
            </button>
 
-            <button
+          <button
             onClick={() => setAttachOpen(true)}
             className="p-1.5 rounded hover:bg-accent"
             title="Attach files"
           >
             <Paperclip className="w-4 h-4" />
+          </button>
+
+          {/* Toggle task tracking */}
+          <button
+            onClick={async () => {
+              if (!filePath && !localFilePath) return
+              setTrackingBusy(true)
+              try {
+                // Resolve project-relative node path
+                let nodePath: string | null = null
+                if (isElectron) {
+                  const abs = localFilePath || (filePath ? decodeURIComponent(filePath) : null)
+                  if (!abs) return
+                  if (currentProjectPath && abs.replace(/\\/g,'/').startsWith(currentProjectPath.replace(/\\/g,'/') + '/')) {
+                    nodePath = abs.replace(/\\/g,'/').slice(currentProjectPath.replace(/\\/g,'/').length + 1)
+                  } else {
+                    nodePath = abs
+                  }
+                } else if (currentFile) {
+                  nodePath = (currentFile as any).path || currentFile.id
+                }
+                if (!nodePath) return
+
+                // Ensure nodes are loaded
+                let store = useNodeStore.getState()
+                if (!store.nodes.get(nodePath)) {
+                  try { await store.loadNodes() } catch {}
+                  store = useNodeStore.getState()
+                }
+                const node = store.nodes.get(nodePath)
+                if (!node || node.isDirectory) return
+
+                const prevTracked = (node.metadata as any)?.task?.tracked !== false
+                const nextTracked = !prevTracked
+                const nextTask = { ...(node.metadata as any).task, tracked: nextTracked }
+                await store.updateNode(nodePath, { metadata: { task: nextTask } as any })
+                toast.success(nextTracked ? 'Tracking as Task' : 'Stopped tracking as Task')
+
+                // If content shown is this file in Electron, refresh editor to reflect frontmatter change
+                if (isElectron && window.electronAPI) {
+                  const abs = localFilePath || (filePath ? decodeURIComponent(filePath) : null)
+                  if (abs) {
+                    try {
+                      const latest = await window.electronAPI.readFile(abs)
+                      setContent(latest)
+                      setIsModified(false)
+                    } catch {}
+                  }
+                }
+              } finally {
+                setTrackingBusy(false)
+              }
+            }}
+            className={`p-1.5 rounded hover:bg-accent ${trackingBusy ? 'opacity-60 pointer-events-none' : ''}`}
+            title="Toggle tracking as Task"
+          >
+            <span className="inline-flex items-center gap-1 text-xs">
+              <span
+                className={`inline-block w-2 h-2 rounded-full ${trackedState ? 'bg-green-500' : 'bg-muted-foreground/40'}`}
+              />
+              {trackedState ? 'Task On' : 'Task Off'}
+            </span>
           </button>
 
             <label className="flex items-center gap-1 text-xs border-l pl-2 ml-1 cursor-pointer" title="Hide YAML metadata">

@@ -166,6 +166,27 @@ function TaskCard({ node, isDragging, onClick, onRequestDelete, hasInvalidStatus
               >
                 Go to node in Editor
               </button>
+              {/* Stop tracking as Task */}
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={async () => {
+                  setMenuOpen(false)
+                  try {
+                    const { useNodeStore } = await import('../../store/nodeStore')
+                    const store = useNodeStore.getState()
+                    const current = store.nodes.get(node.path)
+                    if (!current) return
+                    const prevTracked = (current.metadata as any)?.task?.tracked !== false
+                    if (!prevTracked) return
+                    const nextTask = { ...(current.metadata as any).task, tracked: false }
+                    await store.updateNode(node.path, { metadata: { task: nextTask } as any })
+                  } catch (e) {
+                    console.error('Failed to stop tracking as task', e)
+                  }
+                }}
+              >
+                Stop tracking as Task
+              </button>
               <div className="h-px bg-border my-1" />
               <button
                 className="w-full text-left px-3 py-1.5 text-sm hover:bg-destructive hover:text-destructive-foreground"

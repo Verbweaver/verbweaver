@@ -145,7 +145,7 @@ function GraphView() {
             label: node.metadata.title || node.name,
             type: node.isDirectory ? 'folder' : (node.metadata.type || 'document'),
             metadata: node.metadata,
-            hasTask: node.hasTask,
+              hasTask: node.hasTask,
             taskStatus: node.taskStatus,
             isDirectory: node.isDirectory,
             isMarkdown: node.isMarkdown,
