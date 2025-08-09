@@ -12,12 +12,13 @@ interface CreateTaskModalProps {
   projectId?: string
   defaultStatus: string
   onClose: () => void
+  defaultDueDate?: string
 }
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
 
-function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalProps) {
+function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: CreateTaskModalProps) {
   const { currentProjectPath } = useProjectStore()
   const { loadNodes } = useNodeStore()
   const [title, setTitle] = useState('')
@@ -32,6 +33,17 @@ function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalP
   const [selectedTemplatePath, setSelectedTemplatePath] = useState<string | null>(null)
 
   useEffect(() => {
+    if (defaultDueDate) {
+      try {
+        const d = new Date(defaultDueDate)
+        if (!isNaN(d.getTime())) {
+          const yyyy = d.getFullYear()
+          const mm = String(d.getMonth() + 1).padStart(2, '0')
+          const dd = String(d.getDate()).padStart(2, '0')
+          setDueDate(`${yyyy}-${mm}-${dd}`)
+        }
+      } catch {}
+    }
     const loadTemplates = async () => {
       try {
         setIsLoadingTemplates(true)
@@ -52,7 +64,7 @@ function CreateTaskModal({ projectId, defaultStatus, onClose }: CreateTaskModalP
       }
     }
     loadTemplates()
-  }, [currentProjectPath, projectId])
+  }, [currentProjectPath, projectId, defaultDueDate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

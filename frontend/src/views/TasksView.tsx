@@ -14,7 +14,13 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { Plus, MoreHorizontal, Calendar, User, Tag, MessageSquare, Link, Settings } from 'lucide-react'
+import { Plus, CalendarDays, ListChecks, Settings, ChevronLeft, ChevronRight, Filter } from 'lucide-react'
+import FullCalendar from '@fullcalendar/react'
+import dayGridPlugin from '@fullcalendar/daygrid'
+import interactionPlugin from '@fullcalendar/interaction'
+import { formatISO, startOfWeek } from 'date-fns'
+// Load FullCalendar CSS locally via Vite alias (see vite.config.ts)
+// FullCalendar CSS is linked globally from index.html (copied to /vendor via postinstall)
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -93,9 +99,19 @@ const defaultColumns: KanbanColumn[] = [
   { id: 'done', title: 'Done', color: 'bg-green-500' },
 ]
 
+type TasksSubView = 'board' | 'calendar'
+
 function TasksView() {
   const { currentProject } = useProjectStore()
   const { nodes, loadNodes, updateTaskStatus, deleteNode, isLoading } = useNodeStore()
+  const [subView, setSubView] = useState<TasksSubView>('board')
+  const [calendarDate, setCalendarDate] = useState<Date>(new Date())
+  const [calendarMode, setCalendarMode] = useState<'month' | 'week'>('month')
+  const [showUnscheduled, setShowUnscheduled] = useState<boolean>(false)
+  const [statusFilter, setStatusFilter] = useState<string[] | null>(null)
+  const [defaultDue, setDefaultDue] = useState<string | undefined>(undefined)
+
+  // No runtime CSS injection needed; imports use local files
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [selectedColumn, setSelectedColumn] = useState<TaskState | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -124,6 +140,27 @@ function TasksView() {
       loadColumns()
     }
   }, [currentProject])
+
+  // Persist/recover subview per project and tab
+  useEffect(() => {
+    const key = `${currentProject?.id || 'global'}:tasks-view`
+    try {
+      const saved = localStorage.getItem(key)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed?.subView === 'board' || parsed?.subView === 'calendar') setSubView(parsed.subView)
+        if (parsed?.calendarMode === 'month' || parsed?.calendarMode === 'week') setCalendarMode(parsed.calendarMode)
+        if (parsed?.calendarDate) setCalendarDate(new Date(parsed.calendarDate))
+      }
+    } catch {}
+  }, [currentProject?.id])
+
+  useEffect(() => {
+    const key = `${currentProject?.id || 'global'}:tasks-view`
+    try {
+      localStorage.setItem(key, JSON.stringify({ subView, calendarMode, calendarDate }))
+    } catch {}
+  }, [subView, calendarMode, calendarDate, currentProject?.id])
 
   const loadColumns = async () => {
     if (!currentProject) return
@@ -296,114 +333,241 @@ function TasksView() {
           </div>
           
           <div className="flex items-center gap-2">
-            <Button
-              onClick={() => setIsColumnManagerOpen(true)}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2"
-            >
-              <Settings className="w-4 h-4" />
-              Manage Columns
-            </Button>
-            <button
-              onClick={() => handleCreateTask('todo')}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-            >
-              <Plus className="w-4 h-4" />
-              New Task
-            </button>
+            <div className="inline-flex rounded-md border border-border overflow-hidden">
+              <button
+                onClick={() => setSubView('board')}
+                className={clsx(
+                  'px-3 py-1.5 text-sm flex items-center gap-1',
+                  subView === 'board' ? 'bg-primary text-primary-foreground' : 'bg-background'
+                )}
+                title="Board"
+              >
+                <ListChecks className="w-4 h-4" /> Board
+              </button>
+              <button
+                onClick={() => setSubView('calendar')}
+                className={clsx(
+                  'px-3 py-1.5 text-sm flex items-center gap-1 border-l border-border',
+                  subView === 'calendar' ? 'bg-primary text-primary-foreground' : 'bg-background'
+                )}
+                title="Calendar"
+              >
+                <CalendarDays className="w-4 h-4" /> Calendar
+              </button>
+            </div>
+
+            {subView === 'board' && (
+              <>
+                <Button
+                  onClick={() => setIsColumnManagerOpen(true)}
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-2"
+                >
+                  <Settings className="w-4 h-4" />
+                  Manage Columns
+                </Button>
+                <button
+                  onClick={() => handleCreateTask('todo')}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Task
+                </button>
+              </>
+            )}
+            {subView === 'calendar' && (
+              <>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCalendarDate(prev => new Date(prev.getFullYear(), prev.getMonth() - (calendarMode==='month'?1:0), prev.getDate() - (calendarMode==='week'?7:0)))}
+                    className="p-2 rounded hover:bg-accent"
+                    title="Previous"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setCalendarDate(new Date())}
+                    className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => setCalendarDate(prev => new Date(prev.getFullYear(), prev.getMonth() + (calendarMode==='month'?1:0), prev.getDate() + (calendarMode==='week'?7:0)))}
+                    className="p-2 rounded hover:bg-accent"
+                    title="Next"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="inline-flex rounded-md border border-border overflow-hidden">
+                  <button
+                    onClick={() => setCalendarMode('month')}
+                    className={clsx('px-3 py-1.5 text-sm', calendarMode==='month' ? 'bg-accent' : '')}
+                  >Month</button>
+                  <button
+                    onClick={() => setCalendarMode('week')}
+                    className={clsx('px-3 py-1.5 text-sm border-l border-border', calendarMode==='week' ? 'bg-accent' : '')}
+                  >Week</button>
+                </div>
+                <select
+                  className="px-2 py-1 rounded border border-border text-sm"
+                  value={statusFilter ? statusFilter.join(',') : ''}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (!v) setStatusFilter(null)
+                    else setStatusFilter(v.split(',').filter(Boolean))
+                  }}
+                >
+                  <option value="">All statuses</option>
+                  {columns.map(c => (
+                    <option key={c.id} value={c.id}>{c.title}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setShowUnscheduled(s => !s)}
+                  className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
+                >
+                  {showUnscheduled ? 'Hide Unscheduled' : 'Show Unscheduled'}
+                </button>
+                <button
+                  onClick={() => handleCreateTask('todo')}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Task
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Kanban Board */}
-      <div className="flex-1 overflow-x-auto">
-        <div className="h-full p-6">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-muted-foreground">Loading tasks...</p>
-            </div>
-          ) : (
-            <DndContext
-              sensors={sensors}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-            >
-              <div className="flex gap-4 h-full">
-                {columns.map(column => (
-                  <DroppableColumn
-                    key={column.id}
-                    id={column.id}
-                    title={column.title}
-                    color={column.color}
-                    onCreateTask={() => handleCreateTask(column.id)}
-                  >
-                    <SortableContext
-                      items={getTasksByStatus(column.id).map(node => node.path)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {getTasksByStatus(column.id).map((node) => (
-                        <TaskCard
-                          key={node.path}
-                          node={node}
-                          isDragging={activeId === node.path}
-                          onClick={handleTaskClick}
-                          onRequestDelete={handleRequestDelete}
-                        />
-                      ))}
-                    </SortableContext>
-                  </DroppableColumn>
-                ))}
-                
-                {/* Invalid Status Column */}
-                {getTasksByStatus('invalid').length > 0 && (
-                  <DroppableColumn
-                    key="invalid"
-                    id="invalid"
-                    title="Invalid Status"
-                    color="bg-red-500"
-                    onCreateTask={() => {}}
-                  >
-                    <SortableContext
-                      items={getTasksByStatus('invalid').map(node => node.path)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {getTasksByStatus('invalid').map((node) => (
-                        <TaskCard
-                          key={node.path}
-                          node={node}
-                          isDragging={activeId === node.path}
-                          onClick={handleTaskClick}
-                          onRequestDelete={handleRequestDelete}
-                          hasInvalidStatus={true}
-                        />
-                      ))}
-                    </SortableContext>
-                  </DroppableColumn>
-                )}
+      {/* Content */}
+      {subView === 'board' ? (
+        <div className="flex-1 overflow-x-auto">
+          <div className="h-full p-6">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-muted-foreground">Loading tasks...</p>
               </div>
-
-              <DragOverlay>
-                {activeNode ? (
-                  <TaskCard
-                    node={activeNode}
-                    isDragging={true}
-                  />
-                ) : null}
-              </DragOverlay>
-            </DndContext>
-          )}
+            ) : (
+              <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                <div className="flex gap-4 h-full">
+                  {columns.map(column => (
+                    <DroppableColumn key={column.id} id={column.id} title={column.title} color={column.color} onCreateTask={() => handleCreateTask(column.id)}>
+                      <SortableContext items={getTasksByStatus(column.id).map(node => node.path)} strategy={verticalListSortingStrategy}>
+                        {getTasksByStatus(column.id).map((node) => (
+                          <TaskCard key={node.path} node={node} isDragging={activeId === node.path} onClick={handleTaskClick} onRequestDelete={handleRequestDelete} />
+                        ))}
+                      </SortableContext>
+                    </DroppableColumn>
+                  ))}
+                  {getTasksByStatus('invalid').length > 0 && (
+                    <DroppableColumn key="invalid" id="invalid" title="Invalid Status" color="bg-red-500" onCreateTask={() => {}}>
+                      <SortableContext items={getTasksByStatus('invalid').map(node => node.path)} strategy={verticalListSortingStrategy}>
+                        {getTasksByStatus('invalid').map((node) => (
+                          <TaskCard key={node.path} node={node} isDragging={activeId === node.path} onClick={handleTaskClick} onRequestDelete={handleRequestDelete} hasInvalidStatus={true} />
+                        ))}
+                      </SortableContext>
+                    </DroppableColumn>
+                  )}
+                </div>
+                <DragOverlay>
+                  {activeNode ? <TaskCard node={activeNode} isDragging={true} /> : null}
+                </DragOverlay>
+              </DndContext>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex-1 overflow-hidden">
+          <div className="h-full flex">
+            <div className="flex-1 overflow-auto p-2">
+              <FullCalendar
+                plugins={[dayGridPlugin, interactionPlugin]}
+                initialView={calendarMode === 'month' ? 'dayGridMonth' : 'dayGridWeek'}
+                headerToolbar={false}
+                height="100%"
+                firstDay={startOfWeek(new Date()).getDay()}
+                initialDate={calendarDate}
+                datesSet={(arg) => {
+                  setCalendarDate(arg.start)
+                }}
+                events={(() => {
+                  const events: any[] = []
+                  columns.forEach(col => {
+                    const tasks = (tasksByStatus[col.id] || [])
+                      .filter(t => !!(t.metadata?.task?.dueDate))
+                      .filter(t => !statusFilter || statusFilter.includes(col.id))
+                  
+                    tasks.forEach(t => {
+                      const due = new Date(t.metadata.task.dueDate)
+                      if (!isNaN(due.getTime())) {
+                        events.push({
+                          id: t.path,
+                          title: t.metadata?.title || t.name,
+                          start: formatISO(due, { representation: 'date' }),
+                          allDay: true,
+                          color: undefined,
+                          textColor: undefined,
+                          classNames: [col.color],
+                        })
+                      }
+                    })
+                  })
+                  return events
+                })()}
+                eventClick={(info) => {
+                  const node = nodes.get(info.event.id)
+                  if (node) handleTaskClick(node as any)
+                }}
+                dateClick={(info) => {
+                  setSelectedColumn('todo' as any)
+                  setDefaultDue(info.dateStr)
+                  setIsCreateModalOpen(true)
+                }}
+                editable
+                eventDrop={async (info) => {
+                  const nodePath = info.event.id
+                  const node = nodes.get(nodePath)
+                  if (node) {
+                    const nextDate = info.event.start
+                    if (nextDate) {
+                      const updated = { ...(node.metadata.task || {}), dueDate: nextDate.toISOString() }
+                      await useNodeStore.getState().updateNode(node.path, { metadata: { task: updated } as any })
+                    }
+                  }
+                }}
+              />
+            </div>
+            {showUnscheduled && (
+              <div className="w-80 border-l border-border p-3 overflow-y-auto">
+                <h3 className="text-sm font-medium mb-2">Unscheduled</h3>
+                <div className="space-y-2">
+                  {Array.from(nodes.values()).filter(n => !n.isDirectory && n.hasTask && !n.metadata?.task?.dueDate && !n.path.startsWith('uploads/nodes/')).map(n => (
+                    <div key={n.path} className="p-2 rounded border border-border hover:bg-accent cursor-pointer" onClick={() => handleTaskClick(n as any)}>
+                      <div className="text-sm font-medium">{n.metadata?.title || n.name}</div>
+                      <div className="text-xs text-muted-foreground">No due date</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Create Task Modal */}
       {isCreateModalOpen && (
         <CreateTaskModal
           projectId={currentProject?.id}
           defaultStatus={selectedColumn || 'todo'}
+          defaultDueDate={defaultDue}
           onClose={() => {
             setIsCreateModalOpen(false)
             setSelectedColumn(null)
+            setDefaultDue(undefined)
           }}
         />
       )}
