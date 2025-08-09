@@ -211,6 +211,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Monaco Editor](https://microsoft.github.io/monaco-editor/) for the code editor
 - [Electron](https://www.electronjs.org/) for cross-platform desktop apps
 - [GitPython](https://gitpython.readthedocs.io/) for Git integration
+- [FullCalendar](https://fullcalendar.io/) (core, daygrid) © Adam Shaw — MIT License. We redistribute CSS assets for offline availability. See license: https://fullcalendar.io/license/mit
 - All our contributors and supporters!
 
 ## 📞 Support

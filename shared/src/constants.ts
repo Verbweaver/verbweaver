@@ -122,6 +122,7 @@ export const STORAGE_KEYS = {
   SIDEBAR_WIDTH: 'verbweaver_sidebar_width',
   COMPILER_SELECTION: 'verbweaver_compiler_selection',
   EDITOR_HIDE_METADATA: 'verbweaver_editor_hide_metadata',
+  TASKS_VIEW_PREFERENCES: 'verbweaver_tasks_view_preferences',
 } as const;
 
 // Regex patterns
