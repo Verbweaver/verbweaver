@@ -738,6 +738,24 @@ function GraphView() {
           }}
           onUnlinkEdge={handleUnlinkEdge}
           onAttachFiles={(nodeId) => setAttachTarget(nodeId)}
+          onToggleTrackTask={async (nodeId) => {
+            try {
+              const store = useNodeStore.getState()
+              let node = store.nodes.get(nodeId)
+              if (!node) {
+                try { await store.loadNodes() } catch {}
+                node = useNodeStore.getState().nodes.get(nodeId)
+              }
+              if (!node || node.isDirectory) return
+              const prevTracked = (node.metadata as any)?.task?.tracked !== false
+              const nextTracked = !prevTracked
+              const nextTask = { ...(node.metadata as any).task, tracked: nextTracked }
+              await store.updateNode(nodeId, { metadata: { task: nextTask } as any })
+              toast.success(nextTracked ? 'Tracking as Task' : 'Stopped tracking as Task')
+            } finally {
+              setContextMenu(null)
+            }
+          }}
           onClose={() => setContextMenu(null)}
         />
       )}

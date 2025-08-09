@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { desktopTemplatesApi } from '../../api/desktop-templates'
 import { templatesApi, Template } from '../../api/templates'
 import { useProjectStore } from '../../store/projectStore'
-import { Plus, Trash2, Edit, Link, FolderPlus, CheckSquare, Paperclip, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Edit, Link, FolderPlus, CheckSquare, Paperclip, Loader2, CheckCircle } from 'lucide-react'
 
 interface NodeContextMenuProps {
   x: number
@@ -22,9 +22,10 @@ interface NodeContextMenuProps {
   onAttachFiles?: (nodeId: string) => void
   multiCount?: number
   onClose: () => void
+  onToggleTrackTask?: (nodeId: string) => void
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onDeleteMultiple, multiCount = 0, onClose }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -207,6 +208,18 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
                 <Link className="w-3 h-3" />
                 Create Link
               </button>
+
+              {onToggleTrackTask && (
+                <button
+                  onClick={() => {
+                    if (nodeId) onToggleTrackTask(nodeId)
+                  }}
+                  className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                >
+                  <CheckCircle className="w-3 h-3" />
+                  {hasTask ? 'Stop tracking as Task' : 'Track as Task'}
+                </button>
+              )}
             </>
           )}
 
