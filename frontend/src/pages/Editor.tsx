@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
-import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip } from 'lucide-react'
+import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip, ChevronDown, ChevronRight, Link as LinkIcon } from 'lucide-react'
 import { editorApi } from '../api/editorApi'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
@@ -46,6 +46,7 @@ function EditorView() {
   const [confirmState, setConfirmState] = useState<{ open: boolean }>({ open: false })
   const [attachOpen, setAttachOpen] = useState(false)
   const [trackingBusy, setTrackingBusy] = useState(false)
+  const [linksExpanded, setLinksExpanded] = useState(false)
 
   // Resolve current node path (project-relative in Electron; API path in web)
   const resolvedNodePath = useMemo(() => {
@@ -70,6 +71,87 @@ function EditorView() {
     if (!n || n.isDirectory) return null
     return (n.metadata as any)?.task?.tracked !== false
   })
+
+  // Resolve linked nodes (soft links) for the current node
+  const linkedNodes = useNodeStore((s) => {
+    if (!resolvedNodePath) return [] as Array<{ path: string; name: string; title: string }>
+    const node = s.nodes.get(resolvedNodePath)
+    if (!node) return []
+    const linkIds: string[] = Array.isArray(node.metadata?.links) ? node.metadata.links : []
+    const results: Array<{ path: string; name: string; title: string }> = []
+    if (linkIds.length === 0) return results
+    for (const other of s.nodes.values()) {
+      if (!other.isDirectory && linkIds.includes(other.metadata?.id)) {
+        results.push({ path: other.path, name: other.name, title: other.metadata?.title || other.name })
+      }
+    }
+    // De-duplicate by path
+    const uniq = new Map<string, { path: string; name: string; title: string }>()
+    results.forEach(r => uniq.set(r.path, r))
+    return Array.from(uniq.values()).sort((a, b) => a.title.localeCompare(b.title))
+  })
+
+  const openEditorForPath = useCallback((projectRelativePath: string) => {
+    if (isElectron && currentProjectPath) {
+      const abs = `${currentProjectPath.replace(/\\/g,'/')}/${projectRelativePath.replace(/\\/g,'/')}`
+      navigate(`/editor/${encodeURIComponent(abs)}`)
+    } else {
+      navigate(`/editor/${encodeURIComponent(projectRelativePath)}`)
+    }
+  }, [navigate, currentProjectPath])
+
+  // Handle clicks on links inside preview HTML
+  const handlePreviewClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    let el = e.target as HTMLElement | null
+    while (el && el.tagName !== 'A') {
+      el = el.parentElement
+    }
+    if (!el || el.tagName !== 'A') return
+    const anchor = el as HTMLAnchorElement
+    const rawHref = anchor.getAttribute('href') || ''
+    if (!rawHref) return
+    // External or hash/mailto links: allow default
+    const lower = rawHref.toLowerCase()
+    if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('mailto:') || lower.startsWith('#')) {
+      return
+    }
+    e.preventDefault()
+    // Resolve relative path against current file directory
+    const normalize = (baseDir: string, rel: string) => {
+      const base = baseDir.replace(/\\/g,'/').replace(/\/$/, '')
+      const parts = base.split('/')
+      const segs = rel.replace(/\\/g,'/').split('/')
+      // Remove filename segment from base
+      parts.pop()
+      for (const s of segs) {
+        if (s === '' || s === '.') continue
+        if (s === '..') { if (parts.length > 0) parts.pop(); continue }
+        parts.push(s)
+      }
+      return parts.join('/')
+    }
+    let basePath: string | null = null
+    if (isElectron) {
+      const abs = localFilePath || (filePath ? (() => { try { return decodeURIComponent(filePath) } catch { return filePath } })() : null)
+      basePath = abs || null
+      if (basePath && currentProjectPath && basePath.replace(/\\/g,'/').startsWith(currentProjectPath.replace(/\\/g,'/') + '/')) {
+        // keep absolute for navigation
+      }
+    } else if (resolvedNodePath) {
+      basePath = resolvedNodePath
+    }
+    if (!basePath) return
+    const resolved = normalize(basePath, rawHref)
+    // Convert to project-relative for navigation
+    if (isElectron && currentProjectPath) {
+      const pr = currentProjectPath.replace(/\\/g,'/')
+      const rp = resolved.replace(/\\/g,'/')
+      const projectRel = rp.startsWith(pr + '/') ? rp.slice(pr.length + 1) : rp
+      openEditorForPath(projectRel)
+    } else {
+      openEditorForPath(resolved)
+    }
+  }, [isElectron, localFilePath, filePath, resolvedNodePath, currentProjectPath, openEditorForPath])
 
   // Persisted preference: hide YAML frontmatter in editor and preview
   interface EditorPrefsState { hideMetadata: boolean; setHideMetadata: (v: boolean) => void }
@@ -536,7 +618,11 @@ function EditorView() {
         
         <Panel defaultSize={80}>
           {isPreview ? (
-            <div className="h-full w-full overflow-auto bg-background p-4" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            <div
+              className="h-full w-full overflow-auto bg-background p-4"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+              onClick={handlePreviewClick}
+            />
           ) : (
             <Editor
             value={hideMetadata ? content.replace(/^---\s*[\s\S]*?\n---\s*\n?/, '') : content}
@@ -557,6 +643,35 @@ function EditorView() {
           )}
         </Panel>
       </PanelGroup>
+      {/* Linked nodes list */}
+      <div className="border-t border-border px-4 py-2 bg-muted/40">
+        <button
+          className="flex items-center gap-1 text-xs hover:underline"
+          onClick={() => setLinksExpanded(v => !v)}
+        >
+          {linksExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          Links ({linkedNodes.length})
+        </button>
+        {linksExpanded && linkedNodes.length > 0 && (
+          <ul className="mt-2 grid gap-1 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
+            {linkedNodes.map((ln) => (
+              <li key={ln.path}>
+                <button
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                  onClick={() => openEditorForPath(ln.path)}
+                  title={ln.path}
+                >
+                  <LinkIcon className="w-3 h-3" />
+                  {ln.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {linksExpanded && linkedNodes.length === 0 && (
+          <div className="text-xs text-muted-foreground mt-2">No links</div>
+        )}
+      </div>
       {/* Confirm Delete Dialog */}
       <ConfirmDialog
       isOpen={confirmState.open}
