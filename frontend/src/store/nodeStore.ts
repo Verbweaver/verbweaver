@@ -232,7 +232,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           // Only process files within the nodes/ directory
           // Normalize path separators for cross-platform compatibility
           const normalizedPath = file.path.replace(/\\/g, '/');
-          if (!normalizedPath.startsWith('nodes/') && normalizedPath !== 'nodes') {
+          if (!normalizedPath.startsWith('nodes/') && normalizedPath !== 'nodes' &&
+              !normalizedPath.startsWith('uploads/') && normalizedPath !== 'uploads') {
             console.log('[NodeStore] Skipping file outside nodes/:', file.path);
             continue;
           }
