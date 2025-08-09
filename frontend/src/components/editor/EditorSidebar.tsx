@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical, RefreshCcw } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical, RefreshCcw, Upload } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { editorApi } from '../../api/editorApi'
 import { TemplateSelectionDialog } from '../TemplateSelectionDialog'
@@ -66,11 +66,11 @@ function EditorSidebar() {
         // Convert to FileNode format and filter for relevant directories/files
         const tree: FileNode[] = rootItems
           .filter(item => {
-            // Show specific directories and markdown files at the root of the project
+            // Show specific directories (including uploads) and markdown files at the root of the project
             if (item.type === 'directory') {
-              return ['nodes', 'docs', 'templates'].includes(item.name); // Removed 'tasks'
+              return ['nodes', 'docs', 'templates', 'uploads'].includes(item.name)
             }
-            return item.name.endsWith('.md'); // Also show root markdown files (like README.md)
+            return item.name.endsWith('.md') // Also show root markdown files (like README.md)
           })
           .map(item => ({
             id: item.path,
@@ -124,11 +124,13 @@ function EditorSidebar() {
       const items = await window.electronAPI.readDirectory(absolutePath)
       
       // Convert to FileNode format
-      const children: FileNode[] = items
-        .filter(item => {
-          // Show all directories and markdown files
-          return item.type === 'directory' || item.name.endsWith('.md')
-        })
+        const children: FileNode[] = items
+          .filter(item => {
+            // Show all directories and markdown files and also non-markdown under uploads
+            if (item.type === 'directory') return true
+            if (node.path.startsWith('uploads')) return true
+            return item.name.endsWith('.md')
+          })
         .map(item => ({
           id: `${node.path}/${item.name}`,
           name: item.name,
@@ -474,6 +476,53 @@ Add any additional notes or references here.
             title="Refresh files"
           >
             <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={async () => {
+              // Create hidden input on the fly for upload
+              const input = document.createElement('input')
+              input.type = 'file'
+              input.multiple = true
+              input.style.display = 'none'
+              document.body.appendChild(input)
+              input.onchange = async (e: any) => {
+                const files = input.files
+                if (!files) { document.body.removeChild(input); return }
+                try {
+                  const { FileStorage } = await import('../../utils/fileStorage')
+                  const uploaded: any[] = []
+                  for (const f of Array.from(files)) {
+                    const sf = await FileStorage.uploadFile(f, 'upload')
+                    if (sf) uploaded.push(sf)
+                  }
+                  // For each uploaded file, create a metadata .md with tracked=false
+                  if (isElectron && window.electronAPI && currentProjectPath) {
+                    for (const sf of uploaded) {
+                      const rel = sf.path.replace(/\\/g,'/').startsWith(currentProjectPath.replace(/\\/g,'/') + '/')
+                        ? sf.path.replace(/\\/g,'/').slice(currentProjectPath.replace(/\\/g,'/').length + 1)
+                        : sf.path
+                      const absMeta = `${currentProjectPath}/${rel}.metadata.md`
+                      const meta = `---\nid: upload-${Date.now()}-${Math.random().toString(36).slice(2)}\ntitle: ${sf.originalName}\ntype: file\ntask:\n  tracked: false\n---\n`
+                      await window.electronAPI.writeFile(absMeta, meta)
+                    }
+                  }
+                  await loadFileTree()
+                  // Also refresh nodes so Graph/Threads pick them up
+                  try { (await import('../../store/nodeStore')).useNodeStore.getState().loadNodes() } catch {}
+                  toast.success('File(s) uploaded')
+                } catch (err) {
+                  console.error('Upload failed', err)
+                  toast.error('Failed to upload files')
+                } finally {
+                  document.body.removeChild(input)
+                }
+              }
+              input.click()
+            }}
+            className="p-1 rounded hover:bg-accent"
+            title="Upload file(s)"
+          >
+            <Upload className="w-4 h-4" />
           </button>
           <button
             onClick={() => setShowFolderDialog(true)}

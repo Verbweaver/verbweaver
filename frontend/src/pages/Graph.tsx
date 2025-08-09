@@ -134,8 +134,11 @@ function GraphView() {
       const flowNodes: Node[] = []
       const flowEdges: Edge[] = []
       
-      // First pass: Create all nodes
+      // First pass: Create all nodes (exclude uploads/nodes/* from graph rendering)
       verbweaverNodes.forEach((node) => {
+        if (node.path.startsWith('uploads/nodes/')) {
+          return
+        }
         // Create flow node for all nodes, including 'nodes' folder if it exists
         flowNodes.push({
           id: node.path,
@@ -738,6 +741,10 @@ function GraphView() {
           }}
           onUnlinkEdge={handleUnlinkEdge}
           onAttachFiles={(nodeId) => setAttachTarget(nodeId)}
+          onUploadFiles={() => {
+            const input = document.getElementById('graph-canvas-upload-input') as HTMLInputElement | null
+            input?.click()
+          }}
           onToggleTrackTask={async (nodeId) => {
             try {
               const store = useNodeStore.getState()
@@ -910,6 +917,44 @@ function GraphView() {
           autoFocus
         />
       )}
+
+      {/* Hidden input for canvas uploads from pane context menu */}
+      <input
+        type="file"
+        multiple
+        style={{ display: 'none' }}
+        id="graph-canvas-upload-input"
+        onChange={async (e) => {
+          const files = e.target.files
+          if (!files) return
+          try {
+            const uploaded: StoredFile[] = []
+            for (const f of Array.from(files)) {
+              const sf = await FileStorage.uploadFile(f, 'upload')
+              if (sf) uploaded.push(sf)
+            }
+            const { currentProjectPath } = useProjectStore.getState()
+            if (isElectron && window.electronAPI && currentProjectPath) {
+              for (const sf of uploaded) {
+                const rel = sf.path.replace(/\\/g,'/').startsWith(currentProjectPath.replace(/\\/g,'/') + '/')
+                  ? sf.path.replace(/\\/g,'/').slice(currentProjectPath.replace(/\\/g,'/').length + 1)
+                  : sf.path
+                const absMeta = `${currentProjectPath}/${rel}.metadata.md`
+                const meta = `---\nid: upload-${Date.now()}-${Math.random().toString(36).slice(2)}\ntitle: ${sf.originalName}\ntype: file\ntask:\n  tracked: false\n---\n`
+                await window.electronAPI.writeFile(absMeta, meta)
+              }
+            }
+            await loadNodes()
+            toast.success('File(s) uploaded')
+          } catch (err) {
+            console.error('Upload failed', err)
+            toast.error('Failed to upload files')
+          } finally {
+            const input = document.getElementById('graph-canvas-upload-input') as HTMLInputElement | null
+            if (input) input.value = ''
+          }
+        }}
+      />
     </div>
   )
 }

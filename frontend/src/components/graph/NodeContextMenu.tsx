@@ -20,12 +20,13 @@ interface NodeContextMenuProps {
   onSeeTask?: (nodeId: string) => void
   onUnlinkEdge?: (edgeId: string) => void
   onAttachFiles?: (nodeId: string) => void
+  onUploadFiles?: () => void
   multiCount?: number
   onClose: () => void
   onToggleTrackTask?: (nodeId: string) => void
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -111,6 +112,16 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
           >
             <FolderPlus className="w-3 h-3" />
             Folder
+          </button>
+          <button
+            onClick={() => {
+              onUploadFiles && onUploadFiles()
+              onClose()
+            }}
+            className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+          >
+            <CheckCircle className="w-3 h-3" />
+            Upload File
           </button>
           <div className="h-px bg-border my-1" />
           <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">From Template</div>
