@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   DndContext,
@@ -17,7 +17,7 @@ import {
 import { Plus, CalendarDays, ListChecks, Settings, ChevronLeft, ChevronRight, Filter } from 'lucide-react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
-import interactionPlugin from '@fullcalendar/interaction'
+import interactionPlugin, { Draggable } from '@fullcalendar/interaction'
 import { formatISO, startOfWeek } from 'date-fns'
 // Load FullCalendar CSS locally via Vite alias (see vite.config.ts)
 // FullCalendar CSS is linked globally from index.html (copied to /vendor via postinstall)
@@ -110,6 +110,8 @@ function TasksView() {
   const [showUnscheduled, setShowUnscheduled] = useState<boolean>(false)
   const [statusFilter, setStatusFilter] = useState<string[] | null>(null)
   const [defaultDue, setDefaultDue] = useState<string | undefined>(undefined)
+  const calendarRef = useRef<any>(null)
+  const calendarElRef = useRef<HTMLDivElement | null>(null)
 
   // No runtime CSS injection needed; imports use local files
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -161,6 +163,26 @@ function TasksView() {
       localStorage.setItem(key, JSON.stringify({ subView, calendarMode, calendarDate }))
     } catch {}
   }, [subView, calendarMode, calendarDate, currentProject?.id])
+
+  // Enable dragging from Unscheduled list into FullCalendar
+  useEffect(() => {
+    if (subView !== 'calendar') return
+    const container = document.getElementById('vw-unscheduled')
+    if (!container) return
+    try {
+      // Initialize FullCalendar Draggable for external events
+      new Draggable(container, {
+        itemSelector: '.vw-unscheduled-item',
+        eventData: (el: HTMLElement) => {
+          const id = (el.getAttribute('data-path') || '')
+          const title = (el.querySelector('.text-sm.font-medium') as HTMLElement)?.innerText || el.getAttribute('data-title') || 'Task'
+          return { id, title }
+        },
+      })
+    } catch (e) {
+      console.warn('Failed to init external draggable', e)
+    }
+  }, [subView, nodes, showUnscheduled])
 
   const loadColumns = async () => {
     if (!currentProject) return
@@ -380,20 +402,29 @@ function TasksView() {
               <>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setCalendarDate(prev => new Date(prev.getFullYear(), prev.getMonth() - (calendarMode==='month'?1:0), prev.getDate() - (calendarMode==='week'?7:0)))}
+                    onClick={() => {
+                      const api = calendarRef.current?.getApi?.()
+                      if (api) api.prev()
+                    }}
                     className="p-2 rounded hover:bg-accent"
                     title="Previous"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => setCalendarDate(new Date())}
+                    onClick={() => {
+                      const api = calendarRef.current?.getApi?.()
+                      if (api) api.today()
+                    }}
                     className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
                   >
                     Today
                   </button>
                   <button
-                    onClick={() => setCalendarDate(prev => new Date(prev.getFullYear(), prev.getMonth() + (calendarMode==='month'?1:0), prev.getDate() + (calendarMode==='week'?7:0)))}
+                    onClick={() => {
+                      const api = calendarRef.current?.getApi?.()
+                      if (api) api.next()
+                    }}
                     className="p-2 rounded hover:bg-accent"
                     title="Next"
                   >
@@ -402,16 +433,24 @@ function TasksView() {
                 </div>
                 <div className="inline-flex rounded-md border border-border overflow-hidden">
                   <button
-                    onClick={() => setCalendarMode('month')}
+                    onClick={() => {
+                      setCalendarMode('month')
+                      const api = calendarRef.current?.getApi?.()
+                      if (api) api.changeView('dayGridMonth')
+                    }}
                     className={clsx('px-3 py-1.5 text-sm', calendarMode==='month' ? 'bg-accent' : '')}
                   >Month</button>
                   <button
-                    onClick={() => setCalendarMode('week')}
+                    onClick={() => {
+                      setCalendarMode('week')
+                      const api = calendarRef.current?.getApi?.()
+                      if (api) api.changeView('dayGridWeek')
+                    }}
                     className={clsx('px-3 py-1.5 text-sm border-l border-border', calendarMode==='week' ? 'bg-accent' : '')}
                   >Week</button>
                 </div>
                 <select
-                  className="px-2 py-1 rounded border border-border text-sm"
+                  className="px-2 py-1 rounded border border-border text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                   value={statusFilter ? statusFilter.join(',') : ''}
                   onChange={(e) => {
                     const v = e.target.value
@@ -491,9 +530,13 @@ function TasksView() {
                 height="100%"
                 firstDay={startOfWeek(new Date()).getDay()}
                 initialDate={calendarDate}
+                ref={calendarRef}
                 datesSet={(arg) => {
                   setCalendarDate(arg.start)
+                  // Keep local mode in sync with current view
+                  setCalendarMode(arg.view.type === 'dayGridWeek' ? 'week' : 'month')
                 }}
+                droppable={true}
                 events={(() => {
                   const events: any[] = []
                   columns.forEach(col => {
@@ -539,18 +582,37 @@ function TasksView() {
                     }
                   }
                 }}
+                eventReceive={async (info) => {
+                  // External drop from Unscheduled list
+                  const nodePath = info.event.id
+                  const droppedDate = info.event.start
+                  const node = nodes.get(nodePath)
+                  if (node && droppedDate) {
+                    const updated = { ...(node.metadata.task || {}), dueDate: droppedDate.toISOString() }
+                    await useNodeStore.getState().updateNode(node.path, { metadata: { task: updated } as any })
+                  }
+                }}
               />
             </div>
             {showUnscheduled && (
-              <div className="w-80 border-l border-border p-3 overflow-y-auto">
+              <div className="w-80 border-l border-border p-3 overflow-y-auto" id="vw-unscheduled">
                 <h3 className="text-sm font-medium mb-2">Unscheduled</h3>
                 <div className="space-y-2">
-                  {Array.from(nodes.values()).filter(n => !n.isDirectory && n.hasTask && !n.metadata?.task?.dueDate && !n.path.startsWith('uploads/nodes/')).map(n => (
-                    <div key={n.path} className="p-2 rounded border border-border hover:bg-accent cursor-pointer" onClick={() => handleTaskClick(n as any)}>
+                  {Array.from(nodes.values()).filter(n => !n.isDirectory && n.hasTask && !n.metadata?.task?.dueDate && !n.path.startsWith('uploads/nodes/')).map(n => {
+                    const title = n.metadata?.title || n.name
+                    return (
+                      <div
+                        key={n.path}
+                        className="p-2 rounded border border-border hover:bg-accent cursor-grab vw-unscheduled-item"
+                        data-path={n.path}
+                        data-title={title}
+                        onClick={() => handleTaskClick(n as any)}
+                      >
                       <div className="text-sm font-medium">{n.metadata?.title || n.name}</div>
                       <div className="text-xs text-muted-foreground">No due date</div>
-                    </div>
-                  ))}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
