@@ -64,7 +64,7 @@ function TaskCard({ node, isDragging, onClick, onRequestDelete, hasInvalidStatus
   // Extract task information from metadata
   const task = node.metadata.task || {}
   const title = node.metadata.title || node.name
-  const description = node.metadata.description || node.content?.split('\n').find(line => line.trim() && !line.startsWith('#')) || ''
+  const description = (node.metadata && typeof node.metadata.description === 'string') ? node.metadata.description : ''
   const priority = task.priority || node.metadata.priority || 'medium'
   const assignee = task.assignee || node.metadata.assignee
   const dueDate = task.dueDate || node.metadata.dueDate
