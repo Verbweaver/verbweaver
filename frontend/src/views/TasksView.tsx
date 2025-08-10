@@ -128,6 +128,8 @@ function TasksView() {
   const [overdueSortDesc, setOverdueSortDesc] = useState<boolean>(true)
   const [completedColumnId, setCompletedColumnId] = useState<string | null>(null)
   const [uncompleteDialog, setUncompleteDialog] = useState<{ open: boolean; nodePath?: string }>({ open: false })
+  const [showCompleted, setShowCompleted] = useState<boolean>(false)
+  const [uncompleteTarget, setUncompleteTarget] = useState<string>('')
   const calendarElRef = useRef<HTMLDivElement | null>(null)
 
   // No runtime CSS injection needed; imports use local files
@@ -141,6 +143,20 @@ function TasksView() {
   const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false)
   const [isLoadingColumns, setIsLoadingColumns] = useState(true)
   const [confirmState, setConfirmState] = useState<{ open: boolean; nodePath?: string; nodeName?: string }>({ open: false })
+  const [optimisticCompleted, setOptimisticCompleted] = useState<Set<string>>(new Set())
+  const effectiveCompletedId = useMemo(() => {
+    if (completedColumnId) return completedColumnId
+    const byTitle = columns.find(c => /done|complete/i.test(c.title))?.id
+    if (byTitle) return byTitle
+    const doneId = columns.find(c => c.id === 'done')?.id
+    return doneId || null
+  }, [completedColumnId, columns])
+  const isTaskCompleted = (t: VerbweaverNode): boolean => {
+    const status = (t.taskStatus || t.metadata?.task?.status) as string | undefined
+    if (effectiveCompletedId && status === effectiveCompletedId) return true
+    if (t.metadata?.task?.completedDate) return true
+    return false
+  }
   
   // Handle URL parameters for opening specific tasks
   const { taskPath } = useParams()
@@ -172,6 +188,7 @@ function TasksView() {
         if (parsed?.calendarDate) setCalendarDate(new Date(parsed.calendarDate))
         if (Array.isArray(parsed?.statusFilter)) setStatusFilter(parsed.statusFilter)
         if (Array.isArray(parsed?.tagsFilter)) setTagsFilter(parsed.tagsFilter)
+        if (typeof parsed?.todoShowCompleted === 'boolean') setShowCompleted(parsed.todoShowCompleted)
       }
     } catch {}
   }, [currentProject?.id])
@@ -179,9 +196,9 @@ function TasksView() {
   useEffect(() => {
     const key = `${currentProject?.id || 'global'}:tasks-view`
     try {
-      localStorage.setItem(key, JSON.stringify({ subView, calendarMode, calendarDate, statusFilter, tagsFilter }))
+      localStorage.setItem(key, JSON.stringify({ subView, calendarMode, calendarDate, statusFilter, tagsFilter, todoShowCompleted: showCompleted }))
     } catch {}
-  }, [subView, calendarMode, calendarDate, statusFilter, tagsFilter, currentProject?.id])
+  }, [subView, calendarMode, calendarDate, statusFilter, tagsFilter, showCompleted, currentProject?.id])
 
   // Enable dragging from Unscheduled list into FullCalendar
   useEffect(() => {
@@ -319,7 +336,7 @@ function TasksView() {
     Object.values(tasksByStatus).forEach(arr => arr.forEach(t => flatten.push(t)))
     return flatten
       .filter(t => !!t.metadata?.task?.dueDate && (t.metadata.task.dueDate === selected))
-      .filter(t => !completedColumnId || (t.taskStatus || t.metadata?.task?.status) !== completedColumnId)
+      .filter(t => (showCompleted ? true : !isTaskCompleted(t)))
       .filter(t => {
         if (statusFilter && statusFilter.length > 0) {
           const status = t.taskStatus || t.metadata?.task?.status || defaultColumnId || 'todo'
@@ -339,7 +356,7 @@ function TasksView() {
     Object.values(tasksByStatus).forEach(arr => arr.forEach(t => flatten.push(t)))
     const filtered = flatten
       .filter(t => !!t.metadata?.task?.dueDate && t.metadata.task.dueDate < compareDate)
-      .filter(t => !completedColumnId || (t.taskStatus || t.metadata?.task?.status) !== completedColumnId)
+      .filter(t => (showCompleted ? true : !isTaskCompleted(t)))
       .filter(t => {
         if (statusFilter && statusFilter.length > 0) {
           const status = t.taskStatus || t.metadata?.task?.status || defaultColumnId || 'todo'
@@ -375,12 +392,32 @@ function TasksView() {
     if (!currentProject) return
     if (complete) {
       const today = formatLocalYMD(new Date())
-      const statusId = completedColumnId || defaultColumnId || 'done'
-      await updateTaskStatus(node.path, statusId as TaskState)
-      await useNodeStore.getState().updateNode(node.path, { metadata: { task: { ...(node.metadata.task || {}), completedDate: today } as any } })
-      await loadNodes()
+      const statusId = effectiveCompletedId || 'done'
+      setOptimisticCompleted(prev => {
+        const next = new Set(prev)
+        next.add(node.path)
+        return next
+      })
+      try {
+        const fresh = useNodeStore.getState().nodes.get(node.path)
+        const currentTask = fresh?.metadata?.task || {}
+        const updatedTask = { ...currentTask, status: statusId, completedDate: today }
+        await useNodeStore.getState().updateNode(node.path, { metadata: { task: updatedTask } as any })
+      } catch (e) {
+        console.error('Failed to mark complete', e)
+      }
+      try {
+        await loadNodes()
+      } finally {
+        setOptimisticCompleted(prev => {
+          const next = new Set(prev)
+          next.delete(node.path)
+          return next
+        })
+      }
     } else {
-      // Open dialog to pick target column
+      // Open dialog to pick target column; default to defaultColumnId
+      setUncompleteTarget(defaultColumnId)
       setUncompleteDialog({ open: true, nodePath: node.path })
     }
   }
@@ -760,6 +797,7 @@ function TasksView() {
                   <div className="flex items-center gap-3">
                     <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={relativeToSelected} onChange={(e)=>setRelativeToSelected(e.target.checked)} /> Overdue relative to selected day</label>
                     <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={overdueSortDesc} onChange={(e)=>setOverdueSortDesc(e.target.checked)} /> Sort overdue newest first</label>
+                    <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={showCompleted} onChange={(e)=>setShowCompleted(e.target.checked)} /> View Completed</label>
                   </div>
                   <Button onClick={() => setIsColumnManagerOpen(true)} variant="outline" size="sm" className="flex items-center gap-2"><Settings className="w-4 h-4" /> Manage Statuses</Button>
                 </div>
@@ -774,10 +812,14 @@ function TasksView() {
                       }
                     }}>
                       {overdueTasks.map(t => (
-                        <div key={t.path} className="p-2 rounded border border-border flex items-center justify-between">
+                        <div key={t.path} className={clsx("p-2 rounded border border-border flex items-center justify-between", isTaskCompleted(t) && "opacity-60") }>
                           <label className="inline-flex items-center gap-2 text-sm">
-                            <input type="checkbox" onChange={(e)=>handleToggleComplete(t, e.target.checked)} />
-                            <span className="cursor-pointer" onClick={()=>handleTaskClick(t)}>{t.metadata?.title || t.name}</span>
+                            <input
+                              type="checkbox"
+                              checked={optimisticCompleted.has(t.path) || isTaskCompleted(t)}
+                              onChange={(e)=>handleToggleComplete(t, e.target.checked)}
+                            />
+                            <span className={clsx("cursor-pointer", isTaskCompleted(t) && "line-through")} onClick={()=>handleTaskClick(t)}>{t.metadata?.title || t.name}</span>
                           </label>
                           <span className="text-xs text-muted-foreground">{t.metadata.task.dueDate}</span>
                         </div>
@@ -796,10 +838,14 @@ function TasksView() {
                     <h3 className="text-sm font-medium mb-2">Today's Tasks</h3>
                     <div className="flex-1 overflow-auto space-y-2">
                       {todayTasks.map(t => (
-                        <div key={t.path} className="p-2 rounded border border-border flex items-center justify-between" draggable onDragStart={(e)=>{ e.dataTransfer.setData('text/task-path', t.path) }}>
+                        <div key={t.path} className={clsx("p-2 rounded border border-border flex items-center justify-between", isTaskCompleted(t) && "opacity-60")} draggable onDragStart={(e)=>{ e.dataTransfer.setData('text/task-path', t.path) }}>
                           <label className="inline-flex items-center gap-2 text-sm">
-                            <input type="checkbox" onChange={(e)=>handleToggleComplete(t, e.target.checked)} />
-                            <span className="cursor-pointer" onClick={()=>handleTaskClick(t)}>{t.metadata?.title || t.name}</span>
+                            <input
+                              type="checkbox"
+                              checked={optimisticCompleted.has(t.path) || isTaskCompleted(t)}
+                              onChange={(e)=>handleToggleComplete(t, e.target.checked)}
+                            />
+                            <span className={clsx("cursor-pointer", isTaskCompleted(t) && "line-through")} onClick={()=>handleTaskClick(t)}>{t.metadata?.title || t.name}</span>
                           </label>
                           <span className="text-xs text-muted-foreground">{t.metadata.task.dueDate}</span>
                         </div>
@@ -977,6 +1023,38 @@ function TasksView() {
               }}
               onClose={() => setIsColumnManagerOpen(false)}
             />
+      )}
+      {/* Un-complete confirmation dialog */}
+      {uncompleteDialog.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setUncompleteDialog({ open: false })}>
+          <div className="bg-background border border-border rounded-lg w-full max-w-md p-6" onClick={(e)=>e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-3">Mark task as not completed?</h3>
+            <p className="text-sm text-muted-foreground mb-3">Pick a status to move the task to.</p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">Move to status</label>
+              <select className="w-full px-2 py-1 border border-input rounded bg-background text-sm" value={uncompleteTarget} onChange={(e)=>setUncompleteTarget(e.target.value)}>
+                {columns.map(c => (<option key={c.id} value={c.id}>{c.title}</option>))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="px-3 py-1.5 rounded border border-border" onClick={()=>setUncompleteDialog({ open: false })}>Cancel</button>
+              <button className="px-3 py-1.5 rounded bg-primary text-primary-foreground" onClick={async ()=>{
+                const path = uncompleteDialog.nodePath
+                setUncompleteDialog({ open: false })
+                if (!path) return
+                try {
+                  const fresh = useNodeStore.getState().nodes.get(path)
+                  const currentTask = fresh?.metadata?.task || {}
+                  const updatedTask = { ...currentTask, status: uncompleteTarget as TaskState, completedDate: undefined }
+                  await useNodeStore.getState().updateNode(path, { metadata: { task: updatedTask } as any })
+                  await loadNodes()
+                } catch (e) {
+                  console.error('Failed to un-complete task', e)
+                }
+              }}>Confirm</button>
+            </div>
+          </div>
+        </div>
       )}
       <ConfirmDialog
       isOpen={confirmState.open}
