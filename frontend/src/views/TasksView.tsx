@@ -605,6 +605,12 @@ function TasksView() {
                   <Plus className="w-4 h-4" />
                   New Task
                 </button>
+                <button
+                  onClick={() => setShowUnscheduled(s => !s)}
+                  className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
+                >
+                  {showUnscheduled ? 'Hide Unscheduled' : 'Show Unscheduled'}
+                </button>
               </>
             )}
           </div>

@@ -234,7 +234,16 @@ function TaskCard({ node, isDragging, onClick, onRequestDelete, hasInvalidStatus
           {dueDate && (
             <div className="flex items-center gap-1">
               <Calendar className="w-3 h-3" />
-              <span>{format(new Date(dueDate), 'MMM d')}</span>
+              <span>{(() => {
+                // dueDate is a YYYY-MM-DD date-only string; avoid timezone conversion
+                try {
+                  const [y, m, d] = String(dueDate).split('-').map(n => parseInt(n, 10))
+                  const dt = new Date(y, (m || 1) - 1, d || 1)
+                  return format(dt, 'MMM d')
+                } catch {
+                  return String(dueDate)
+                }
+              })()}</span>
             </div>
           )}
           
