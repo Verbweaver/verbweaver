@@ -8,7 +8,9 @@ import {
   User,
   LayoutDashboard,
   MessageSquare,
-  Share2
+  Share2,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useProjectStore } from '../store/projectStore'
@@ -17,9 +19,10 @@ import { useTabStore } from '../store/tabStore'
 
 interface SidebarProps {
   isCollapsed: boolean
+  onToggleCollapse?: () => void
 }
 
-function Sidebar({ isCollapsed }: SidebarProps) {
+function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
   const navigate = useNavigate()
   const { currentProject } = useProjectStore()
   const { user } = useAuthStore()
@@ -77,20 +80,32 @@ function Sidebar({ isCollapsed }: SidebarProps) {
   }
 
   return (
-    <div className="h-full bg-muted/50 border-r border-border flex flex-col">
+    <div className={clsx("h-full bg-muted/50 border-r border-border flex flex-col")}> 
       {/* Logo/Title */}
-      <div className="p-4 border-b border-border">
-        {!isCollapsed && (
-          <h1 className="text-xl font-bold">Verbweaver</h1>
-        )}
-        {isCollapsed && (
-          <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center">
-            <span className="text-primary-foreground font-bold">V</span>
-          </div>
-        )}
-        {currentProject && (
-          <p className="text-sm text-muted-foreground mt-1">{currentProject.name}</p>
-        )}
+      <div className="p-4 border-b border-border flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          {!isCollapsed && (
+            <>
+              <h1 className="text-xl font-bold leading-tight">Verbweaver</h1>
+              {currentProject && (
+                <p className="text-sm text-muted-foreground mt-1 truncate" title={currentProject.name}>{currentProject.name}</p>
+              )}
+            </>
+          )}
+          {isCollapsed && (
+            <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center">
+              <span className="text-primary-foreground font-bold">V</span>
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="p-1.5 rounded hover:bg-accent"
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
       </div>
 
       {/* Navigation Items */}

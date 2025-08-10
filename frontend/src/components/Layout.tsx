@@ -1,5 +1,5 @@
 import { Outlet } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import TabBar from './TabBar'
@@ -13,6 +13,7 @@ const isElectron = window.electronAPI !== undefined
 
 function Layout() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const groupRef = useRef<any>(null)
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false)
   const { setCurrentProjectPath } = useProjectStore()
   const navigate = useNavigate()
@@ -78,19 +79,35 @@ function Layout() {
     // Implement new tab logic
   }
 
+  const handleToggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => !prev)
+  }
+
+  // Apply panel layout after collapse state changes to avoid updating during render
+  useEffect(() => {
+    const sidebarSize = isSidebarCollapsed ? 6 : 18
+    const mainSize = 100 - sidebarSize
+    const apply = () => {
+      try { groupRef.current?.setLayout?.([sidebarSize, mainSize]) } catch {}
+    }
+    // Defer to next tick to ensure PanelGroup is mounted
+    const id = setTimeout(apply, 0)
+    return () => clearTimeout(id)
+  }, [isSidebarCollapsed])
+
   return (
     <div className="h-screen flex flex-col bg-background">
-      <PanelGroup direction="horizontal" className="flex-1">
+      <PanelGroup ref={groupRef} direction="horizontal" className="flex-1">
         {/* Sidebar */}
         <Panel
-          defaultSize={20}
+          defaultSize={18}
           minSize={isSidebarCollapsed ? 3 : 10}
           maxSize={30}
           collapsible
           onCollapse={() => setIsSidebarCollapsed(true)}
           onExpand={() => setIsSidebarCollapsed(false)}
         >
-          <Sidebar isCollapsed={isSidebarCollapsed} />
+          <Sidebar isCollapsed={isSidebarCollapsed} onToggleCollapse={handleToggleSidebar} />
         </Panel>
 
         {/* Resize Handle */}
