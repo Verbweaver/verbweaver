@@ -25,7 +25,7 @@ import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
-import { Paperclip } from 'lucide-react'
+import { Paperclip, Filter } from 'lucide-react'
 import LayoutControls from '../components/graph/LayoutControls'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { NODE_TYPES } from '@verbweaver/shared'
@@ -62,6 +62,7 @@ function GraphView() {
   const [isShiftMarquee, setIsShiftMarquee] = useState(false)
   const [selectionBase, setSelectionBase] = useState<Set<string> | null>(null)
   const [ctrlMetaPressed, setCtrlMetaPressed] = useState(false)
+  const [hideUploads, setHideUploads] = useState<boolean>(true)
 
   // Connect WebSocket for real-time updates
   const projectId = currentProject?.id?.toString()
@@ -134,10 +135,14 @@ function GraphView() {
       const flowNodes: Node[] = []
       const flowEdges: Edge[] = []
       
-      // First pass: Create all nodes (exclude uploads/nodes/* from graph rendering)
+      // First pass: Create all nodes (always exclude uploads/nodes/*; optionally hide all uploads/*)
       verbweaverNodes.forEach((node) => {
-        if (node.path.startsWith('uploads/nodes/')) {
-          return
+        const normPath = node.path.replace(/\\/g, '/');
+        if (normPath.startsWith('uploads/nodes/')) {
+          return; // always exclude uploads/nodes
+        }
+        if (hideUploads && normPath.startsWith('uploads/')) {
+          return;
         }
         // Create flow node for all nodes, including 'nodes' folder if it exists
         flowNodes.push({
@@ -179,8 +184,11 @@ function GraphView() {
         })
       }
       
-      // Now create edges for all nodes
+      // Now create edges for all nodes that survived filtering
+      const includedPaths = new Set(flowNodes.map(n => n.id))
       verbweaverNodes.forEach((node) => {
+        const normPath = node.path.replace(/\\/g, '/')
+        if (!includedPaths.has(node.path)) return
         // Create hard link edges (parent-child)
         let parentPath = node.hardLinks.parent
         
@@ -189,7 +197,7 @@ function GraphView() {
           parentPath = 'nodes'
         }
         
-        if (parentPath) {
+        if (parentPath && includedPaths.has(parentPath) && includedPaths.has(node.path)) {
           flowEdges.push({
             id: `hard-${parentPath}-${node.path}`,
             source: parentPath,
@@ -207,7 +215,7 @@ function GraphView() {
         node.softLinks.forEach((targetId: string) => {
           // Find target node by ID
           const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
-          if (targetNode) {
+          if (targetNode && includedPaths.has(targetNode.path)) {
             // Only create edge if source ID is lexicographically smaller than target ID
             // This ensures we only create one edge per pair of linked nodes
             if (node.metadata.id < targetNode.metadata.id) {
@@ -228,7 +236,7 @@ function GraphView() {
       setNodes(flowNodes)
       setEdges(flowEdges)
     }
-  }, [currentProject, verbweaverNodes, setNodes, setEdges])
+  }, [currentProject, verbweaverNodes, setNodes, setEdges, hideUploads])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
@@ -684,6 +692,17 @@ function GraphView() {
         <Background />
         <Controls />
         <LayoutControls onLayout={handleLayout} />
+        {/* Toggle filter for uploads */}
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-2 bg-background/80 border border-border rounded px-2 py-1 shadow">
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={hideUploads}
+              onChange={(e) => setHideUploads(e.target.checked)}
+            />
+            Hide uploads
+          </label>
+        </div>
         <MiniMap
           nodeColor={(node) => {
             switch (node.data?.type) {
