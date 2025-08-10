@@ -1,7 +1,6 @@
 ﻿import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { useNodeStore } from '../../store/nodeStore'
-import { format } from 'date-fns'
 import { TaskState, MarkdownMetadata } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { useProjectStore } from '../../store/projectStore'
@@ -34,15 +33,8 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
 
   useEffect(() => {
     if (defaultDueDate) {
-      try {
-        const d = new Date(defaultDueDate)
-        if (!isNaN(d.getTime())) {
-          const yyyy = d.getFullYear()
-          const mm = String(d.getMonth() + 1).padStart(2, '0')
-          const dd = String(d.getDate()).padStart(2, '0')
-          setDueDate(`${yyyy}-${mm}-${dd}`)
-        }
-      } catch {}
+      // defaultDueDate is already a YYYY-MM-DD local string; avoid Date parsing to prevent timezone shifts
+      setDueDate(defaultDueDate.slice(0, 10))
     }
     const loadTemplates = async () => {
       try {
@@ -89,7 +81,8 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
           status: defaultStatus as TaskState,
           priority: priority as 'low' | 'medium' | 'high',
           assignee: assignee || undefined,
-          dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+          // Store date-only string to match the rest of the app and avoid timezone issues
+          dueDate: dueDate ? dueDate : undefined,
           completedDate: undefined
         }
       }

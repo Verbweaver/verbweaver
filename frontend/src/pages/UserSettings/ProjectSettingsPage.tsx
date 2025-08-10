@@ -3,6 +3,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { projectsApi } from '../../api/projects';
 import { Button } from '../../components/ui/Button';
 import { Save, AlertCircle } from 'lucide-react';
+import ColumnManager, { KanbanColumn } from '../../components/tasks/ColumnManager';
 
 interface CompilerSettings {
   defaultTemplates?: {
@@ -17,6 +18,16 @@ export default function ProjectSettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // Tasks/Statuses settings
+  const [taskColumns, setTaskColumns] = useState<KanbanColumn[]>([
+    { id: 'todo', title: 'To Do', color: 'bg-gray-500' },
+    { id: 'in-progress', title: 'In Progress', color: 'bg-blue-500' },
+    { id: 'review', title: 'Review', color: 'bg-amber-500' },
+    { id: 'done', title: 'Done', color: 'bg-green-500' },
+  ]);
+  const [defaultColumnId, setDefaultColumnId] = useState<string>('todo');
+  const [completedColumnId, setCompletedColumnId] = useState<string | null>(null);
+  const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false);
 
   const supportedFormats = [
     { id: 'pdf', name: 'PDF' },
@@ -30,6 +41,7 @@ export default function ProjectSettingsPage() {
   useEffect(() => {
     if (currentProject) {
       loadCompilerSettings();
+      loadTasksSettings();
     }
   }, [currentProject]);
 
@@ -64,6 +76,39 @@ export default function ProjectSettingsPage() {
       setError('Failed to save compiler settings');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const loadTasksSettings = async () => {
+    if (!currentProject) return;
+    try {
+      const ts = await projectsApi.getTasksSettings(currentProject.id);
+      if (Array.isArray(ts.columns) && ts.columns.length > 0) {
+        setTaskColumns(ts.columns);
+      }
+      if (ts.defaultColumnId) setDefaultColumnId(ts.defaultColumnId);
+      if (typeof ts.completedColumnId !== 'undefined') setCompletedColumnId(ts.completedColumnId || null);
+    } catch (e) {
+      // Non-fatal; keep defaults
+      console.warn('Failed to load tasks settings', e);
+    }
+  };
+
+  const persistTasksSettings = async (cols: KanbanColumn[], defId: string, compId: string | null) => {
+    if (!currentProject) return;
+    try {
+      setTaskColumns(cols);
+      setDefaultColumnId(defId);
+      setCompletedColumnId(compId);
+      await projectsApi.updateTasksSettings(currentProject.id, {
+        columns: cols,
+        defaultColumnId: defId,
+        completedColumnId: compId,
+      });
+    } catch (e) {
+      console.error('Failed to save tasks settings', e);
+      // Reload to keep UI consistent
+      await loadTasksSettings();
     }
   };
 
@@ -155,6 +200,32 @@ export default function ProjectSettingsPage() {
             ))}
           </div>
         </div>
+
+        <div>
+          <h3 className="text-md font-medium text-foreground mb-2">Tasks</h3>
+          <p className="text-sm text-muted-foreground mb-3">Manage task statuses (Kanban columns) for this project.</p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsColumnManagerOpen(true)}
+              className="flex items-center gap-2"
+            >
+              Manage Statuses
+            </Button>
+          </div>
+        </div>
+
+        {isColumnManagerOpen && (
+          <ColumnManager
+            columns={taskColumns}
+            defaultColumnId={defaultColumnId}
+            completedColumnId={completedColumnId}
+            onColumnsChange={(cols) => persistTasksSettings(cols, defaultColumnId, completedColumnId)}
+            onDefaultChange={(id) => persistTasksSettings(taskColumns, id, completedColumnId)}
+            onCompletedChange={(id) => persistTasksSettings(taskColumns, defaultColumnId, id)}
+            onClose={() => setIsColumnManagerOpen(false)}
+          />
+        )}
 
         <div className="flex justify-end">
           <Button
