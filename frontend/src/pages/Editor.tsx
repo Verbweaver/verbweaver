@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
-import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip, ChevronDown, ChevronRight, Link as LinkIcon, Type } from 'lucide-react'
+import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip, ChevronDown, ChevronRight, Link as LinkIcon, Type, Copy } from 'lucide-react'
 import { editorApi } from '../api/editorApi'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
@@ -340,6 +340,103 @@ function EditorView() {
       }
     }
   }, [currentFile, currentProject, content, isModified, saveFile, localFilePath])
+
+  const handleDuplicate = useCallback(async () => {
+    try {
+      // Resolve project-relative node path and absolute path
+      let projectRel: string | null = null
+      let absPath: string | null = null
+      if (isElectron && (filePath || localFilePath) && currentProjectPath) {
+        const abs = (localFilePath || (filePath ? decodeURIComponent(filePath) : null)) as string | null
+        if (!abs) return
+        absPath = abs
+        const normProject = currentProjectPath.replace(/\\/g, '/').replace(/\/$/, '')
+        const normFile = abs.replace(/\\/g, '/')
+        projectRel = normFile.startsWith(normProject + '/') ? normFile.substring(normProject.length + 1) : normFile
+      } else if (!isElectron && currentFile && currentProject) {
+        projectRel = (currentFile as any).path || currentFile.id
+      }
+      if (!projectRel) {
+        toast.error('Could not resolve file to duplicate')
+        return
+      }
+
+      // Ensure nodes are loaded and get node
+      let store = useNodeStore.getState()
+      if (!store.nodes.get(projectRel)) {
+        try { await store.loadNodes() } catch {}
+        store = useNodeStore.getState()
+      }
+      const node = store.nodes.get(projectRel)
+      if (!node || node.isDirectory) {
+        toast.error('Open a node file to duplicate')
+        return
+      }
+
+      // Build new metadata: new id, title with " - Copy"
+      const sourceMeta: any = node.metadata || {}
+      const newId = `${sourceMeta.id || ''}_${Date.now()}`
+      const newTitle = `${sourceMeta.title || node.name} - Copy`
+
+      // Compute new filename in same folder with _copy
+      const parts = projectRel.split('/')
+      const filename = parts.pop() as string
+      const dot = filename.lastIndexOf('.')
+      const base = dot > 0 ? filename.slice(0, dot) : filename
+      const ext = dot > 0 ? filename.slice(dot) : ''
+      const newFilename = `${base}_copy${ext}`
+      const newProjectRel = [...parts, newFilename].join('/')
+
+      // Read original content from disk/API
+      let originalContent = content
+      try {
+        if (isElectron && absPath && window.electronAPI) {
+          originalContent = await window.electronAPI.readFile(absPath)
+        } else if (!isElectron && currentProject) {
+          const file = await editorApi.getFile(currentProject.id, projectRel)
+          originalContent = file.content
+        }
+      } catch {}
+
+      // Update frontmatter (YAML) in content: replace id and title
+      const updatedContent = (() => {
+        // Replace id and title keys in YAML frontmatter if present
+        try {
+          const fmMatch = originalContent.match(/^---\s*[\s\S]*?\n---\s*\n?/)
+          if (!fmMatch) return originalContent
+          const header = fmMatch[0]
+          let body = originalContent.slice(header.length)
+          let newHeader = header
+          if (/\nid:\s*/.test(newHeader)) newHeader = newHeader.replace(/\nid:\s*.*/i, `\nid: ${newId}`)
+          else newHeader = newHeader.replace(/^---\s*/, `---\nid: ${newId}\n`)
+          if (/\ntitle:\s*/.test(newHeader)) newHeader = newHeader.replace(/\ntitle:\s*.*/i, `\ntitle: ${newTitle}`)
+          else newHeader = newHeader.replace(/^---\s*/, `---\ntitle: ${newTitle}\n`)
+          return newHeader + body
+        } catch {
+          return originalContent
+        }
+      })()
+
+      // Write new file
+      if (isElectron && window.electronAPI && currentProjectPath) {
+        const newAbs = `${currentProjectPath.replace(/\\/g,'/')}/${newProjectRel}`
+        const parentDir = newAbs.split('/').slice(0, -1).join('/')
+        try { await window.electronAPI.createDirectory(parentDir) } catch {}
+        await window.electronAPI.writeFile(newAbs, updatedContent)
+      } else if (!isElectron && currentProject) {
+        await editorApi.createFile(currentProject.id, newProjectRel, updatedContent)
+      }
+
+      // Refresh nodes and file tree, open new file
+      try { await useNodeStore.getState().loadNodes() } catch {}
+      window.dispatchEvent(new Event('refresh-file-tree'))
+      openEditorForPath(newProjectRel)
+      toast.success('File duplicated')
+    } catch (e) {
+      console.error('Duplicate failed', e)
+      toast.error('Failed to duplicate file')
+    }
+  }, [content, currentFile, currentProject, currentProjectPath, filePath, localFilePath, openEditorForPath])
 
   // After navigation, if an anchor was requested, scroll to it in the editor
   useEffect(() => {
@@ -717,6 +814,15 @@ function EditorView() {
             </button>
           </div>
           
+          <button
+            onClick={handleDuplicate}
+            className="p-1.5 rounded hover:bg-accent ml-1"
+            title="Duplicate file"
+            disabled={!displayFileName}
+          >
+            <Copy className="w-4 h-4" />
+          </button>
+
           <button
             onClick={handleCloseFile}
             className="p-1.5 rounded hover:bg-accent ml-2"
