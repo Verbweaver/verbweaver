@@ -121,6 +121,68 @@ $env:NODE_ENV = "development"
 # SKIP_BACKEND is useful if you have a separate backend instance or are testing UI only
 # $env:SKIP_BACKEND = "true" # This is often set if the backend is started by this script or another.
                             # For build-and-run, we assume backend is not managed by this script.
-npm run dev
 
-Set-Location $projectRoot 
+# Start Electron (desktop) in a tracked process and wait for it to exit
+try {
+    # Use cmd to ensure npm.cmd is executed even if npm.ps1 is associated with an editor
+    $electronProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run dev" -WorkingDirectory $desktopPath -PassThru -WindowStyle Normal
+} catch {
+    Write-Host "Failed to start Electron dev process: $_" -ForegroundColor Red
+    if ($frontendProcess) { try { Stop-Process -Id $frontendProcess.Id -Force } catch {} }
+    exit 1
+}
+
+if ($electronProcess) {
+    try {
+        Write-Host "Waiting for Electron to exit..." -ForegroundColor Yellow
+        Wait-Process -Id $electronProcess.Id
+    } catch {}
+
+    Write-Host "Electron exited. Cleaning up child processes..." -ForegroundColor Yellow
+
+    # Stop frontend dev server window
+    if ($frontendProcess -and !$frontendProcess.HasExited) {
+        try {
+            Stop-Process -Id $frontendProcess.Id -Force
+            Write-Host "Stopped frontend dev server (PID $($frontendProcess.Id))." -ForegroundColor Green
+        } catch {
+            Write-Host "Failed to stop frontend dev server: $_" -ForegroundColor Yellow
+        }
+    }
+
+    # Additionally, stop lingering Node/Vite processes for the frontend
+    try {
+        $frontendPathEscaped = [Regex]::Escape($frontendPath)
+        $nodeCandidates = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'node(\.exe)?' -or $_.Name -match 'npm(\.exe)?' } |
+            Where-Object { $_.CommandLine -and ($_.CommandLine -match 'vite' -or $_.CommandLine -match $frontendPathEscaped) }
+        foreach ($p in $nodeCandidates) {
+            try {
+                Stop-Process -Id $p.ProcessId -Force
+                Write-Host "Stopped frontend node process (PID $($p.ProcessId))." -ForegroundColor Green
+            } catch {
+                Write-Host "Failed to stop node process PID $($p.ProcessId): $_" -ForegroundColor Yellow
+            }
+        }
+    } catch {
+        Write-Host "Error while enumerating node processes: $_" -ForegroundColor Yellow
+    }
+
+    # Stop backend (Python) processes started from this project's venv
+    try {
+        $pyProcs = @(Get-Process -Name python -ErrorAction SilentlyContinue) + @(Get-Process -Name pythonw -ErrorAction SilentlyContinue)
+        $pyToKill = $pyProcs | Where-Object { $_.Path -and ($_.Path -eq $venvPythonPath) }
+        foreach ($p in $pyToKill) {
+            try {
+                Stop-Process -Id $p.Id -Force
+                Write-Host "Stopped backend process (PID $($p.Id))." -ForegroundColor Green
+            } catch {
+                Write-Host "Failed to stop backend process PID $($p.Id): $_" -ForegroundColor Yellow
+            }
+        }
+    } catch {
+        Write-Host "Error while stopping backend processes: $_" -ForegroundColor Yellow
+    }
+}
+
+Set-Location $projectRoot
