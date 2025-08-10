@@ -1,10 +1,11 @@
-﻿import { useEffect, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useNodeStore } from '../../store/nodeStore'
 import { TaskState, MarkdownMetadata } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { useProjectStore } from '../../store/projectStore'
 import { templatesApi, Template } from '../../api/templates'
+import { projectsApi } from '../../api/projects'
 import { createNodeFromTemplateDesktop, desktopTemplatesApi } from '../../api/desktop-templates'
 
 interface CreateTaskModalProps {
@@ -24,18 +25,46 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
   const [dueDate, setDueDate] = useState('')
+  const [startDate, setStartDate] = useState('')
   const [assignee, setAssignee] = useState('')
+  const [levelOfEffort, setLevelOfEffort] = useState('')
   const [tags, setTags] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
   const [selectedTemplatePath, setSelectedTemplatePath] = useState<string | null>(null)
+  const dueDateInputRef = useRef<HTMLInputElement | null>(null)
+  const startDateInputRef = useRef<HTMLInputElement | null>(null)
+
+  interface KanbanColumn { id: string; title: string; color: string }
+  const defaultColumns: KanbanColumn[] = useMemo(() => ([
+    { id: 'todo', title: 'To Do', color: 'bg-gray-500' },
+    { id: 'in-progress', title: 'In Progress', color: 'bg-blue-500' },
+    { id: 'review', title: 'Review', color: 'bg-amber-500' },
+    { id: 'done', title: 'Done', color: 'bg-green-500' },
+  ]), [])
+  const [columns, setColumns] = useState<KanbanColumn[]>(defaultColumns)
+  const [selectedStatus, setSelectedStatus] = useState<string>(defaultStatus)
 
   useEffect(() => {
     if (defaultDueDate) {
       // defaultDueDate is already a YYYY-MM-DD local string; avoid Date parsing to prevent timezone shifts
       setDueDate(defaultDueDate.slice(0, 10))
     }
+    const loadColumns = async () => {
+      try {
+        if (projectId) {
+          const ts = await projectsApi.getTasksSettings(projectId)
+          if (Array.isArray(ts.columns) && ts.columns.length > 0) {
+            setColumns(ts.columns)
+          }
+          if (ts.defaultColumnId && !defaultStatus) {
+            setSelectedStatus(ts.defaultColumnId)
+          }
+        }
+      } catch {}
+    }
+    loadColumns()
     const loadTemplates = async () => {
       try {
         setIsLoadingTemplates(true)
@@ -78,11 +107,13 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
         description,
         tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
         task: {
-          status: defaultStatus as TaskState,
+          status: (selectedStatus || defaultStatus) as TaskState,
           priority: priority as 'low' | 'medium' | 'high',
           assignee: assignee || undefined,
           // Store date-only string to match the rest of the app and avoid timezone issues
           dueDate: dueDate ? dueDate : undefined,
+          startDate: startDate ? startDate : undefined,
+          levelOfEffort: levelOfEffort ? levelOfEffort : undefined,
           completedDate: undefined
         }
       }
@@ -185,6 +216,19 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
 
           <div className="grid grid-cols-2 gap-4">
             <div>
+              <label className="block text-sm font-medium mb-1">Status</label>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="w-full px-3 py-2 border border-input rounded-md bg-background"
+              >
+                {columns.map(c => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium mb-1">Priority</label>
               <select
                 value={priority}
@@ -196,13 +240,30 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
                 <option value="high">High</option>
               </select>
             </div>
+          </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Start Date</label>
+              <input
+                ref={startDateInputRef}
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                onFocus={() => { try { (startDateInputRef.current as any)?.showPicker?.() } catch {} }}
+                onClick={() => { try { (startDateInputRef.current as any)?.showPicker?.() } catch {} }}
+                className="w-full px-3 py-2 border border-input rounded-md bg-background"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium mb-1">Due Date</label>
               <input
+                ref={dueDateInputRef}
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
+                onFocus={() => { try { (dueDateInputRef.current as any)?.showPicker?.() } catch {} }}
+                onClick={() => { try { (dueDateInputRef.current as any)?.showPicker?.() } catch {} }}
                 className="w-full px-3 py-2 border border-input rounded-md bg-background"
               />
             </div>
@@ -216,6 +277,18 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
               onChange={(e) => setAssignee(e.target.value)}
               className="w-full px-3 py-2 border border-input rounded-md bg-background"
               placeholder="Enter assignee name"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Level of Effort</label>
+            <input
+              type="text"
+              maxLength={100}
+              value={levelOfEffort}
+              onChange={(e) => setLevelOfEffort(e.target.value)}
+              className="w-full px-3 py-2 border border-input rounded-md bg-background"
+              placeholder="e.g., Small, Medium, Large or 3 points"
             />
           </div>
 
