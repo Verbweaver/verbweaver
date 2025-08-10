@@ -33,6 +33,7 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
   const [templates, setTemplates] = useState<Template[]>([])
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
   const [selectedTemplatePath, setSelectedTemplatePath] = useState<string | null>(null)
+  const [defaultTemplatePath, setDefaultTemplatePath] = useState<string | null>(null)
   const dueDateInputRef = useRef<HTMLInputElement | null>(null)
   const startDateInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -61,6 +62,9 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
           if (ts.defaultColumnId && !defaultStatus) {
             setSelectedStatus(ts.defaultColumnId)
           }
+          if (typeof ts.defaultTemplatePath === 'string') {
+            setDefaultTemplatePath(ts.defaultTemplatePath)
+          }
         }
       } catch {}
     }
@@ -86,6 +90,23 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
     }
     loadTemplates()
   }, [currentProjectPath, projectId, defaultDueDate])
+
+  // Choose default template if configured or if Empty.md exists
+  useEffect(() => {
+    if (selectedTemplatePath) return
+    // Prefer configured defaultTemplatePath if it exists in the list
+    if (defaultTemplatePath && templates.some(t => t.path === defaultTemplatePath)) {
+      setSelectedTemplatePath(defaultTemplatePath)
+      return
+    }
+    // Else prefer templates/Empty.md if present
+    const empty = templates.find(t => /(^|\/)Empty\.md$/i.test(t.path))
+    if (empty) {
+      setSelectedTemplatePath(empty.path)
+      return
+    }
+    // Else leave as null to require user selection
+  }, [defaultTemplatePath, templates, selectedTemplatePath])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

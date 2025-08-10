@@ -4,6 +4,8 @@ import { projectsApi } from '../../api/projects';
 import { Button } from '../../components/ui/Button';
 import { Save, AlertCircle } from 'lucide-react';
 import ColumnManager, { KanbanColumn } from '../../components/tasks/ColumnManager';
+import { templatesApi, Template } from '../../api/templates';
+import { desktopTemplatesApi } from '../../api/desktop-templates';
 
 interface CompilerSettings {
   defaultTemplates?: {
@@ -28,6 +30,9 @@ export default function ProjectSettingsPage() {
   const [defaultColumnId, setDefaultColumnId] = useState<string>('todo');
   const [completedColumnId, setCompletedColumnId] = useState<string | null>(null);
   const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [defaultTemplatePath, setDefaultTemplatePath] = useState<string | ''>('');
+  const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined;
 
   const supportedFormats = [
     { id: 'pdf', name: 'PDF' },
@@ -42,6 +47,7 @@ export default function ProjectSettingsPage() {
     if (currentProject) {
       loadCompilerSettings();
       loadTasksSettings();
+      loadTemplatesList();
     }
   }, [currentProject]);
 
@@ -88,6 +94,7 @@ export default function ProjectSettingsPage() {
       }
       if (ts.defaultColumnId) setDefaultColumnId(ts.defaultColumnId);
       if (typeof ts.completedColumnId !== 'undefined') setCompletedColumnId(ts.completedColumnId || null);
+      if (typeof ts.defaultTemplatePath === 'string') setDefaultTemplatePath(ts.defaultTemplatePath);
     } catch (e) {
       // Non-fatal; keep defaults
       console.warn('Failed to load tasks settings', e);
@@ -104,6 +111,7 @@ export default function ProjectSettingsPage() {
         columns: cols,
         defaultColumnId: defId,
         completedColumnId: compId,
+        defaultTemplatePath: defaultTemplatePath || undefined,
       });
     } catch (e) {
       console.error('Failed to save tasks settings', e);
@@ -111,6 +119,22 @@ export default function ProjectSettingsPage() {
       await loadTasksSettings();
     }
   };
+
+  const loadTemplatesList = async () => {
+    try {
+      if (!currentProject) return;
+      if (isElectron && (window as any).electronAPI) {
+        const list = await desktopTemplatesApi.listTemplates((useProjectStore.getState().currentProjectPath)!)
+        setTemplates(list)
+      } else {
+        const list = await templatesApi.listTemplates(currentProject.id)
+        setTemplates(list)
+      }
+    } catch (e) {
+      console.warn('Failed to load templates', e)
+      setTemplates([])
+    }
+  }
 
   const handleDefaultTemplateChange = (format: string, templatePath: string) => {
     setCompilerSettings(prev => ({
@@ -212,6 +236,41 @@ export default function ProjectSettingsPage() {
             >
               Manage Statuses
             </Button>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-md font-medium text-foreground mb-2">Default Template</h3>
+          <p className="text-sm text-muted-foreground mb-3">
+            The template pre-selected when creating a new task/node. If not set, we'll try <code>templates/Empty.md</code> if it exists.
+          </p>
+          <div className="flex items-center gap-2">
+            <select
+              className="w-full max-w-lg px-3 py-2 border border-border rounded-md bg-background text-sm"
+              value={defaultTemplatePath}
+              onChange={async (e) => {
+                const val = e.target.value
+                setDefaultTemplatePath(val)
+                // Persist immediately
+                if (currentProject) {
+                  try {
+                    await projectsApi.updateTasksSettings(currentProject.id, {
+                      columns: taskColumns,
+                      defaultColumnId,
+                      completedColumnId,
+                      defaultTemplatePath: val || undefined,
+                    })
+                  } catch (err) {
+                    console.error('Failed to save default template', err)
+                  }
+                }
+              }}
+            >
+              <option value="">(none)</option>
+              {templates.map(t => (
+                <option key={t.path} value={t.path}>{t.metadata?.title || t.name}</option>
+              ))}
+            </select>
           </div>
         </div>
 
