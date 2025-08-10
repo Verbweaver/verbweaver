@@ -14,7 +14,7 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { Plus, CalendarDays, ListChecks, Settings, ChevronLeft, ChevronRight, Filter } from 'lucide-react'
+import { Plus, CalendarDays, ListChecks, Settings, ChevronLeft, ChevronRight, Filter, CheckSquare } from 'lucide-react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction'
@@ -99,7 +99,7 @@ const defaultColumns: KanbanColumn[] = [
   { id: 'done', title: 'Done', color: 'bg-green-500' },
 ]
 
-type TasksSubView = 'board' | 'calendar'
+type TasksSubView = 'board' | 'calendar' | 'todo'
 
 function TasksView() {
   const { currentProject } = useProjectStore()
@@ -113,6 +113,21 @@ function TasksView() {
   const [defaultDue, setDefaultDue] = useState<string | undefined>(undefined)
   const calendarRef = useRef<any>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const formatLocalYMD = (d: Date): string => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+  const parseLocalYMD = (s: string): Date => {
+    const [y, m, d] = s.split('-').map((n) => parseInt(n, 10))
+    return new Date(y, (m || 1) - 1, d || 1)
+  }
+  const [selectedDay, setSelectedDay] = useState<string>(() => formatLocalYMD(new Date()))
+  const [relativeToSelected, setRelativeToSelected] = useState<boolean>(false)
+  const [overdueSortDesc, setOverdueSortDesc] = useState<boolean>(true)
+  const [completedColumnId, setCompletedColumnId] = useState<string | null>(null)
+  const [uncompleteDialog, setUncompleteDialog] = useState<{ open: boolean; nodePath?: string }>({ open: false })
   const calendarElRef = useRef<HTMLDivElement | null>(null)
 
   // No runtime CSS injection needed; imports use local files
@@ -199,6 +214,12 @@ function TasksView() {
       }
       if (threadsSettings.defaultColumnId) {
         setDefaultColumnId(threadsSettings.defaultColumnId)
+      }
+      if (threadsSettings.completedColumnId) {
+        setCompletedColumnId(threadsSettings.completedColumnId)
+      } else {
+        const done = (threadsSettings.columns || []).find((c: any) => /done|complete/i.test(c.title))
+        if (done) setCompletedColumnId(done.id)
       }
     } catch (error) {
       console.error('Failed to load column configuration:', error)
@@ -290,6 +311,79 @@ function TasksView() {
     
     return result
   }, [nodes, columns])
+
+  // To-Do view derived lists
+  const todayTasks = useMemo(() => {
+    const selected = selectedDay
+    const flatten: VerbweaverNode[] = []
+    Object.values(tasksByStatus).forEach(arr => arr.forEach(t => flatten.push(t)))
+    return flatten
+      .filter(t => !!t.metadata?.task?.dueDate && (t.metadata.task.dueDate === selected))
+      .filter(t => !completedColumnId || (t.taskStatus || t.metadata?.task?.status) !== completedColumnId)
+      .filter(t => {
+        if (statusFilter && statusFilter.length > 0) {
+          const status = t.taskStatus || t.metadata?.task?.status || defaultColumnId || 'todo'
+          if (!statusFilter.includes(status)) return false
+        }
+        if (tagsFilter && tagsFilter.length > 0) {
+          const tags = (t.metadata?.tags || []) as string[]
+          if (!tags.some(tag => tagsFilter.includes(tag))) return false
+        }
+        return true
+      })
+  }, [tasksByStatus, selectedDay, completedColumnId, statusFilter, tagsFilter, defaultColumnId])
+
+  const overdueTasks = useMemo(() => {
+    const compareDate = relativeToSelected ? selectedDay : formatLocalYMD(new Date())
+    const flatten: VerbweaverNode[] = []
+    Object.values(tasksByStatus).forEach(arr => arr.forEach(t => flatten.push(t)))
+    const filtered = flatten
+      .filter(t => !!t.metadata?.task?.dueDate && t.metadata.task.dueDate < compareDate)
+      .filter(t => !completedColumnId || (t.taskStatus || t.metadata?.task?.status) !== completedColumnId)
+      .filter(t => {
+        if (statusFilter && statusFilter.length > 0) {
+          const status = t.taskStatus || t.metadata?.task?.status || defaultColumnId || 'todo'
+          if (!statusFilter.includes(status)) return false
+        }
+        if (tagsFilter && tagsFilter.length > 0) {
+          const tags = (t.metadata?.tags || []) as string[]
+          if (!tags.some(tag => tagsFilter.includes(tag))) return false
+        }
+        return true
+      })
+    return filtered.sort((a, b) => {
+      const da = a.metadata.task.dueDate
+      const db = b.metadata.task.dueDate
+      return overdueSortDesc ? db.localeCompare(da) : da.localeCompare(db)
+    })
+  }, [tasksByStatus, selectedDay, relativeToSelected, completedColumnId, statusFilter, tagsFilter, defaultColumnId, overdueSortDesc])
+
+  const sevenDayStrip = useMemo(() => {
+    const base = parseLocalYMD(selectedDay)
+    const days: { key: string; label: string }[] = []
+    for (let i = -3; i <= 3; i++) {
+      const d = new Date(base)
+      d.setDate(base.getDate() + i)
+      const key = formatLocalYMD(d)
+      const label = d.toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' })
+      days.push({ key, label })
+    }
+    return days
+  }, [selectedDay])
+
+  const handleToggleComplete = async (node: VerbweaverNode, complete: boolean) => {
+    if (!currentProject) return
+    if (complete) {
+      const today = formatLocalYMD(new Date())
+      const statusId = completedColumnId || defaultColumnId || 'done'
+      await updateTaskStatus(node.path, statusId as TaskState)
+      await useNodeStore.getState().updateNode(node.path, { metadata: { task: { ...(node.metadata.task || {}), completedDate: today } as any } })
+      await loadNodes()
+    } else {
+      // Open dialog to pick target column
+      setUncompleteDialog({ open: true, nodePath: node.path })
+    }
+  }
 
   // All tags available in project (for filter UI)
   const allTags = useMemo(() => {
@@ -390,6 +484,16 @@ function TasksView() {
               >
                 <CalendarDays className="w-4 h-4" /> Calendar
               </button>
+              <button
+                onClick={() => setSubView('todo')}
+                className={clsx(
+                  'px-3 py-1.5 text-sm flex items-center gap-1 border-l border-border',
+                  subView === 'todo' ? 'bg-primary text-primary-foreground' : 'bg-background'
+                )}
+                title="To-Do"
+              >
+                <CheckSquare className="w-4 h-4" /> To-Do
+              </button>
             </div>
 
             {subView === 'board' && (
@@ -485,6 +589,24 @@ function TasksView() {
                 </button>
               </>
             )}
+            {subView === 'todo' && (
+              <>
+                <button
+                  onClick={() => setFiltersOpen(true)}
+                  className="px-3 py-1.5 rounded border border-border text-sm hover:bg-accent inline-flex items-center gap-2"
+                  title="Filters"
+                >
+                  <Filter className="w-4 h-4" /> Filters
+                </button>
+                <button
+                  onClick={() => { setSelectedColumn('todo' as any); setDefaultDue(selectedDay); setIsCreateModalOpen(true) }}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Task
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -529,8 +651,9 @@ function TasksView() {
       ) : (
         <div className="flex-1 overflow-hidden">
           <div className="h-full flex">
-            <div className="flex-1 overflow-auto p-2">
-              <FullCalendar
+            {subView === 'calendar' ? (
+              <div className="flex-1 overflow-auto p-2">
+                <FullCalendar
                 plugins={[dayGridPlugin, interactionPlugin]}
                 initialView={calendarMode === 'month' ? 'dayGridMonth' : 'dayGridWeek'}
                 headerToolbar={false}
@@ -604,8 +727,83 @@ function TasksView() {
                     await useNodeStore.getState().updateNode(node.path, { metadata: { task: updated } as any })
                   }
                 }}
-              />
-            </div>
+                />
+              </div>
+            ) : (
+              // To-Do view
+              <div className="flex-1 p-3 flex flex-col gap-3 overflow-hidden">
+                {/* Seven-day strip */}
+                <div className="flex items-center justify-center gap-2">
+                  <button className="p-1.5 rounded hover:bg-accent" onClick={() => {
+                    const d = parseLocalYMD(selectedDay); d.setDate(d.getDate() - 1); setSelectedDay(formatLocalYMD(d))
+                  }}>
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  {sevenDayStrip.map(d => (
+                    <button key={d.key} onClick={() => setSelectedDay(d.key)} className={clsx('px-2 py-1 rounded text-sm', d.key === selectedDay ? 'bg-primary text-primary-foreground' : 'bg-background border border-border')}>
+                      {d.label}
+                    </button>
+                  ))}
+                  <button className="p-1.5 rounded hover:bg-accent" onClick={() => {
+                    const d = parseLocalYMD(selectedDay); d.setDate(d.getDate() + 1); setSelectedDay(formatLocalYMD(d))
+                  }}>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={relativeToSelected} onChange={(e)=>setRelativeToSelected(e.target.checked)} /> Overdue relative to selected day</label>
+                    <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={overdueSortDesc} onChange={(e)=>setOverdueSortDesc(e.target.checked)} /> Sort overdue newest first</label>
+                  </div>
+                  <Button onClick={() => setIsColumnManagerOpen(true)} variant="outline" size="sm" className="flex items-center gap-2"><Settings className="w-4 h-4" /> Manage Statuses</Button>
+                </div>
+                <div className="flex-1 grid grid-cols-2 gap-4 overflow-hidden">
+                  {/* Overdue */}
+                  <div className="border border-border rounded p-2 flex flex-col overflow-hidden">
+                    <h3 className="text-sm font-medium mb-2">Overdue Tasks</h3>
+                    <div className="flex-1 overflow-auto space-y-2" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>{
+                      const path = e.dataTransfer.getData('text/task-path');
+                      if (path) {
+                        // Clear due date when dropped into overdue panel? Keep as is; do nothing
+                      }
+                    }}>
+                      {overdueTasks.map(t => (
+                        <div key={t.path} className="p-2 rounded border border-border flex items-center justify-between">
+                          <label className="inline-flex items-center gap-2 text-sm">
+                            <input type="checkbox" onChange={(e)=>handleToggleComplete(t, e.target.checked)} />
+                            <span className="cursor-pointer" onClick={()=>handleTaskClick(t)}>{t.metadata?.title || t.name}</span>
+                          </label>
+                          <span className="text-xs text-muted-foreground">{t.metadata.task.dueDate}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Today */}
+                  <div className="border border-border rounded p-2 flex flex-col overflow-hidden" onDragOver={(e)=>e.preventDefault()} onDrop={async (e)=>{
+                    const path = e.dataTransfer.getData('text/task-path');
+                    if (path) {
+                      const updated = { ...(useNodeStore.getState().nodes.get(path)?.metadata.task || {}), dueDate: selectedDay }
+                      await useNodeStore.getState().updateNode(path, { metadata: { task: updated } as any })
+                      try { await useNodeStore.getState().loadNodes() } catch {}
+                    }
+                  }}>
+                    <h3 className="text-sm font-medium mb-2">Today's Tasks</h3>
+                    <div className="flex-1 overflow-auto space-y-2">
+                      {todayTasks.map(t => (
+                        <div key={t.path} className="p-2 rounded border border-border flex items-center justify-between" draggable onDragStart={(e)=>{ e.dataTransfer.setData('text/task-path', t.path) }}>
+                          <label className="inline-flex items-center gap-2 text-sm">
+                            <input type="checkbox" onChange={(e)=>handleToggleComplete(t, e.target.checked)} />
+                            <span className="cursor-pointer" onClick={()=>handleTaskClick(t)}>{t.metadata?.title || t.name}</span>
+                          </label>
+                          <span className="text-xs text-muted-foreground">{t.metadata.task.dueDate}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground">Drag from Unscheduled to add to selected day. Drag a task out to Unscheduled to remove date.</div>
+                  </div>
+                </div>
+              </div>
+            )}
             {showUnscheduled && (
               <div className="w-80 border-l border-border p-3 overflow-y-auto" id="vw-unscheduled">
                 <h3 className="text-sm font-medium mb-2">Unscheduled</h3>
@@ -628,6 +826,8 @@ function TasksView() {
                         className="p-2 rounded border border-border hover:bg-accent cursor-grab vw-unscheduled-item"
                         data-path={n.path}
                         data-title={title}
+                        draggable
+                        onDragStart={(e)=>{ e.dataTransfer.setData('text/task-path', n.path) }}
                         onClick={() => handleTaskClick(n as any)}
                       >
                       <div className="text-sm font-medium">{n.metadata?.title || n.name}</div>
@@ -756,8 +956,19 @@ function TasksView() {
         <ColumnManager 
               columns={columns}
               defaultColumnId={defaultColumnId}
+              completedColumnId={completedColumnId}
               onColumnsChange={handleColumnsChange}
               onDefaultChange={handleDefaultChange}
+              onCompletedChange={async (val) => {
+                setCompletedColumnId(val)
+                if (currentProject) {
+                  try {
+                    await projectsApi.updateTasksSettings(currentProject.id, { columns, defaultColumnId, completedColumnId: val })
+                  } catch (err) {
+                    console.warn('Failed to save completed column', err)
+                  }
+                }
+              }}
               onClose={() => setIsColumnManagerOpen(false)}
             />
       )}

@@ -28,8 +28,10 @@ export interface KanbanColumn {
 interface ColumnManagerProps {
   columns: KanbanColumn[];
   defaultColumnId: string;
+  completedColumnId?: string | null;
   onColumnsChange: (columns: KanbanColumn[]) => void;
   onDefaultChange: (defaultId: string) => void;
+  onCompletedChange?: (completedId: string | null) => void;
   onClose: () => void;
 }
 
@@ -192,9 +194,10 @@ function SortableColumnItem({
   );
 }
 
-export default function ColumnManager({ columns, defaultColumnId, onColumnsChange, onDefaultChange, onClose }: ColumnManagerProps) {
+export default function ColumnManager({ columns, defaultColumnId, completedColumnId = null, onColumnsChange, onDefaultChange, onCompletedChange, onClose }: ColumnManagerProps) {
   const [editingColumn, setEditingColumn] = useState<KanbanColumn | null>(null);
   const [defaultIdState, setDefaultIdState] = useState<string>(defaultColumnId);
+  const [completedIdState, setCompletedIdState] = useState<string | null>(completedColumnId);
   const [isAdding, setIsAdding] = useState(false);
   const [newColumn, setNewColumn] = useState<Partial<KanbanColumn>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -279,6 +282,31 @@ export default function ColumnManager({ columns, defaultColumnId, onColumnsChang
 
         {/* Content */}
         <div className="p-4 space-y-4 max-h-[60vh] overflow-y-auto">
+          {/* Defaults */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-3 border border-border rounded-lg">
+              <h3 className="text-sm font-medium mb-2">Default Column</h3>
+              <p className="text-xs text-muted-foreground">Use the radio buttons below to choose which status new tasks default to.</p>
+            </div>
+            <div className="p-3 border border-border rounded-lg">
+              <h3 className="text-sm font-medium mb-2">Completed Column</h3>
+              <select
+                className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
+                value={completedIdState || ''}
+                onChange={(e) => {
+                  const next = e.target.value || null
+                  setCompletedIdState(next)
+                  onCompletedChange?.(next)
+                }}
+              >
+                <option value="">(none)</option>
+                {columns.map(c => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">Tasks marked complete will be moved to this column.</p>
+            </div>
+          </div>
           {/* Existing Columns */}
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-foreground">Current Columns</h3>
