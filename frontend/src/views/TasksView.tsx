@@ -109,8 +109,10 @@ function TasksView() {
   const [calendarMode, setCalendarMode] = useState<'month' | 'week'>('month')
   const [showUnscheduled, setShowUnscheduled] = useState<boolean>(false)
   const [statusFilter, setStatusFilter] = useState<string[] | null>(null)
+  const [tagsFilter, setTagsFilter] = useState<string[] | null>(null)
   const [defaultDue, setDefaultDue] = useState<string | undefined>(undefined)
   const calendarRef = useRef<any>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const calendarElRef = useRef<HTMLDivElement | null>(null)
 
   // No runtime CSS injection needed; imports use local files
@@ -153,6 +155,8 @@ function TasksView() {
         if (parsed?.subView === 'board' || parsed?.subView === 'calendar') setSubView(parsed.subView)
         if (parsed?.calendarMode === 'month' || parsed?.calendarMode === 'week') setCalendarMode(parsed.calendarMode)
         if (parsed?.calendarDate) setCalendarDate(new Date(parsed.calendarDate))
+        if (Array.isArray(parsed?.statusFilter)) setStatusFilter(parsed.statusFilter)
+        if (Array.isArray(parsed?.tagsFilter)) setTagsFilter(parsed.tagsFilter)
       }
     } catch {}
   }, [currentProject?.id])
@@ -160,9 +164,9 @@ function TasksView() {
   useEffect(() => {
     const key = `${currentProject?.id || 'global'}:tasks-view`
     try {
-      localStorage.setItem(key, JSON.stringify({ subView, calendarMode, calendarDate }))
+      localStorage.setItem(key, JSON.stringify({ subView, calendarMode, calendarDate, statusFilter, tagsFilter }))
     } catch {}
-  }, [subView, calendarMode, calendarDate, currentProject?.id])
+  }, [subView, calendarMode, calendarDate, statusFilter, tagsFilter, currentProject?.id])
 
   // Enable dragging from Unscheduled list into FullCalendar
   useEffect(() => {
@@ -286,6 +290,16 @@ function TasksView() {
     
     return result
   }, [nodes, columns])
+
+  // All tags available in project (for filter UI)
+  const allTags = useMemo(() => {
+    const s = new Set<string>()
+    nodes.forEach(n => {
+      const t = (n.metadata?.tags || []) as string[]
+      t.forEach(tag => s.add(tag))
+    })
+    return Array.from(s).sort()
+  }, [nodes])
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string)
@@ -449,20 +463,13 @@ function TasksView() {
                     className={clsx('px-3 py-1.5 text-sm border-l border-border', calendarMode==='week' ? 'bg-accent' : '')}
                   >Week</button>
                 </div>
-                <select
-                  className="px-2 py-1 rounded border border-border text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  value={statusFilter ? statusFilter.join(',') : ''}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    if (!v) setStatusFilter(null)
-                    else setStatusFilter(v.split(',').filter(Boolean))
-                  }}
+                <button
+                  onClick={() => setFiltersOpen(true)}
+                  className="px-3 py-1.5 rounded border border-border text-sm hover:bg-accent inline-flex items-center gap-2"
+                  title="Filters"
                 >
-                  <option value="">All statuses</option>
-                  {columns.map(c => (
-                    <option key={c.id} value={c.id}>{c.title}</option>
-                  ))}
-                </select>
+                  <Filter className="w-4 h-4" /> Filters
+                </button>
                 <button
                   onClick={() => setShowUnscheduled(s => !s)}
                   className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
@@ -542,7 +549,12 @@ function TasksView() {
                   columns.forEach(col => {
                     const tasks = (tasksByStatus[col.id] || [])
                       .filter(t => !!(t.metadata?.task?.dueDate))
-                      .filter(t => !statusFilter || statusFilter.includes(col.id))
+                      .filter(t => !statusFilter || statusFilter.length === 0 || statusFilter.includes(col.id))
+                      .filter(t => {
+                        if (!tagsFilter || tagsFilter.length === 0) return true
+                        const tags = (t.metadata?.tags || []) as string[]
+                        return tags.some(tag => tagsFilter!.includes(tag))
+                      })
                   
                     tasks.forEach(t => {
                       const dueStr: string | undefined = t.metadata?.task?.dueDate
@@ -598,7 +610,17 @@ function TasksView() {
               <div className="w-80 border-l border-border p-3 overflow-y-auto" id="vw-unscheduled">
                 <h3 className="text-sm font-medium mb-2">Unscheduled</h3>
                 <div className="space-y-2">
-                  {Array.from(nodes.values()).filter(n => !n.isDirectory && n.hasTask && !n.metadata?.task?.dueDate && !n.path.startsWith('uploads/nodes/')).map(n => {
+                  {Array.from(nodes.values()).filter(n => !n.isDirectory && n.hasTask && !n.metadata?.task?.dueDate && !n.path.startsWith('uploads/nodes/'))
+                    .filter(n => {
+                      const status = n.taskStatus || (n.metadata?.task?.status) || defaultColumnId || 'todo'
+                      if (statusFilter && statusFilter.length > 0 && !statusFilter.includes(status)) return false
+                      if (tagsFilter && tagsFilter.length > 0) {
+                        const tags = (n.metadata?.tags || []) as string[]
+                        if (!tags.some(tag => tagsFilter!.includes(tag))) return false
+                      }
+                      return true
+                    })
+                    .map(n => {
                     const title = n.metadata?.title || n.name
                     return (
                       <div
@@ -616,6 +638,79 @@ function TasksView() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Filters Dialog */}
+      {filtersOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setFiltersOpen(false)}>
+          <div className="bg-background border border-border rounded-lg w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Filters</h3>
+              <button className="p-1 rounded hover:bg-accent" onClick={() => setFiltersOpen(false)}>✕</button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Statuses</label>
+                <div className="flex flex-wrap gap-2">
+                  {columns.map(col => (
+                    <label key={col.id} className="inline-flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={statusFilter ? statusFilter.includes(col.id) : false}
+                        onChange={(e) => {
+                          const checked = e.target.checked
+                          setStatusFilter(prev => {
+                            let arr = prev ? [...prev] : []
+                            if (checked) {
+                              if (!arr.includes(col.id)) arr.push(col.id)
+                            } else {
+                              arr = arr.filter(id => id !== col.id)
+                            }
+                            return arr.length === 0 ? null : arr
+                          })
+                        }}
+                      />
+                      {col.title}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Tags</label>
+                <div className="flex flex-wrap gap-2 max-h-40 overflow-auto p-1 border border-border rounded">
+                  {allTags.length === 0 && (
+                    <span className="text-sm text-muted-foreground">No tags in project</span>
+                  )}
+                  {allTags.map(tag => (
+                    <label key={tag} className="inline-flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={tagsFilter ? tagsFilter.includes(tag) : false}
+                        onChange={(e) => {
+                          const checked = e.target.checked
+                          setTagsFilter(prev => {
+                            let arr = prev ? [...prev] : []
+                            if (checked) {
+                              if (!arr.includes(tag)) arr.push(tag)
+                            } else {
+                              arr = arr.filter(t => t !== tag)
+                            }
+                            return arr.length === 0 ? null : arr
+                          })
+                        }}
+                      />
+                      {tag}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button className="px-3 py-1.5 rounded border border-border" onClick={() => { setStatusFilter(null); setTagsFilter(null) }}>Clear</button>
+              <button className="px-3 py-1.5 rounded bg-primary text-primary-foreground" onClick={() => setFiltersOpen(false)}>Close</button>
+            </div>
           </div>
         </div>
       )}
