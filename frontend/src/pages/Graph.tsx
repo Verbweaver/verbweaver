@@ -26,6 +26,7 @@ import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
 import { Paperclip, Filter } from 'lucide-react'
+import { STORAGE_KEYS } from '@verbweaver/shared'
 import LayoutControls from '../components/graph/LayoutControls'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { NODE_TYPES } from '@verbweaver/shared'
@@ -62,7 +63,15 @@ function GraphView() {
   const [isShiftMarquee, setIsShiftMarquee] = useState(false)
   const [selectionBase, setSelectionBase] = useState<Set<string> | null>(null)
   const [ctrlMetaPressed, setCtrlMetaPressed] = useState(false)
-  const [hideUploads, setHideUploads] = useState<boolean>(true)
+  const [hideUploads, setHideUploads] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS)
+      if (raw === null) return true
+      return raw === 'true'
+    } catch {
+      return true
+    }
+  })
 
   // Connect WebSocket for real-time updates
   const projectId = currentProject?.id?.toString()
@@ -698,7 +707,11 @@ function GraphView() {
             <input
               type="checkbox"
               checked={hideUploads}
-              onChange={(e) => setHideUploads(e.target.checked)}
+              onChange={(e) => {
+                const v = e.target.checked
+                setHideUploads(v)
+                try { localStorage.setItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS, String(v)) } catch {}
+              }}
             />
             Hide uploads
           </label>

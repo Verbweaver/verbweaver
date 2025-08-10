@@ -123,6 +123,7 @@ export const STORAGE_KEYS = {
   COMPILER_SELECTION: 'verbweaver_compiler_selection',
   EDITOR_HIDE_METADATA: 'verbweaver_editor_hide_metadata',
   TASKS_VIEW_PREFERENCES: 'verbweaver_tasks_view_preferences',
+  GRAPH_HIDE_UPLOADS: 'verbweaver_graph_hide_uploads',
 } as const;
 
 // Regex patterns
