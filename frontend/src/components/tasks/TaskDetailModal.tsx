@@ -53,6 +53,8 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   const [status, setStatus] = useState('todo')
   const [assignee, setAssignee] = useState('')
   const [dueDate, setDueDate] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [levelOfEffort, setLevelOfEffort] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [newTag, setNewTag] = useState('')
   const [newComment, setNewComment] = useState('')
@@ -61,6 +63,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   const [isUploading, setIsUploading] = useState(false)
   const [isCreateLinkModalOpen, setIsCreateLinkModalOpen] = useState(false)
   const dueDateInputRef = useRef<HTMLInputElement | null>(null)
+  const startDateInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (node) {
@@ -72,6 +75,9 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
       setAssignee(task.assignee || node.metadata.assignee || '')
       // Prefer task.dueDate; migrate legacy metadata.dueDate
       setDueDate(task.dueDate || node.metadata.dueDate || '')
+      // Support new fields with legacy fallback
+      setStartDate(task.startDate || node.metadata.startDate || '')
+      setLevelOfEffort(task.levelOfEffort || node.metadata.levelOfEffort || '')
       setTags(node.metadata.tags || [])
       setComments(task.comments || [])
       
@@ -117,6 +123,8 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
         priority,
         assignee,
         dueDate: dueDate || undefined,
+        startDate: startDate || undefined,
+        levelOfEffort: levelOfEffort ? levelOfEffort.slice(0, 100) : undefined,
         comments,
         files
       }
@@ -124,6 +132,8 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
 
     // Clean legacy field if present
     if ('dueDate' in updatedMetadata) delete updatedMetadata.dueDate
+    if ('startDate' in updatedMetadata) delete updatedMetadata.startDate
+    if ('levelOfEffort' in updatedMetadata) delete updatedMetadata.levelOfEffort
 
     await updateNode(node.path, { metadata: updatedMetadata })
     try {
@@ -340,6 +350,48 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                 ) : (
                   <span className="text-sm text-muted-foreground">
                     {assignee || 'Unassigned'}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Start Date</label>
+                {isEditing ? (
+                  <input
+                    ref={startDateInputRef}
+                    type="date"
+                    value={startDate || ''}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    onFocus={() => { try { (startDateInputRef.current as any)?.showPicker?.() } catch {} }}
+                    onClick={() => { try { (startDateInputRef.current as any)?.showPicker?.() } catch {} }}
+                    className="w-full p-2 border border-input rounded-md bg-background"
+                  />
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    {(() => {
+                      if (!startDate) return 'No start date'
+                      const [y,m,d] = startDate.split('-').map(Number)
+                      const dt = new Date(y, (m || 1)-1, d || 1)
+                      return dt.toLocaleDateString()
+                    })()}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Level of Effort</label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    maxLength={100}
+                    value={levelOfEffort}
+                    onChange={(e) => setLevelOfEffort(e.target.value.slice(0, 100))}
+                    className="w-full p-2 border border-input rounded-md bg-background"
+                    placeholder="e.g., 3 points, 1 day, medium"
+                  />
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    {levelOfEffort || '—'}
                   </span>
                 )}
               </div>
