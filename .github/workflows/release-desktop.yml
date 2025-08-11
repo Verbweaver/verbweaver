@@ -61,8 +61,8 @@ jobs:
         run: npm ci
 
       - name: Build desktop (electron-vite)
-        working-directory: .
-        run: npm run -w @verbweaver/desktop build
+        working-directory: desktop
+        run: npm run build
 
       - name: Set code signing env (Windows)
         if: runner.os == 'Windows'
@@ -84,17 +84,17 @@ jobs:
           fi
 
       - name: Package and publish desktop app
-        working-directory: .
+        working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            npm run -w @verbweaver/desktop dist:win
+            npm run dist:win
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            npm run -w @verbweaver/desktop dist:mac
+            npm run dist:mac
           else
-            npm run -w @verbweaver/desktop dist:linux
+            npm run dist:linux
           fi
 
 
