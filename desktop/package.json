@@ -4,6 +4,10 @@
   "private": true,
   "description": "Verbweaver Desktop application",
   "author": "Verbweaver Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TheWover/verbweaver.git"
+  },
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "cross-env NODE_ENV=development electron-vite dev",

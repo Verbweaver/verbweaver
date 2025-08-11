@@ -64,6 +64,12 @@ jobs:
         working-directory: desktop
         run: npm run build
 
+      - name: Expose git metadata to desktop (for publish)
+        shell: bash
+        run: |
+          rm -rf desktop/.git || true
+          cp -r .git desktop/.git
+
       - name: Set code signing env (Windows)
         if: runner.os == 'Windows'
         shell: bash
