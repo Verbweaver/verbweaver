@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   DndContext,
@@ -14,7 +14,7 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { Plus, CalendarDays, ListChecks, Settings, ChevronLeft, ChevronRight, Filter, CheckSquare } from 'lucide-react'
+import { Plus, CalendarDays, ListChecks, Settings, ChevronLeft, ChevronRight, Filter, CheckSquare, BarChart2 } from 'lucide-react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction'
@@ -99,7 +99,7 @@ const defaultColumns: KanbanColumn[] = [
   { id: 'done', title: 'Done', color: 'bg-green-500' },
 ]
 
-type TasksSubView = 'board' | 'calendar' | 'todo'
+type TasksSubView = 'board' | 'calendar' | 'todo' | 'charts'
 
 function TasksView() {
   const { currentProject } = useProjectStore()
@@ -131,6 +131,8 @@ function TasksView() {
   const [showCompleted, setShowCompleted] = useState<boolean>(false)
   const [uncompleteTarget, setUncompleteTarget] = useState<string>('')
   const calendarElRef = useRef<HTMLDivElement | null>(null)
+  const ganttCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const burndownCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
   // No runtime CSS injection needed; imports use local files
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -388,6 +390,186 @@ function TasksView() {
     return days
   }, [selectedDay])
 
+  // --------- Charts (Gantt & Burndown) ---------
+  const filteredTaskList = useMemo(() => {
+    const list: VerbweaverNode[] = []
+    Object.values(tasksByStatus).forEach(arr => arr.forEach(t => list.push(t)))
+    return list.filter(t => {
+      const status = t.taskStatus || t.metadata?.task?.status || defaultColumnId || 'todo'
+      if (statusFilter && statusFilter.length > 0 && !statusFilter.includes(status)) return false
+      if (tagsFilter && tagsFilter.length > 0) {
+        const tags = (t.metadata?.tags || []) as string[]
+        if (!tags.some(tag => tagsFilter.includes(tag))) return false
+      }
+      return true
+    })
+  }, [tasksByStatus, statusFilter, tagsFilter, defaultColumnId])
+
+  const ganttData = useMemo(() => {
+    // Prepare tasks with start and end dates
+    type Row = { title: string; start: string; end: string; status?: string }
+    const rows: Row[] = []
+    for (const t of filteredTaskList) {
+      const md = (t.metadata?.task || {}) as any
+      const due = md.dueDate as string | undefined
+      const start = md.startDate as string | undefined
+      if (!due && !start) continue
+      const s = start || due!
+      const e = due || start!
+      rows.push({ title: t.metadata?.title || t.name, start: s, end: e, status: t.taskStatus || md.status })
+    }
+    if (rows.length === 0) return { rows, min: '', max: '' }
+    const dates = rows.flatMap(r => [r.start, r.end]).filter(Boolean) as string[]
+    const min = dates.reduce((a, b) => (a < b ? a : b))
+    const max = dates.reduce((a, b) => (a > b ? a : b))
+    return { rows, min, max }
+  }, [filteredTaskList])
+
+  const burndownData = useMemo(() => {
+    // Simple burndown: remaining tasks per day between min(start) and max(due)
+    const tasks = filteredTaskList.map(t => ({
+      start: (t.metadata?.task?.startDate as string | undefined) || (t.metadata?.task?.dueDate as string | undefined) || undefined,
+      due: t.metadata?.task?.dueDate as string | undefined,
+      completed: !!t.metadata?.task?.completedDate,
+      completedDate: t.metadata?.task?.completedDate as string | undefined,
+    }))
+    const allDates = tasks.flatMap(t => [t.start, t.due].filter(Boolean) as string[])
+    if (allDates.length === 0) return { labels: [] as string[], values: [] as number[] }
+    const min = allDates.reduce((a, b) => (a < b ? a : b))
+    const max = allDates.reduce((a, b) => (a > b ? a : b))
+    const startDate = new Date(min)
+    const endDate = new Date(max)
+    const labels: string[] = []
+    const values: number[] = []
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), da = String(d.getDate()).padStart(2, '0')
+      const key = `${y}-${m}-${da}`
+      labels.push(key)
+      let remaining = 0
+      for (const t of tasks) {
+        const started = !t.start || t.start <= key
+        const notDoneYet = !t.completed || (t.completedDate! > key)
+        if (started && notDoneYet) remaining++
+      }
+      values.push(remaining)
+    }
+    return { labels, values }
+  }, [filteredTaskList])
+
+  const drawGantt = useCallback(() => {
+    const canvas = ganttCanvasRef.current
+    if (!canvas) return
+    const { rows, min, max } = ganttData
+    const ctx = canvas.getContext('2d')!
+    const DPR = window.devicePixelRatio || 1
+    const width = 900, rowH = 22
+    const height = Math.max(150, rows.length * rowH + 30)
+    canvas.width = width * DPR
+    canvas.height = height * DPR
+    canvas.style.width = width + 'px'
+    canvas.style.height = height + 'px'
+    ctx.scale(DPR, DPR)
+    ctx.clearRect(0, 0, width, height)
+    ctx.font = '12px sans-serif'
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--foreground') || '#e5e7eb'
+
+    if (!min || !max) {
+      ctx.fillText('No dated tasks to display', 12, 20)
+      return
+    }
+    const minD = new Date(min)
+    const maxD = new Date(max)
+    const totalDays = Math.max(1, Math.ceil((+maxD - +minD) / 86400000))
+    const leftPad = 160
+    const chartW = width - leftPad - 20
+    // grid
+    ctx.strokeStyle = '#444'
+    ctx.lineWidth = 1
+    for (let i = 0; i <= totalDays; i++) {
+      const x = leftPad + (i * chartW) / totalDays
+      ctx.beginPath()
+      ctx.moveTo(x, 10)
+      ctx.lineTo(x, height - 10)
+      ctx.stroke()
+    }
+    // rows
+    rows.forEach((r, idx) => {
+      const y = 20 + idx * rowH
+      // label
+      ctx.fillStyle = '#bbb'
+      ctx.fillText(r.title, 8, y + 12)
+      // bar
+      const s = new Date(r.start)
+      const e = new Date(r.end)
+      const sx = leftPad + ((+s - +minD) / (86400000 * totalDays)) * chartW
+      const ex = leftPad + ((+e - +minD) / (86400000 * totalDays)) * chartW
+      const w = Math.max(6, ex - sx)
+      ctx.fillStyle = '#3b82f6'
+      ctx.fillRect(sx, y, w, 12)
+    })
+  }, [ganttData])
+
+  const drawBurndown = useCallback(() => {
+    const canvas = burndownCanvasRef.current
+    if (!canvas) return
+    const { labels, values } = burndownData
+    const ctx = canvas.getContext('2d')!
+    const DPR = window.devicePixelRatio || 1
+    const width = 900, height = 220
+    canvas.width = width * DPR
+    canvas.height = height * DPR
+    canvas.style.width = width + 'px'
+    canvas.style.height = height + 'px'
+    ctx.scale(DPR, DPR)
+    ctx.clearRect(0, 0, width, height)
+    ctx.font = '12px sans-serif'
+    ctx.fillStyle = '#bbb'
+    if (labels.length === 0) {
+      ctx.fillText('No tasks with dates to chart', 12, 20)
+      return
+    }
+    const leftPad = 40, rightPad = 10, topPad = 10, bottomPad = 20
+    const chartW = width - leftPad - rightPad
+    const chartH = height - topPad - bottomPad
+    const maxY = Math.max(1, ...values)
+    // axes
+    ctx.strokeStyle = '#444'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(leftPad, topPad); ctx.lineTo(leftPad, height - bottomPad); ctx.lineTo(width - rightPad, height - bottomPad); ctx.stroke()
+    // data line
+    ctx.strokeStyle = '#10b981'; ctx.lineWidth = 2
+    ctx.beginPath()
+    values.forEach((v, i) => {
+      const x = leftPad + (i * chartW) / Math.max(1, values.length - 1)
+      const y = topPad + chartH - (v / maxY) * chartH
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
+    })
+    ctx.stroke()
+    // ideal line
+    ctx.strokeStyle = '#f59e0b'; ctx.setLineDash([4, 4])
+    ctx.beginPath()
+    for (let i = 0; i < values.length; i++) {
+      const x = leftPad + (i * chartW) / Math.max(1, values.length - 1)
+      const y = topPad + chartH - ((maxY - (maxY * i) / (values.length - 1)) / maxY) * chartH
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
+    }
+    ctx.stroke(); ctx.setLineDash([])
+  }, [burndownData])
+
+  useEffect(() => {
+    if (subView === 'charts') {
+      drawGantt(); drawBurndown()
+    }
+  }, [subView, drawGantt, drawBurndown])
+
+  const exportCanvas = (ref: React.RefObject<HTMLCanvasElement>, filename: string) => {
+    const cnv = ref.current
+    if (!cnv) return
+    const link = document.createElement('a')
+    link.download = filename
+    link.href = cnv.toDataURL('image/png')
+    link.click()
+  }
+
   const handleToggleComplete = async (node: VerbweaverNode, complete: boolean) => {
     if (!currentProject) return
     if (complete) {
@@ -491,7 +673,7 @@ function TasksView() {
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
       <div className="px-6 py-4 border-b border-border">
-        <div className="flex items-center justify-between">
+        <div className="grid items-start gap-2 md:grid-cols-[1fr_auto]">
           <div>
             <h1 className="text-2xl font-bold">Tasks</h1>
             <p className="text-sm text-muted-foreground mt-1">
@@ -499,7 +681,7 @@ function TasksView() {
             </p>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 justify-self-end">
             <div className="inline-flex rounded-md border border-border overflow-hidden">
               <button
                 onClick={() => setSubView('board')}
@@ -531,6 +713,16 @@ function TasksView() {
               >
                 <CheckSquare className="w-4 h-4" /> To-Do
               </button>
+              <button
+                onClick={() => setSubView('charts')}
+                className={clsx(
+                  'px-3 py-1.5 text-sm flex items-center gap-1 border-l border-border',
+                  subView === 'charts' ? 'bg-primary text-primary-foreground' : 'bg-background'
+                )}
+                title="Charts"
+              >
+                <BarChart2 className="w-4 h-4" /> Charts
+              </button>
             </div>
 
             {subView === 'board' && (
@@ -553,79 +745,7 @@ function TasksView() {
                 </button>
               </>
             )}
-            {subView === 'calendar' && (
-              <>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const api = calendarRef.current?.getApi?.()
-                      if (api) api.prev()
-                    }}
-                    className="p-2 rounded hover:bg-accent"
-                    title="Previous"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      const api = calendarRef.current?.getApi?.()
-                      if (api) api.today()
-                    }}
-                    className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
-                  >
-                    Today
-                  </button>
-                  <button
-                    onClick={() => {
-                      const api = calendarRef.current?.getApi?.()
-                      if (api) api.next()
-                    }}
-                    className="p-2 rounded hover:bg-accent"
-                    title="Next"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="inline-flex rounded-md border border-border overflow-hidden">
-                  <button
-                    onClick={() => {
-                      setCalendarMode('month')
-                      const api = calendarRef.current?.getApi?.()
-                      if (api) api.changeView('dayGridMonth')
-                    }}
-                    className={clsx('px-3 py-1.5 text-sm', calendarMode==='month' ? 'bg-accent' : '')}
-                  >Month</button>
-                  <button
-                    onClick={() => {
-                      setCalendarMode('week')
-                      const api = calendarRef.current?.getApi?.()
-                      if (api) api.changeView('dayGridWeek')
-                    }}
-                    className={clsx('px-3 py-1.5 text-sm border-l border-border', calendarMode==='week' ? 'bg-accent' : '')}
-                  >Week</button>
-                </div>
-                <button
-                  onClick={() => setFiltersOpen(true)}
-                  className="px-3 py-1.5 rounded border border-border text-sm hover:bg-accent inline-flex items-center gap-2"
-                  title="Filters"
-                >
-                  <Filter className="w-4 h-4" /> Filters
-                </button>
-                <button
-                  onClick={() => setShowUnscheduled(s => !s)}
-                  className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
-                >
-                  {showUnscheduled ? 'Hide Unscheduled' : 'Show Unscheduled'}
-                </button>
-                <button
-                  onClick={() => handleCreateTask('todo')}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-                >
-                  <Plus className="w-4 h-4" />
-                  New Task
-                </button>
-              </>
-            )}
+            {subView === 'calendar' && (null)}
             {subView === 'todo' && (
               <>
                 <button
@@ -696,6 +816,63 @@ function TasksView() {
           <div className="h-full flex">
             {subView === 'calendar' ? (
               <div className="flex-1 overflow-auto p-2">
+                {/* Calendar subheader controls */}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { const api = calendarRef.current?.getApi?.(); api?.prev() }}
+                      className="p-2 rounded hover:bg-accent"
+                      title="Previous"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => { const api = calendarRef.current?.getApi?.(); api?.today() }}
+                      className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
+                    >
+                      Today
+                    </button>
+                    <button
+                      onClick={() => { const api = calendarRef.current?.getApi?.(); api?.next() }}
+                      className="p-2 rounded hover:bg-accent"
+                      title="Next"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <div className="inline-flex rounded-md border border-border overflow-hidden">
+                      <button
+                        onClick={() => { setCalendarMode('month'); calendarRef.current?.getApi?.().changeView('dayGridMonth') }}
+                        className={clsx('px-3 py-1.5 text-sm', calendarMode==='month' ? 'bg-accent' : '')}
+                      >Month</button>
+                      <button
+                        onClick={() => { setCalendarMode('week'); calendarRef.current?.getApi?.().changeView('dayGridWeek') }}
+                        className={clsx('px-3 py-1.5 text-sm border-l border-border', calendarMode==='week' ? 'bg-accent' : '')}
+                      >Week</button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setFiltersOpen(true)}
+                      className="px-3 py-1.5 rounded border border-border text-sm hover:bg-accent inline-flex items-center gap-2"
+                      title="Filters"
+                    >
+                      <Filter className="w-4 h-4" /> Filters
+                    </button>
+                    <button
+                      onClick={() => setShowUnscheduled(s => !s)}
+                      className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
+                    >
+                      {showUnscheduled ? 'Hide Unscheduled' : 'Show Unscheduled'}
+                    </button>
+                    <button
+                      onClick={() => handleCreateTask('todo')}
+                      className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                    >
+                      <Plus className="w-4 h-4" />
+                      New Task
+                    </button>
+                  </div>
+                </div>
                 <FullCalendar
                 plugins={[dayGridPlugin, interactionPlugin]}
                 initialView={calendarMode === 'month' ? 'dayGridMonth' : 'dayGridWeek'}
@@ -772,7 +949,7 @@ function TasksView() {
                 }}
                 />
               </div>
-            ) : (
+            ) : subView === 'todo' ? (
               // To-Do view
               <div className="flex-1 p-3 flex flex-col gap-3 overflow-hidden">
                 {/* Seven-day strip */}
@@ -854,6 +1031,20 @@ function TasksView() {
                     <div className="mt-2 text-xs text-muted-foreground">Drag from Unscheduled to add to selected day. Drag a task out to Unscheduled to remove date.</div>
                   </div>
                 </div>
+              </div>
+            ) : (
+              // Charts view
+              <div className="flex-1 p-3 overflow-auto flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium">Gantt Chart</h3>
+                  <button className="px-2 py-1 text-xs rounded border border-border hover:bg-accent" onClick={() => exportCanvas(ganttCanvasRef, 'gantt.png')}>Export PNG</button>
+                </div>
+                <canvas ref={ganttCanvasRef} className="border border-border rounded" />
+                <div className="flex items-center justify-between mt-2">
+                  <h3 className="text-sm font-medium">Burndown Chart</h3>
+                  <button className="px-2 py-1 text-xs rounded border border-border hover:bg-accent" onClick={() => exportCanvas(burndownCanvasRef, 'burndown.png')}>Export PNG</button>
+                </div>
+                <canvas ref={burndownCanvasRef} className="border border-border rounded" />
               </div>
             )}
             {showUnscheduled && (
