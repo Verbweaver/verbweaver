@@ -87,6 +87,7 @@ jobs:
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             npm run dist:win
