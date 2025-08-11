@@ -3,6 +3,9 @@ name: Publish winget Manifest
 on:
   release:
     types: [published]
+  push:
+    branches:
+      - release-testing
 
 jobs:
   winget:

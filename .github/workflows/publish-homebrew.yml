@@ -3,6 +3,9 @@ name: Publish Homebrew Cask
 on:
   release:
     types: [published]
+  push:
+    branches:
+      - release-testing
 
 jobs:
   homebrew:
