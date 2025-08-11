@@ -35,6 +35,19 @@ export const editorApi = {
     return response.data.tree || []
   },
 
+  getFile: async (projectId: string, path: string): Promise<{ path: string; name: string; content: string; metadata?: any }> => {
+    const response = await apiClient.get(`/projects/${projectId}/files/${encodeURIComponent(path)}`)
+    return response.data
+  },
+
+  writeFile: async (projectId: string, path: string, content: string, metadata?: any): Promise<any> => {
+    const response = await apiClient.put(`/projects/${projectId}/files/${encodeURIComponent(path)}`, {
+      content,
+      metadata,
+    })
+    return response.data
+  },
+
   createFile: async (projectId: string, path: string, content: string = ''): Promise<any> => {
     const fileName = path.split('/').pop() || 'untitled.md'
     const filePath = path
