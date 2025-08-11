@@ -5,9 +5,10 @@ import clsx from 'clsx'
 
 interface LayoutControlsProps {
   onLayout: (direction: LayoutDirection | 'expanded') => void
+  mode?: 'absolute' | 'inline'
 }
 
-export default function LayoutControls({ onLayout }: LayoutControlsProps) {
+export default function LayoutControls({ onLayout, mode = 'absolute' }: LayoutControlsProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   const layoutOptions: { direction: LayoutDirection | 'expanded'; icon: React.ReactNode; label: string }[] = [
@@ -17,6 +18,26 @@ export default function LayoutControls({ onLayout }: LayoutControlsProps) {
     { direction: 'RL', icon: <ArrowLeft className="w-4 h-4" />, label: 'Right to Left' },
     { direction: 'expanded', icon: <span className="text-xs">⟷</span>, label: 'Expanded' },
   ]
+
+  if (mode === 'inline') {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs font-medium text-muted-foreground">Straighten Layout</div>
+        <div className="flex flex-col gap-1">
+          {layoutOptions.map(({ direction, icon, label }) => (
+            <button
+              key={direction}
+              onClick={() => onLayout(direction)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent rounded border border-border transition-colors"
+            >
+              {icon}
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="absolute top-[10px] right-[10px] z-10">
@@ -31,12 +52,9 @@ export default function LayoutControls({ onLayout }: LayoutControlsProps) {
         >
           <Shuffle className="w-5 h-5" />
         </button>
-        
         {isOpen && (
           <div className="p-2 border-t border-border space-y-1">
-            <div className="text-xs font-medium text-muted-foreground mb-2">
-              Straighten Layout
-            </div>
+            <div className="text-xs font-medium text-muted-foreground mb-2">Straighten Layout</div>
             {layoutOptions.map(({ direction, icon, label }) => (
               <button
                 key={direction}
