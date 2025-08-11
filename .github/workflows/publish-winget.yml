@@ -1,0 +1,20 @@
+name: Publish winget Manifest
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  winget:
+    runs-on: windows-latest
+    steps:
+      - name: Winget Create
+        uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          identifier: Verbweaver.Verbweaver
+          version: ${{ github.event.release.tag_name }}
+          installers: |
+            https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/Verbweaver-${{ github.event.release.tag_name }}-x64.exe
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+

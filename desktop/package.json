@@ -29,6 +29,10 @@
     "typescript": "^5.3.3"
   },
   "build": {
+    "artifactName": "Verbweaver-v${version}-${arch}.${ext}",
+    "publish": [
+      "github"
+    ],
     "appId": "com.verbweaver.app",
     "productName": "Verbweaver",
     "directories": {
@@ -44,15 +48,12 @@
     ],
     "extraResources": [
       {
-        "from": "../backend",
-        "to": "backend",
-        "filter": [
-          "**/*",
-          "!**/__pycache__",
-          "!**/*.pyc",
-          "!**/venv",
-          "!**/.env"
-        ]
+        "from": "resources/backend",
+        "to": "backend"
+      },
+      {
+        "from": "../docs",
+        "to": "docs"
       }
     ],
     "mac": {
@@ -68,8 +69,7 @@
         {
           "target": "nsis",
           "arch": [
-            "x64",
-            "ia32"
+            "x64"
           ]
         }
       ],

@@ -7,7 +7,7 @@ import {
   dialog,
   protocol
 } from 'electron';
-import { join, resolve } from 'path';
+import { join } from 'path';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { spawn, ChildProcess } from 'child_process';
@@ -102,7 +102,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
 
   const port = await findAvailablePort();
   
-  // Fix backend path for electron-vite development
+  // Resolve backend base path
   let backendPath: string;
   if (isDevelopment) {
     // In development, go from dist/main up to project root, then to backend
@@ -118,66 +118,97 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     throw new Error(`Backend directory not found at: ${backendPath}`);
   }
   
-  // Try to use virtual environment first, then fall back to system Python
-  let pythonExecutable: string | null = null;
-  
-  // Check for virtual environment
-  const venvPythonPath = join(backendPath, '../.venv/Scripts/python.exe');
-  if (existsSync(venvPythonPath)) {
-    pythonExecutable = venvPythonPath;
-    console.log('Using virtual environment Python:', pythonExecutable);
-  } else {
-    // Fall back to system Python
-    const pythonCommands = process.platform === 'win32' 
-      ? ['py', 'python', 'python3'] 
-      : ['python3', 'python'];
-    
-    // Find the first available Python executable
-    for (const cmd of pythonCommands) {
-      try {
-        const { execSync } = require('child_process');
-        execSync(`${cmd} --version`, { stdio: 'ignore' });
-        pythonExecutable = cmd;
-        console.log(`Found Python executable: ${cmd}`);
-        break;
-      } catch (e) {
-        // Continue to next command
-      }
-    }
-  }
-  
-  if (!pythonExecutable) {
-    throw new Error('Python not found. Please ensure Python is installed and in your PATH, or run the setup script to create a virtual environment.');
-  }
+  // When packaged, prefer spawning the bundled backend binary; in dev, use Python + uvicorn
+  const useBundledBinary = !isDevelopment;
   
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error('Backend startup timeout'));
     }, BACKEND_STARTUP_TIMEOUT);
 
-    backendProcess = spawn(pythonExecutable, [
-      '-m', 'uvicorn',
-      'app.main:app',
-      '--host', '127.0.0.1',
-      '--port', port.toString(),
-      '--no-access-log'
-    ], {
-      cwd: backendPath,
-      env: {
-        ...process.env,
-        PYTHONUNBUFFERED: '1',
-        DATABASE_URL: `sqlite+aiosqlite:///${join(app.getPath('userData'), 'verbweaver.db')}`,
-        SECRET_KEY: store.get('secretKey', 'default-secret-key-change-in-production') as string,
-        BACKEND_CORS_ORIGINS: JSON.stringify([
-          'http://localhost:3000',
-          'http://localhost:3001',
-          `http://localhost:${port}`,
-          `http://127.0.0.1:${port}`,
-          'file://'
-        ])
-      },
-      shell: process.platform === 'win32'
-    });
+    // Resolve configurable storage locations
+    const userDataDir = app.getPath('userData');
+    const preferences = (store.get('preferences', {}) as any) || {};
+    const defaultDbPath = join(userDataDir, 'verbweaver.db');
+    const defaultGitRoot = join(userDataDir, 'git-repos');
+    const dbUrl = (preferences.databaseUrl as string) || process.env.DATABASE_URL || `sqlite+aiosqlite:///${defaultDbPath}`;
+    const gitRoot = (preferences.gitProjectsRoot as string) || process.env.GIT_PROJECTS_ROOT || defaultGitRoot;
+
+    if (useBundledBinary) {
+      const platformDir = process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux');
+      const exeName = process.platform === 'win32' ? 'verbweaver-backend.exe' : 'verbweaver-backend';
+      const binaryPath = join(backendPath, platformDir, exeName);
+
+      if (!existsSync(binaryPath)) {
+        throw new Error(`Bundled backend binary not found at ${binaryPath}`);
+      }
+
+      backendProcess = spawn(binaryPath, [], {
+        env: {
+          ...process.env,
+          PORT: port.toString(),
+          DATABASE_URL: dbUrl,
+          GIT_PROJECTS_ROOT: gitRoot,
+          SECRET_KEY: store.get('secretKey', 'default-secret-key-change-in-production') as string,
+          BACKEND_CORS_ORIGINS: JSON.stringify([
+            'http://localhost:3000',
+            'http://localhost:3001',
+            `http://localhost:${port}`,
+            `http://127.0.0.1:${port}`,
+            'file://'
+          ])
+        },
+        shell: process.platform === 'win32'
+      });
+    } else {
+      // Development: try to use a local Python + uvicorn
+      // Try to use virtual environment first, then fall back to system Python
+      let pythonExecutable: string | null = null;
+      const venvPythonPath = join(backendPath, '../.venv/Scripts/python.exe');
+      if (existsSync(venvPythonPath)) {
+        pythonExecutable = venvPythonPath;
+        console.log('Using virtual environment Python:', pythonExecutable);
+      } else {
+        const pythonCommands = process.platform === 'win32' ? ['py', 'python', 'python3'] : ['python3', 'python'];
+        for (const cmd of pythonCommands) {
+          try {
+            const { execSync } = require('child_process');
+            execSync(`${cmd} --version`, { stdio: 'ignore' });
+            pythonExecutable = cmd;
+            console.log(`Found Python executable: ${cmd}`);
+            break;
+          } catch {}
+        }
+      }
+      if (!pythonExecutable) {
+        throw new Error('Python not found. Please ensure Python is installed and in your PATH, or run the setup script to create a virtual environment.');
+      }
+
+      backendProcess = spawn(pythonExecutable, [
+        '-m', 'uvicorn',
+        'app.main:app',
+        '--host', '127.0.0.1',
+        '--port', port.toString(),
+        '--no-access-log'
+      ], {
+        cwd: backendPath,
+        env: {
+          ...process.env,
+          PYTHONUNBUFFERED: '1',
+          DATABASE_URL: dbUrl,
+          GIT_PROJECTS_ROOT: gitRoot,
+          SECRET_KEY: store.get('secretKey', 'default-secret-key-change-in-production') as string,
+          BACKEND_CORS_ORIGINS: JSON.stringify([
+            'http://localhost:3000',
+            'http://localhost:3001',
+            `http://localhost:${port}`,
+            `http://127.0.0.1:${port}`,
+            'file://'
+          ])
+        },
+        shell: process.platform === 'win32'
+      });
+    }
 
     const currentProcess = backendProcess;
     
@@ -393,6 +424,64 @@ function createMenu() {
     {
       label: 'Help',
       submenu: [
+        {
+          label: 'Check for Updates…',
+          click: async () => {
+            try {
+              const checking = dialog.showMessageBoxSync(mainWindow!, {
+                type: 'info',
+                message: 'Checking for updates…',
+                buttons: ['OK'],
+              });
+              // Avoid unused var
+              void checking;
+
+              autoUpdater.autoDownload = true;
+              const result = await autoUpdater.checkForUpdates();
+              const update = result?.updateInfo;
+              const current = app.getVersion();
+
+              if (update && update.version && update.version !== current) {
+                let notes = '';
+                const rn: any = (update as any).releaseNotes;
+                if (Array.isArray(rn)) {
+                  notes = rn.map((n: any) => (typeof n === 'string' ? n : n?.note || '')).join('\n\n');
+                } else if (typeof rn === 'string') {
+                  notes = rn;
+                }
+                dialog.showMessageBox(mainWindow!, {
+                  type: 'info',
+                  title: `Update available: ${update.version}`,
+                  message: `A new version is available. It will download in the background and prompt to restart when ready.`,
+                  detail: notes || 'See release notes on the Releases page.',
+                  buttons: ['OK']
+                });
+                // When downloaded, prompt to restart
+                autoUpdater.once('update-downloaded', () => {
+                  dialog.showMessageBox(mainWindow!, {
+                    type: 'info',
+                    buttons: ['Restart Now', 'Later'],
+                    title: 'Update Ready',
+                    message: 'An update has been downloaded. Restart to apply it now?'
+                  }).then((res) => {
+                    if (res.response === 0) {
+                      autoUpdater.quitAndInstall();
+                    }
+                  });
+                });
+              } else {
+                dialog.showMessageBox(mainWindow!, {
+                  type: 'info',
+                  title: 'Up to date',
+                  message: `You are running the latest version (${current}).`,
+                  buttons: ['OK']
+                });
+              }
+            } catch (e) {
+              dialog.showErrorBox('Update check failed', String(e));
+            }
+          }
+        },
         {
           label: 'Documentation',
           click: () => {
@@ -783,7 +872,7 @@ task:
         shell: true 
       });
       
-      await new Promise((resolve, reject) => {
+      await new Promise((resolve) => {
         gitInit.on('close', (code: number) => {
           if (code === 0) {
             resolve(code);
@@ -1392,7 +1481,7 @@ task:
     
     // First, add files if specified
     if (files && files.length > 0) {
-      await new Promise((resolve, reject) => {
+      await new Promise((resolve) => {
         // Only add specified files
         const gitAdd = spawn('git', ['add', '--'].concat(files), { 
           cwd: projectPath,
@@ -1407,10 +1496,10 @@ task:
         
         gitAdd.on('close', (code: number) => {
           if (code === 0) resolve(true);
-          else reject(new Error(errorOutput || `Git add failed with code ${code}`));
+          else resolve(false);
         });
         
-        gitAdd.on('error', reject);
+        gitAdd.on('error', () => resolve(false));
       });
     }
     

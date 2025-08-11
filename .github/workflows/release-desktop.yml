@@ -1,0 +1,97 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-release:
+    name: Build and release (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build backend binary (PyInstaller)
+        working-directory: backend
+        run: |
+          pyinstaller --onefile entry.py --name verbweaver-backend
+
+      - name: Prepare backend binary in desktop resources
+        shell: bash
+        run: |
+          mkdir -p desktop/resources/backend/win desktop/resources/backend/mac desktop/resources/backend/linux
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cp backend/dist/verbweaver-backend.exe desktop/resources/backend/win/verbweaver-backend.exe
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            cp backend/dist/verbweaver-backend desktop/resources/backend/mac/verbweaver-backend
+            chmod +x desktop/resources/backend/mac/verbweaver-backend
+          else
+            cp backend/dist/verbweaver-backend desktop/resources/backend/linux/verbweaver-backend
+            chmod +x desktop/resources/backend/linux/verbweaver-backend
+          fi
+
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build desktop (electron-vite)
+        working-directory: desktop
+        run: npm run build
+
+      - name: Set code signing env (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          if [[ -n "${{ secrets.WIN_CSC_LINK }}" ]]; then
+            echo "CSC_LINK=${{ secrets.WIN_CSC_LINK }}" >> $GITHUB_ENV
+            echo "CSC_KEY_PASSWORD=${{ secrets.WIN_CSC_KEY_PASSWORD }}" >> $GITHUB_ENV
+          fi
+
+      - name: Set code signing env (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [[ -n "${{ secrets.APPLE_ID }}" ]]; then
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> $GITHUB_ENV
+            echo "APPLE_APP_SPECIFIC_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> $GITHUB_ENV
+            echo "ASC_PROVIDER=${{ secrets.ASC_PROVIDER }}" >> $GITHUB_ENV
+          fi
+
+      - name: Package and publish desktop app
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            npm run dist:win
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            npm run dist:mac
+          else
+            npm run dist:linux
+          fi
+
+
