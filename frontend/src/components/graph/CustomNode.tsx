@@ -11,6 +11,7 @@ interface CustomNodeProps {
     metadata?: any
     isDirectory?: boolean
     hasTask?: boolean
+    locked?: boolean
   }
   selected?: boolean
 }
@@ -71,6 +72,11 @@ function CustomNode({ data, selected }: CustomNodeProps) {
         'hover:shadow-lg transition-shadow'
       )}
     >
+      {data.locked && (
+        <div className="absolute -top-2 -right-2">
+          <span className="text-red-600 font-bold text-xs" title="Locked">🔒</span>
+        </div>
+      )}
       {/* Top Handle */}
       <Handle
         type="target"
