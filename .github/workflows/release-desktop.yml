@@ -103,4 +103,12 @@ jobs:
             npm run dist:linux
           fi
 
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: desktop/dist-app/**
+          if-no-files-found: error
+          retention-days: 7
+
 
