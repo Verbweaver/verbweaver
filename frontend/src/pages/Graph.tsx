@@ -72,6 +72,15 @@ function GraphView() {
       return true
     }
   })
+  const [rigidMode, setRigidMode] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.GRAPH_RIGID_MODE)
+      if (raw === null) return true
+      return raw === 'true'
+    } catch {
+      return true
+    }
+  })
 
   // Connect WebSocket for real-time updates
   const projectId = currentProject?.id?.toString()
@@ -154,10 +163,21 @@ function GraphView() {
           return;
         }
         // Create flow node for all nodes, including 'nodes' folder if it exists
+        const position = (() => {
+          if (node.path === 'nodes') {
+            return { x: 0, y: 0 }
+          }
+          const saved = node.metadata.position
+          if (rigidMode && saved && typeof saved.x === 'number' && typeof saved.y === 'number') {
+            return saved
+          }
+          return saved || { x: Math.random() * 500, y: Math.random() * 500 }
+        })()
+
         flowNodes.push({
           id: node.path,
           type: 'custom',
-          position: node.metadata.position || { x: Math.random() * 500, y: Math.random() * 500 },
+          position,
           data: {
             label: node.metadata.title || node.name,
             type: node.isDirectory ? 'folder' : (node.metadata.type || 'document'),
@@ -166,7 +186,9 @@ function GraphView() {
             taskStatus: node.taskStatus,
             isDirectory: node.isDirectory,
             isMarkdown: node.isMarkdown,
+            locked: !!node.metadata?.locked,
           },
+          draggable: !node.metadata?.locked,
         })
       })
       
@@ -180,7 +202,7 @@ function GraphView() {
         flowNodes.push({
           id: 'nodes',
           type: 'custom',
-          position: { x: 250, y: 50 },
+          position: { x: 0, y: 0 },
           data: {
             label: 'nodes',
             type: 'folder',
@@ -250,6 +272,8 @@ function GraphView() {
   // Handle node drag
   const onNodeDragStop = useCallback(
     (_: any, node: Node) => {
+      // Prevent drag persistence when locked
+      if ((node.data as any)?.locked) return
       updateNode(node.id, {
         metadata: { position: node.position }
       }).catch(() => {
@@ -700,9 +724,8 @@ function GraphView() {
       >
         <Background />
         <Controls />
-        <LayoutControls onLayout={handleLayout} />
-        {/* Toggle filter for uploads */}
-        <div className="absolute top-2 right-2 z-10 flex items-center gap-2 bg-background/80 border border-border rounded px-2 py-1 shadow">
+        {/* Left controls bar */}
+        <div className="absolute top-2 left-2 z-10 flex items-center gap-2 bg-background/80 border border-border rounded px-2 py-1 shadow">
           <label className="inline-flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -715,6 +738,22 @@ function GraphView() {
             />
             Hide uploads
           </label>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={rigidMode}
+              onChange={(e) => {
+                const v = e.target.checked
+                setRigidMode(v)
+                try { localStorage.setItem(STORAGE_KEYS.GRAPH_RIGID_MODE, String(v)) } catch {}
+              }}
+            />
+            Rigid mode
+          </label>
+        </div>
+        {/* Right layout controls */}
+        <div className="absolute top-2 right-2 z-10">
+          <LayoutControls onLayout={handleLayout} />
         </div>
         <MiniMap
           nodeColor={(node) => {
@@ -773,6 +812,21 @@ function GraphView() {
           }}
           onUnlinkEdge={handleUnlinkEdge}
           onAttachFiles={(nodeId) => setAttachTarget(nodeId)}
+          onToggleLock={async (nodeId) => {
+            try {
+              const node = useNodeStore.getState().nodes.get(nodeId)
+              if (!node) return
+              const nextLocked = !(node.metadata?.locked)
+              await updateNode(nodeId, { metadata: { locked: nextLocked } as any })
+              toast.success(nextLocked ? 'Node locked' : 'Node unlocked')
+            } catch (e) {
+              toast.error('Failed to toggle lock')
+            }
+          }}
+          isLocked={(() => {
+            const n = verbweaverNodes.get(contextMenu.nodeId || '')
+            return !!n?.metadata?.locked
+          })()}
           onUploadFiles={() => {
             const input = document.getElementById('graph-canvas-upload-input') as HTMLInputElement | null
             input?.click()
