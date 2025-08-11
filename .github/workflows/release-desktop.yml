@@ -56,13 +56,13 @@ jobs:
             chmod +x desktop/resources/backend/linux/verbweaver-backend
           fi
 
-      - name: Install desktop deps
-        working-directory: desktop
+      - name: Install Node deps (workspaces)
+        working-directory: .
         run: npm ci
 
       - name: Build desktop (electron-vite)
-        working-directory: desktop
-        run: npm run build
+        working-directory: .
+        run: npm run -w @verbweaver/desktop build
 
       - name: Set code signing env (Windows)
         if: runner.os == 'Windows'
@@ -84,17 +84,17 @@ jobs:
           fi
 
       - name: Package and publish desktop app
-        working-directory: desktop
+        working-directory: .
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            npm run dist:win
+            npm run -w @verbweaver/desktop dist:win
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            npm run dist:mac
+            npm run -w @verbweaver/desktop dist:mac
           else
-            npm run dist:linux
+            npm run -w @verbweaver/desktop dist:linux
           fi
 
 
