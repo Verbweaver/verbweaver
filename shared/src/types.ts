@@ -34,6 +34,8 @@ export interface TaskMetadata {
   priority?: 'low' | 'medium' | 'high';
   dueDate?: string;
   completedDate?: string;
+  startDate?: string;
+  levelOfEffort?: number;
   estimatedHours?: number;
   actualHours?: number;
   comments?: Comment[];
@@ -62,8 +64,15 @@ export interface GraphNode {
   id: string;
   type: NodeType;
   title: string;
+  // Optional fields used by various views/stores in the app
+  label?: string;
   metadata: MarkdownMetadata;
+  data?: any;
   position?: { x: number; y: number };
+  created?: string;
+  modified?: string;
+  tags?: string[];
+  status?: string;
   style?: {
     color?: string;
     backgroundColor?: string;
