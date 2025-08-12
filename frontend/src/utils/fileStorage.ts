@@ -64,29 +64,50 @@ export class FileStorage {
     }
 
     try {
-      // Create a unique filename
+      // Prefer preserving original filename; disambiguate with numeric suffix when needed
       const timestamp = Date.now()
-      const fileExtension = file.name.split('.').pop() || ''
-      const uniqueName = `${taskId}_${timestamp}.${fileExtension}`
-      const filePath = `${uploadsPath}/${uniqueName}`
+      const sanitizedOriginal = file.name.replace(/[\\/]/g, '')
+      const dotIndex = sanitizedOriginal.lastIndexOf('.')
+      const base = dotIndex > 0 ? sanitizedOriginal.slice(0, dotIndex) : sanitizedOriginal
+      const ext = dotIndex > 0 ? sanitizedOriginal.slice(dotIndex) : ''
 
-      // Convert File to Buffer for Electron
+      // Build a unique path that preserves original name, appending " (n)" if it exists
+      let candidateName = `${base}${ext}`
+      let candidatePath = `${uploadsPath}/${candidateName}`
+      let counter = 1
+      // Probe for existence by attempting to read; if it fails, assume it doesn't exist
+      // This avoids overwriting existing files
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        try {
+          await window.electronAPI.readFile(candidatePath)
+          // If read succeeded, file exists; bump suffix
+          candidateName = `${base} (${counter})${ext}`
+          candidatePath = `${uploadsPath}/${candidateName}`
+          counter += 1
+        } catch {
+          // read failed → treat as not existing
+          break
+        }
+      }
+
+      // Convert File to Uint8Array for Electron
       const arrayBuffer = await file.arrayBuffer()
       // Use Uint8Array instead of Buffer for browser compatibility
       const uint8Array = new Uint8Array(arrayBuffer)
 
       // Write file to filesystem
-      await window.electronAPI.writeFileBinary(filePath, uint8Array)
+      await window.electronAPI.writeFileBinary(candidatePath, uint8Array)
 
       // Create stored file record
       const storedFile: StoredFile = {
         id: `${taskId}_${timestamp}`,
-        name: uniqueName,
-        originalName: file.name,
+        name: candidateName,
+        originalName: sanitizedOriginal,
         size: file.size,
         uploadedAt: new Date(),
         uploadedBy: 'Current User', // TODO: Get from auth context
-        path: filePath,
+        path: candidatePath,
         mimeType: file.type || 'application/octet-stream'
       }
 
