@@ -2019,3 +2019,26 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+
+// Ensure backend process is stopped when the app is quitting
+app.on('before-quit', () => {
+  // Fire and forget; stopBackend handles platform-specific termination
+  void stopBackend();
+});
+
+app.on('will-quit', () => {
+  void stopBackend();
+});
+
+// Extra safety: stop backend on process exit or termination signals
+process.on('exit', () => {
+  void stopBackend();
+});
+process.on('SIGINT', () => {
+  void stopBackend();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  void stopBackend();
+  process.exit(0);
+});
