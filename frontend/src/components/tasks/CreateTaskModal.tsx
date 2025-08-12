@@ -134,7 +134,7 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
           // Store date-only string to match the rest of the app and avoid timezone issues
           dueDate: dueDate ? dueDate : undefined,
           startDate: startDate ? startDate : undefined,
-          levelOfEffort: levelOfEffort ? levelOfEffort : undefined,
+          levelOfEffort: levelOfEffort ? Number(levelOfEffort) : undefined,
           completedDate: undefined
         }
       }

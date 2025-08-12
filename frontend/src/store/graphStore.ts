@@ -148,8 +148,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
             title: createdNodeFromMain.title,
             type: createdNodeFromMain.type,
             position: createdNodeFromMain.position,
-            data: createdNodeFromMain.data, // This is the frontmatter from main
-            metadata: createdNodeFromMain.data, // Map frontmatter to metadata for GraphNode
+            metadata: createdNodeFromMain.data, // frontmatter as metadata
             status: createdNodeFromMain.status,
             created: createdNodeFromMain.created || new Date().toISOString(),
             modified: createdNodeFromMain.modified || new Date().toISOString(),
@@ -165,7 +164,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           tags: nodeData.tags || [],
           status: nodeData.status || 'idea',
           metadata: nodeData.metadata || {},
-          data: nodeData.data || {},
           ...nodeData, // Spread incoming data (label, title, type, position)
         };
         newNode = await graphApi.createNode(projectId, newNodePayload);
