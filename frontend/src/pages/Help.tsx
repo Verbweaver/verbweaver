@@ -6,12 +6,20 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import '../styles/markdown.css';
-import { DocFile } from '../../../desktop/src/preload';
+// Local DocFile type to avoid importing Electron preload from the frontend build
+type DocFile = {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  children?: DocFile[];
+};
 import { getApiUrl } from '@verbweaver/shared';
 import axios from 'axios';
 import React from 'react';
 
-const API_URL = getApiUrl();
+const API_URL = (() => {
+  try { return getApiUrl(); } catch { return ''; }
+})();
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
 export default function Help() {

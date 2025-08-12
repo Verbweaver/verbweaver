@@ -538,11 +538,11 @@ function EditorView() {
   }, [currentFile, openFiles, closeFile, navigate])
 
   const increaseFontSize = () => {
-    setFontSize(prev => Math.min(prev + 2, 32))
+    setFontSize((prev: number) => Math.min(prev + 2, 32))
   }
 
   const decreaseFontSize = () => {
-    setFontSize(prev => Math.max(prev - 2, 10))
+    setFontSize((prev: number) => Math.max(prev - 2, 10))
   }
 
   if (!currentProject) {
