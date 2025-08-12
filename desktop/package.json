@@ -2,6 +2,12 @@
   "name": "@verbweaver/desktop",
   "version": "1.0.0",
   "private": true,
+  "description": "Verbweaver Desktop application",
+  "author": "Verbweaver Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TheWover/verbweaver.git"
+  },
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "cross-env NODE_ENV=development electron-vite dev",
@@ -23,12 +29,16 @@
   "devDependencies": {
     "@types/node": "^20.10.4",
     "cross-env": "^7.0.3",
-    "electron": "^27.1.3",
+    "electron": "27.1.3",
     "electron-builder": "^24.9.1",
     "electron-vite": "^3.1.0",
     "typescript": "^5.3.3"
   },
   "build": {
+    "artifactName": "Verbweaver-v${version}-${arch}.${ext}",
+    "publish": [
+      "github"
+    ],
     "appId": "com.verbweaver.app",
     "productName": "Verbweaver",
     "directories": {
@@ -44,15 +54,16 @@
     ],
     "extraResources": [
       {
-        "from": "../backend",
-        "to": "backend",
-        "filter": [
-          "**/*",
-          "!**/__pycache__",
-          "!**/*.pyc",
-          "!**/venv",
-          "!**/.env"
-        ]
+        "from": "resources/backend",
+        "to": "backend"
+      },
+      {
+        "from": "../docs",
+        "to": "docs"
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "renderer"
       }
     ],
     "mac": {
@@ -68,8 +79,7 @@
         {
           "target": "nsis",
           "arch": [
-            "x64",
-            "ia32"
+            "x64"
           ]
         }
       ],
