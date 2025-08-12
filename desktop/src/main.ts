@@ -1431,16 +1431,17 @@ task:
     const { spawn } = require('child_process');
     
     return new Promise((resolve, reject) => {
-      const git = spawn('git', ['status', '--porcelain'], { 
+      // Use NUL-delimited porcelain output to robustly parse paths (including nested, spaces, renames)
+      const git = spawn('git', ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-z'], { 
         cwd: projectPath,
         shell: true 
       });
       
-      let output = '';
+      const chunks: Buffer[] = [];
       let errorOutput = '';
       
       git.stdout.on('data', (data: Buffer) => {
-        output += data.toString();
+        chunks.push(Buffer.from(data));
       });
       
       git.stderr.on('data', (data: Buffer) => {
@@ -1449,23 +1450,27 @@ task:
       
       git.on('close', (code: number) => {
         if (code === 0 || (code === 128 && errorOutput.includes('No commits yet'))) {
-          // Parse the porcelain output
-          const lines = output.trim().split('\n').filter(line => line);
-          const changes = lines.map(line => {
-            const status = line.substring(0, 2);
-            // Fix path parsing to handle Windows paths correctly
-            const path = line.substring(2).trim();
-            
+          const output = Buffer.concat(chunks).toString('utf8');
+          const parts = output.split('\0').filter(Boolean);
+          const changes: Array<{ path: string; status: 'added' | 'modified' | 'deleted' }> = [];
+          for (let i = 0; i < parts.length; i++) {
+            const entry = parts[i];
+            // entry format: "XY path"; for renames: "XY oldpath" followed by next token "newpath"
+            const statusHeader = entry.slice(0, 2);
+            const firstPath = entry.slice(3).trim();
+            let filePath = firstPath;
+            // Handle rename/copy (R/C) entries where next token is the new path
+            if ((statusHeader[0] === 'R' || statusHeader[0] === 'C') && i + 1 < parts.length) {
+              filePath = parts[i + 1];
+              i++; // consume next token
+            }
             let changeType: 'added' | 'modified' | 'deleted' = 'modified';
-            if (status.includes('A') || status.includes('?')) changeType = 'added';
-            else if (status.includes('D')) changeType = 'deleted';
-            
-            return { path, status: changeType };
-          });
-          
+            if (statusHeader.includes('A') || statusHeader.includes('?')) changeType = 'added';
+            else if (statusHeader.includes('D')) changeType = 'deleted';
+            changes.push({ path: filePath, status: changeType });
+          }
           resolve({ changes, staged: [], untracked: [] });
         } else if (code === 128 && errorOutput.includes('not a git repository')) {
-          // Git repository not initialized
           resolve({ changes: [], staged: [], untracked: [] });
         } else {
           reject(new Error(errorOutput || `Git status failed with code ${code}`));
