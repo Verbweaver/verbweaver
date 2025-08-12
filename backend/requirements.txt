@@ -3,6 +3,7 @@ uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 alembic==1.12.1
 psycopg2-binary==2.9.9
+aiosqlite==0.20.0
 redis==5.0.1
 python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
@@ -13,3 +14,7 @@ pydantic==2.5.0
 pydantic-settings==2.1.0
 httpx==0.25.2
 PyYAML==6.0.1
+itsdangerous==2.1.2
+email-validator==2.1.0.post1
+webauthn==2.0.0
+aiofiles==23.2.1
