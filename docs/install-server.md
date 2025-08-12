@@ -3,7 +3,7 @@
 This guide covers installing the server natively with either SQLite (simple) or PostgreSQL (recommended for multi-user), plus reverse proxy and TLS.
 
 ## Prerequisites
-- OS: Ubuntu 22.04+/Debian 12+/RHEL 9+ (reference), or macOS for development
+- OS: Ubuntu 22.04+/Debian 12+/RHEL 9+ (reference), or Windows/macOS for development
 - Python 3.11, Node.js 20+, Git
 - Optional: PostgreSQL 15, Redis 7, Nginx or Caddy
 
@@ -22,12 +22,21 @@ pip install -r backend/requirements.txt
 cd backend
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
-SQLite default path: `./verbweaver.db`. Override via `DATABASE_URL`.
+SQLite is the default database and requires no extra setup. It's ideal for single-user or small-team deployments and is also what the Electron app uses. The default SQLite file path is `./verbweaver.db`. You can override it via `DATABASE_URL` (e.g., `sqlite+aiosqlite:///./verbweaver.db`).
 
-## Backend (PostgreSQL)
-- Create a database and user
-- Set `DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/dbname`
-- Start server as above
+## Backend (PostgreSQL) — optional
+PostgreSQL is optional and recommended for multi-user or larger deployments.
+
+1. Create a PostgreSQL database and user
+2. Install the async driver for SQLAlchemy:
+```
+pip install asyncpg
+```
+3. Set an environment variable using the async driver URL scheme:
+```
+export DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/dbname
+```
+4. Start the server as above
 
 ## Frontend build and serve
 ```
