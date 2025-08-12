@@ -40,10 +40,7 @@ jobs:
       - name: Build backend binary (PyInstaller)
         working-directory: backend
         run: |
-          pyinstaller --onefile entry.py --name verbweaver-backend \
-            --hidden-import itsdangerous \
-            --hidden-import aiosqlite \
-            --hidden-import passlib.handlers.bcrypt
+          pyinstaller --onefile entry.py --name verbweaver-backend --hidden-import itsdangerous --hidden-import aiosqlite --hidden-import passlib.handlers.bcrypt
 
       - name: Prepare backend binary in desktop resources
         shell: bash
