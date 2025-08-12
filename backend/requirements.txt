@@ -2,7 +2,8 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 alembic==1.12.1
-psycopg2-binary==2.9.9
+# PostgreSQL driver is optional for server deployments:
+# psycopg2-binary==2.9.9
 aiosqlite==0.20.0
 redis==5.0.1
 python-multipart==0.0.6
