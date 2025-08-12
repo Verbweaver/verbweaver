@@ -13,8 +13,7 @@ jobs:
         with:
           identifier: Verbweaver.Verbweaver
           version: ${{ github.event.release.tag_name }}
-          installers: |
-            https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/Verbweaver-${{ github.event.release.tag_name }}-x64.exe
+          installer_url: https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/Verbweaver-${{ github.event.release.tag_name }}-x64.exe
           token: ${{ secrets.GITHUB_TOKEN }}
 
 

@@ -95,7 +95,21 @@ jobs:
             echo "ASC_PROVIDER=${{ secrets.ASC_PROVIDER }}" >> $GITHUB_ENV
           fi
 
-      - name: Package and publish desktop app
+      - name: Package desktop app (no publish for branches)
+        if: startsWith(github.ref, 'refs/heads/')
+        working-directory: desktop
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            npx electron-builder --win --publish never
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            npx electron-builder --mac --publish never
+          else
+            npx electron-builder --linux --publish never
+          fi
+
+      - name: Package and publish desktop app (tags/releases)
+        if: startsWith(github.ref, 'refs/tags/')
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
