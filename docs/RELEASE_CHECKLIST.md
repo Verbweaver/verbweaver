@@ -20,6 +20,14 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
 - [ ] Homebrew tap
   - [ ] HOMEBREW_TAP_REPO (e.g., yourorg/homebrew-verbweaver)
   - [ ] HOMEBREW_TAP_TOKEN (PAT with push access to tap repo)
+- [ ] Docker registries (optional but recommended)
+  - [ ] DOCKERHUB_ORG (Docker Hub org/user for image name)
+  - [ ] DOCKERHUB_USERNAME
+  - [ ] DOCKERHUB_TOKEN
+  - [ ] (GHCR uses GITHUB_TOKEN by default)
+- [ ] Package signing (optional)
+  - [ ] DEB_SIGNING_KEY (path or contents; optional)
+  - [ ] RPM_SIGNING_KEY (path or contents; optional)
 
 ## 2) Artifact naming & packaging
 - [ ] Confirm `desktop/package.json` has
@@ -31,6 +39,7 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
   - [ ] Windows: `Verbweaver-vX.Y.Z-x64.exe`
   - [ ] macOS: `Verbweaver-vX.Y.Z-<arch>.dmg` (Homebrew workflow auto‑detects DMG asset)
   - [ ] Linux: AppImage/deb/rpm (names may include arch; OK)
+ - [ ] Server packages: `.deb` and `.rpm` uploaded by the server packaging workflow
 
 ## 3) Backend bundling (desktop)
 - [ ] PyInstaller spec not required (single‑file is fine), but verify imports resolve
@@ -38,6 +47,7 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
 - [ ] Copy to `desktop/resources/backend/<platform>/verbweaver-backend[.exe]` (CI does this automatically)
 
 ## 4) Update workflows
+- [ ] `.github/workflows/CI` (formerly `build.yml`) runs PR checks (frontend build/typecheck, backend tests)
 - [ ] `.github/workflows/release-desktop.yml` builds backend binary, then packages Electron app and publishes to Releases
 - [ ] `.github/workflows/publish-homebrew.yml`
   - [ ] Uses GitHub API to fetch DMG asset and compute sha256
@@ -45,6 +55,10 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
 - [ ] `.github/workflows/publish-winget.yml`
   - [ ] URL points to `Verbweaver-v<tag>-x64.exe`
   - [ ] Opens/updates PR to winget‑pkgs
+- [ ] `.github/workflows/publish-docker.yml`
+  - [ ] Publishes multi‑arch backend images to Docker Hub and GHCR on `v*.*.*` tags (latest + semver tags)
+- [ ] `.github/workflows/publish-deb-rpm.yml`
+  - [ ] Builds and uploads `verbweaver-backend` `.deb` and `.rpm` to the GitHub Release
 
 ## 5) Signing & notarization
 - [ ] Windows: verify installer is signed (SmartScreen friendly if EV)
@@ -60,6 +74,7 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
   - [ ] Database URL (e.g., `sqlite+aiosqlite:///C:/Path/verbweaver.db`)
   - [ ] Git Projects Root
 - [ ] Verify backend reads envs `DATABASE_URL` and `GIT_PROJECTS_ROOT` (launch app and test)
+- [ ] Confirm desktop backend runs on `127.0.0.1:<port>` only and terminates when the app exits
 
 ## 8) Local validation before tagging
 - [ ] Build backend binary locally (section 3)
@@ -80,9 +95,10 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
 - [ ] systemd service installed, `enable --now`, logs clean (`journalctl -u verbweaver-backend -f`)
 
 ## 11) Docker deployment QA
-- [ ] `docker compose up -d` runs backend, frontend, postgres, redis, nginx
-- [ ] Frontend: http://localhost:3000 loads
-- [ ] Backend: http://localhost:8000/health (or API) responds
+- [ ] Pull image from Docker Hub or GHCR (e.g., `docker pull $DOCKERHUB_ORG/verbweaver-backend:latest`)
+- [ ] `docker run -p 8000:8000 $DOCKERHUB_ORG/verbweaver-backend:latest` responds at http://localhost:8000/health
+- [ ] `docker compose up -d` (if using the provided compose file) runs backend, frontend, postgres, redis, nginx
+- [ ] Frontend: http://localhost loads
 - [ ] Optional nginx at http://localhost proxies correctly
 
 ## 12) Security & hardening
@@ -90,12 +106,19 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
 - [ ] Validate no plaintext secrets in repo or logs
 - [ ] Confirm CSP and navigation protections in Electron main process
 - [ ] Sign/notarize artifacts for public distribution
+ - [ ] Desktop backend binds to 127.0.0.1 only (not network‑exposed)
+ - [ ] Desktop app stops the backend process on exit (no orphaned processes)
 
 ## 13) Housekeeping
 - [ ] Update Help menu URLs to real repo/docs
 - [ ] Keep previous installers available in Releases for rollback
 - [ ] Verify FullCalendar assets render correctly in production build
 - [ ] Document known issues / troubleshooting in `docs/install-desktop.md` and `docs/install-server.md`
+
+## 14) OS repository distribution (optional)
+- [ ] Decide on managed repo hosting (Cloudsmith or packagecloud) for apt/yum repos
+- [ ] Create CI step to push built `.deb`/`.rpm` to the hosted repos on release
+- [ ] (Longer‑term) Evaluate Open Build Service (OBS) for publishing into official distro repos
 
 ---
 When all boxes are checked, the release line is ready. Perform a final end‑to‑end install test on each OS (fresh VM if possible) before announcing.
