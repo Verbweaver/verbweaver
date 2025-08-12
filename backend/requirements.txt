@@ -19,3 +19,4 @@ itsdangerous==2.1.2
 email-validator==2.1.0.post1
 webauthn==2.0.0
 aiofiles==23.2.1
+watchdog==4.0.0
