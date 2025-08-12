@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [ main, develop ]
   push:
-    branches: [ develop ]
+    branches: [ develop, release-testing]
 
 jobs:
   lint-typecheck-frontend:
