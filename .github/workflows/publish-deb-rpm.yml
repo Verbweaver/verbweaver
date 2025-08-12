@@ -1,0 +1,114 @@
+name: Build and Publish Server Packages (deb/rpm)
+
+on:
+  push:
+    branches:
+      - release-testing
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nfpm
+        run: |
+          curl -fsSL https://github.com/goreleaser/nfpm/releases/download/v2.40.0/nfpm_2.40.0_Linux_x86_64.tar.gz -L | tar -xz nfpm
+          sudo mv nfpm /usr/local/bin/nfpm
+
+      - name: Prepare package root
+        run: |
+          rm -rf pkgroot
+          mkdir -p pkgroot/usr/bin
+          mkdir -p pkgroot/etc/verbweaver
+          mkdir -p pkgroot/var/lib/verbweaver
+          mkdir -p pkgroot/lib/systemd/system
+          # Backend launch script
+          cat > pkgroot/usr/bin/verbweaver-backend << 'EOF'
+          #!/usr/bin/env bash
+          exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+          EOF
+          chmod +x pkgroot/usr/bin/verbweaver-backend
+          # Default env file
+          cat > pkgroot/etc/verbweaver/backend.env << 'EOF'
+          DATABASE_URL=sqlite+aiosqlite:///var/lib/verbweaver/verbweaver.db
+          SECRET_KEY=please_change_me
+          GIT_PROJECTS_ROOT=/var/lib/verbweaver/git-repos
+          EOF
+          # systemd service
+          cat > pkgroot/lib/systemd/system/verbweaver-backend.service << 'EOF'
+          [Unit]
+          Description=Verbweaver Backend
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=verbweaver
+          Group=verbweaver
+          WorkingDirectory=/opt/verbweaver/backend
+          EnvironmentFile=/etc/verbweaver/backend.env
+          ExecStart=/usr/bin/verbweaver-backend
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          # App source (backend)
+          mkdir -p pkgroot/opt/verbweaver
+          rsync -a --exclude __pycache__ backend/ pkgroot/opt/verbweaver/backend/
+
+      - name: Create nfpm config
+        run: |
+          cat > nfpm.yaml << 'EOF'
+          name: verbweaver-backend
+          arch: amd64
+          platform: linux
+          version: ${GITHUB_REF_NAME}
+          section: default
+          priority: extra
+          maintainer: Verbweaver Team
+          description: Verbweaver Backend (FastAPI)
+          homepage: https://github.com/TheWover/verbweaver
+          license: MIT
+          contents:
+            - src: pkgroot/usr/bin/verbweaver-backend
+              dst: /usr/bin/verbweaver-backend
+            - src: pkgroot/etc/verbweaver/backend.env
+              dst: /etc/verbweaver/backend.env
+              type: config
+            - src: pkgroot/lib/systemd/system/verbweaver-backend.service
+              dst: /lib/systemd/system/verbweaver-backend.service
+            - src: pkgroot/opt/verbweaver/backend
+              dst: /opt/verbweaver/backend
+          scripts:
+            postinstall: |
+              #!/bin/sh
+              id -u verbweaver >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin verbweaver
+              mkdir -p /var/lib/verbweaver/git-repos
+              chown -R verbweaver:verbweaver /var/lib/verbweaver
+              systemctl daemon-reload || true
+              systemctl enable verbweaver-backend || true
+          rpm:
+            signature:
+              key_file: "${RPM_SIGNING_KEY:-}"
+          deb:
+            signature:
+              key_file: "${DEB_SIGNING_KEY:-}"
+          EOF
+
+      - name: Build .deb and .rpm
+        run: |
+          nfpm pkg --packager deb --target verbweaver-backend_${GITHUB_REF_NAME}_amd64.deb --config nfpm.yaml
+          nfpm pkg --packager rpm --target verbweaver-backend_${GITHUB_REF_NAME}_amd64.rpm --config nfpm.yaml
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.deb
+            *.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

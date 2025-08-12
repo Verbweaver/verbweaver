@@ -148,8 +148,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
             title: createdNodeFromMain.title,
             type: createdNodeFromMain.type,
             position: createdNodeFromMain.position,
-            data: createdNodeFromMain.data, // This is the frontmatter from main
-            metadata: createdNodeFromMain.data, // Map frontmatter to metadata for GraphNode
+            metadata: createdNodeFromMain.data, // frontmatter as metadata
             status: createdNodeFromMain.status,
             created: createdNodeFromMain.created || new Date().toISOString(),
             modified: createdNodeFromMain.modified || new Date().toISOString(),
@@ -158,15 +157,15 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         }
       } else if (!isElectron) {
         // Construct the full node object as expected by graphApi.createNode for web
+        const { metadata: nodeMetadata, ...restNodeData } = nodeData as any;
         const newNodePayload: GraphNode = {
           id: 'temp-' + Date.now(), // Web API typically assigns ID
           created: new Date().toISOString(),
           modified: new Date().toISOString(),
           tags: nodeData.tags || [],
           status: nodeData.status || 'idea',
-          metadata: nodeData.metadata || {},
-          data: nodeData.data || {},
-          ...nodeData, // Spread incoming data (label, title, type, position)
+          metadata: nodeMetadata || {},
+          ...restNodeData, // Spread incoming data (label, title, type, position) without duplicating metadata
         };
         newNode = await graphApi.createNode(projectId, newNodePayload);
       } else {

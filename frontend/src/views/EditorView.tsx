@@ -160,7 +160,7 @@ function EditorView() {
            </button>
            
            <button
-             onClick={() => setIsPreview(prev => !prev)}
+            onClick={() => setIsPreview((prev: boolean) => !prev)}
              disabled={!currentFile.name.endsWith('.md')}
              className={`p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed ${
                isPreview ? 'bg-accent border border-primary' : ''
@@ -180,7 +180,7 @@ function EditorView() {
           </button>
           
           <button
-            onClick={() => setFontSize(prev => Math.min(prev + 1, 24))}
+            onClick={() => setFontSize((prev: number) => Math.min(prev + 1, 24))}
             className="p-1.5 rounded hover:bg-accent"
             title="Increase font size"
           >

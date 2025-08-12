@@ -1,33 +1,39 @@
-# Build stage
-FROM node:18-alpine AS builder
+######## Build stage ########
+FROM node:20-alpine AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files
+# Copy root manifest to leverage npm workspaces if used; otherwise copy per package
 COPY package*.json ./
-COPY ../shared/package*.json ../shared/
 
-# Install dependencies
-RUN npm ci --only=production
+# Copy shared and frontend manifests
+COPY shared/package*.json ./shared/
+COPY frontend/package*.json ./frontend/
 
-# Copy shared module
-COPY ../shared ../shared
+# Install dependencies for shared and build it
+RUN cd shared \
+ && npm ci \
+ && npm run build
 
-# Copy application files
-COPY . .
+# Install dependencies for frontend (needs devDeps for build)
+RUN cd frontend \
+ && npm ci
 
-# Build the application
-RUN npm run build
+# Copy sources
+COPY shared ./shared
+COPY frontend ./frontend
 
-# Production stage
+# Build the frontend (copies FullCalendar CSS via build script)
+RUN cd frontend && npm run build
+
+######## Production stage ########
 FROM nginx:alpine
 
 # Copy custom nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy built application from builder stage
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 
 # Expose port
 EXPOSE 80

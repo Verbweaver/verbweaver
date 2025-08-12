@@ -35,6 +35,7 @@ declare global {
       loadGraphData: () => Promise<{ nodes: any[], edges: any[] }>;
       createNodeFile: (initialNodeData: Partial<any>) => Promise<any | null>;
       deleteNodeFile: (relativeFilePath: string) => Promise<void>;
+      createNodeFromTemplateFile?: (args: { templateRelativePath: string, newNodeName: string, newParentRelativePath: string, initialMetadata: Record<string, any> }) => Promise<any>;
       
       // Git operations
       gitInit: (projectPath: string) => Promise<void>;
@@ -87,8 +88,8 @@ declare global {
       onMenuSettings: (callback: () => void) => () => void;
 
       // For Help View (ensure these match preload.ts ElectronAPI interface)
-      listDocs: () => Promise<DocFile[]>;
-      readDocContent: (fileName: string) => Promise<string>;
+      listDocs?: () => Promise<DocFile[]>;
+      readDocContent?: (fileName: string) => Promise<string>;
       
       // File watching
       watchProject?: (callback: (event: any) => void) => void;

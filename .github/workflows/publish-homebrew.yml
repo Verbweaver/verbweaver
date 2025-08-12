@@ -1,0 +1,50 @@
+name: Publish Homebrew Cask
+
+on:
+  release:
+    types: [published]
+  
+jobs:
+  homebrew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.HOMEBREW_TAP_REPO }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update cask file
+        shell: bash
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          API_URL="https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG}"
+          DMG_URL=$(curl -sSL -H "authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$API_URL" | jq -r '.assets[] | select(.name | endswith(".dmg")) | .browser_download_url' | head -n1)
+          if [ -z "$DMG_URL" ]; then echo "No DMG asset found"; exit 1; fi
+          SHA=$(curl -L "$DMG_URL" | shasum -a 256 | awk '{print $1}')
+          CASK_FILE="Casks/verbweaver.rb"
+          mkdir -p Casks
+          printf "%s\n" \
+"cask \"verbweaver\" do" \
+"  version \"${VERSION}\"" \
+"  sha256 \"${SHA}\"" \
+"" \
+"  url \"${DMG_URL}\"" \
+"  name \"Verbweaver\"" \
+"  desc \"Graph-based writing and task management\"" \
+"  homepage \"https://github.com/${{ github.repository }}\"" \
+"" \
+"  app \"Verbweaver.app\"" \
+"end" > "$CASK_FILE"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add .
+          git commit -m "Update verbweaver cask to ${GITHUB_REF_NAME}"
+          git push
+
+
