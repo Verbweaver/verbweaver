@@ -8,7 +8,23 @@ from webauthn.helpers.structs import (
     PublicKeyCredentialCreationOptions, PublicKeyCredentialRequestOptions, AuthenticationCredential,
     AttestationFormat
 )
-from webauthn.helpers.exceptions import WebAuthnException
+# Compatibility: different webauthn versions expose exceptions differently.
+# Prefer a common alias WebAuthnException for our code paths.
+try:
+    # Some versions expose a base error as WebAuthnError under helpers.exceptions
+    from webauthn.helpers.exceptions import WebAuthnError as WebAuthnException  # type: ignore
+except Exception:
+    try:
+        # Older/newer variants might expose WebAuthnException directly
+        from webauthn.helpers.exceptions import WebAuthnException  # type: ignore
+    except Exception:
+        try:
+            # Fallback location
+            from webauthn.exceptions import WebAuthnError as WebAuthnException  # type: ignore
+        except Exception:
+            # Ultimate fallback to avoid import-time failure under PyInstaller
+            class WebAuthnException(Exception):
+                pass
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url # Use library's helpers
 
 from app.core.config import settings
