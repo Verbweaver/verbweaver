@@ -29,12 +29,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  loadFile: async (projectId: string, fileId: string) => {
+  loadFile: async (projectId: string, filePath: string) => {
     set({ isLoading: true, error: null })
     try {
-      const file = await editorApi.getFile(projectId, fileId)
+      const file = await editorApi.getFile(projectId, filePath)
       const editorFile: EditorFile = {
-        id: file.id,
+        id: file.path,
         name: file.name,
         path: file.path,
         content: file.content,
@@ -43,7 +43,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       
       // Add to open files if not already open
       const state = get()
-      if (!state.openFiles.find(f => f.id === fileId)) {
+      if (!state.openFiles.find(f => f.id === filePath)) {
         set(state => ({
           openFiles: [...state.openFiles, editorFile],
           currentFile: editorFile,
@@ -60,10 +60,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
-  saveFile: async (projectId: string, fileId: string, content: string) => {
+  saveFile: async (projectId: string, filePath: string, content: string) => {
     set({ isLoading: true, error: null })
     try {
-      await editorApi.saveFile(projectId, fileId, content)
+      await editorApi.writeFile(projectId, filePath, content)
       set({ isLoading: false })
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false })

@@ -21,26 +21,28 @@ export const useCompilerStore = create<CompilerState>()(
     }),
     {
       name: STORAGE_KEYS.COMPILER_SELECTION,
-      // Custom serialization for Set
       serialize: (state) => JSON.stringify({
-        ...state,
-        selectedNodeIndices: Array.from(state.selectedNodeIndices || [])
+        selectedNodeIndices: Array.from(state.selectedNodeIndices || []),
+        lastClickedIndex: state.lastClickedIndex
       }),
-              deserialize: (str) => {
-          try {
-            const parsed = JSON.parse(str)
-            return {
-              ...parsed,
-              selectedNodeIndices: new Set(parsed.selectedNodeIndices || [])
+      deserialize: (str) => {
+        try {
+          const parsed = JSON.parse(str) as { selectedNodeIndices?: number[]; lastClickedIndex?: number | null }
+          return {
+            state: {
+              selectedNodeIndices: new Set(parsed.selectedNodeIndices || []),
+              lastClickedIndex: parsed.lastClickedIndex ?? null
             }
-          } catch (error) {
-            // If deserialization fails, return default state
-            return {
+          }
+        } catch {
+          return {
+            state: {
               selectedNodeIndices: new Set(),
               lastClickedIndex: null
             }
           }
         }
+      }
     }
   )
 ) 

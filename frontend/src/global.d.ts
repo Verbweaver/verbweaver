@@ -35,6 +35,7 @@ declare global {
       loadGraphData: () => Promise<{ nodes: any[], edges: any[] }>;
       createNodeFile: (initialNodeData: Partial<any>) => Promise<any | null>;
       deleteNodeFile: (relativeFilePath: string) => Promise<void>;
+      createNodeFromTemplateFile?: (args: { templateRelativePath: string, newNodeName: string, newParentRelativePath: string, initialMetadata: Record<string, any> }) => Promise<any>;
       
       // Git operations
       gitInit: (projectPath: string) => Promise<void>;
