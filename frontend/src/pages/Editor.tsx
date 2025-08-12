@@ -320,6 +320,44 @@ function EditorView() {
     }
   }, [currentFile, updateFileContent])
 
+  // Markdown formatting helpers
+  const applyWrap = useCallback((prefix: string, suffix: string) => {
+    const editor = editorRef.current
+    if (!editor) return
+    const model = editor.getModel?.()
+    const sel = editor.getSelection?.()
+    if (!model || !sel) return
+    const selectedText = model.getValueInRange(sel)
+    const replacement = `${prefix}${selectedText}${suffix}`
+    editor.executeEdits('markdown-wrap', [
+      { range: sel, text: replacement, forceMoveMarkers: true }
+    ])
+    if (!selectedText) {
+      const pos = sel.getStartPosition()
+      const newPos = { lineNumber: pos.lineNumber, column: pos.column + prefix.length }
+      editor.setPosition(newPos)
+    }
+    editor.focus()
+  }, [])
+
+  const applyLink = useCallback(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    const model = editor.getModel?.()
+    const sel = editor.getSelection?.()
+    if (!model || !sel) return
+    const selectedText = model.getValueInRange(sel)
+    const label = selectedText || 'link-text'
+    const replacement = `[${label}]()`
+    editor.executeEdits('markdown-link', [
+      { range: sel, text: replacement, forceMoveMarkers: true }
+    ])
+    const start = sel.getStartPosition()
+    const newPos = { lineNumber: start.lineNumber, column: start.column + label.length + 3 }
+    editor.setPosition(newPos)
+    editor.focus()
+  }, [])
+
   // Save file
   const handleSave = useCallback(async () => {
     if (isModified) {
@@ -880,6 +918,41 @@ function EditorView() {
                 monacoRef.current = monaco
                 // Avoid Ctrl/Cmd creating multi-cursors so we can use it for link navigation
                 try { editorInstance.updateOptions({ multiCursorModifier: 'alt' }) } catch {}
+                // Register Monaco-level keybindings to ensure shortcuts work when editor has focus
+                try {
+                  editorInstance.addAction({
+                    id: 'vw-bold',
+                    label: 'Bold',
+                    keybindings: [(monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyCode.KeyB],
+                    run: () => applyWrap('**', '**'),
+                  })
+                  editorInstance.addAction({
+                    id: 'vw-italic',
+                    label: 'Italic',
+                    keybindings: [(monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyCode.KeyI],
+                    run: () => applyWrap('*', '*'),
+                  })
+                  editorInstance.addAction({
+                    id: 'vw-link',
+                    label: 'Insert Link',
+                    keybindings: [(monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyCode.KeyK],
+                    run: () => applyLink(),
+                  })
+                  editorInstance.addAction({
+                    id: 'vw-toggle-preview',
+                    label: 'Toggle Preview',
+                    keybindings: [(monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyCode.KeyP],
+                    run: () => setIsPreview((prev) => !prev),
+                  })
+                  editorInstance.addAction({
+                    id: 'vw-go-compiler',
+                    label: 'Go to Compiler',
+                    keybindings: [
+                      (monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyMod.Alt | (monaco as any).KeyCode.KeyC,
+                    ],
+                    run: () => navigate('/compiler'),
+                  })
+                } catch {}
                 // Decorations for relative markdown links
                 const updateLinkDecorations = () => {
                   const ed = editorRef.current

@@ -256,6 +256,28 @@ function GraphView() {
           setMultiDeleteOpen(true)
         }
       }
+      // Toggle Hide Uploads (U)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'u') {
+        setHideUploads(v => {
+          const next = !v
+          try { localStorage.setItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS, String(next)) } catch {}
+          return next
+        })
+      }
+      // Toggle Rigid Mode (A)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'a') {
+        setRigidMode(v => {
+          const next = !v
+          try { localStorage.setItem(STORAGE_KEYS.GRAPH_RIGID_MODE, String(next)) } catch {}
+          return next
+        })
+      }
+      // Esc: clear selection and close menus
+      if (e.key === 'Escape') {
+        setSelectedNodeIds(new Set())
+        setNodes(prev => prev.map(n => ({ ...n, selected: false })))
+        setContextMenu(null)
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -413,25 +435,18 @@ function GraphView() {
 
   // Handle new connections
   const onConnect = useCallback(
-    (params: Connection) => {
+    async (params: Connection) => {
       if (!params.source || !params.target) return
-      
-      createSoftLink(params.source, params.target)
-        .then(() => {
-          setEdges((eds) => addEdge({
-            ...params,
-            type: 'smoothstep',
-            animated: true,
-            style: { stroke: '#3b82f6', strokeWidth: 2 },
-            // Remove arrows since links are bidirectional
-          }, eds))
-          toast.success('Link created')
-        })
-        .catch(() => {
-          toast.error('Failed to create link')
-        })
+      try {
+        await createSoftLink(params.source, params.target)
+        // Force a refresh from source-of-truth to avoid duplicate temporary edge
+        await loadNodes()
+        toast.success('Link created')
+      } catch {
+        toast.error('Failed to create link')
+      }
     },
-    [createSoftLink, setEdges]
+    [createSoftLink, loadNodes]
   )
 
   // Handle context menu
