@@ -40,7 +40,7 @@ jobs:
       - name: Build backend binary (PyInstaller)
         working-directory: backend
         run: |
-          pyinstaller --onefile entry.py --name verbweaver-backend
+          pyinstaller --onefile entry.py --name verbweaver-backend --hidden-import itsdangerous
 
       - name: Prepare backend binary in desktop resources
         shell: bash
