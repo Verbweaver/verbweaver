@@ -435,25 +435,18 @@ function GraphView() {
 
   // Handle new connections
   const onConnect = useCallback(
-    (params: Connection) => {
+    async (params: Connection) => {
       if (!params.source || !params.target) return
-      
-      createSoftLink(params.source, params.target)
-        .then(() => {
-          setEdges((eds) => addEdge({
-            ...params,
-            type: 'smoothstep',
-            animated: true,
-            style: { stroke: '#3b82f6', strokeWidth: 2 },
-            // Remove arrows since links are bidirectional
-          }, eds))
-          toast.success('Link created')
-        })
-        .catch(() => {
-          toast.error('Failed to create link')
-        })
+      try {
+        await createSoftLink(params.source, params.target)
+        // Force a refresh from source-of-truth to avoid duplicate temporary edge
+        await loadNodes()
+        toast.success('Link created')
+      } catch {
+        toast.error('Failed to create link')
+      }
     },
-    [createSoftLink, setEdges]
+    [createSoftLink, loadNodes]
   )
 
   // Handle context menu
