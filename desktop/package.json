@@ -60,6 +60,10 @@
       {
         "from": "../docs",
         "to": "docs"
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "renderer"
       }
     ],
     "mac": {

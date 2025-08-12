@@ -60,6 +60,12 @@ jobs:
         working-directory: .
         run: npm ci
 
+      - name: Build frontend (Vite)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
       - name: Build desktop (electron-vite)
         working-directory: desktop
         run: npm run build

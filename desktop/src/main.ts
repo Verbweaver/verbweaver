@@ -311,7 +311,9 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:3000');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    // Load the prebuilt frontend from extraResources (renderer)
+    const rendererIndex = join(process.resourcesPath, 'renderer', 'index.html');
+    mainWindow.loadFile(rendererIndex);
   }
 
   // Auto-open most recent project if available
