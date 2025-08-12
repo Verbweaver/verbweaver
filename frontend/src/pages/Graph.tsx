@@ -256,6 +256,28 @@ function GraphView() {
           setMultiDeleteOpen(true)
         }
       }
+      // Toggle Hide Uploads (U)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'u') {
+        setHideUploads(v => {
+          const next = !v
+          try { localStorage.setItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS, String(next)) } catch {}
+          return next
+        })
+      }
+      // Toggle Rigid Mode (A)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'a') {
+        setRigidMode(v => {
+          const next = !v
+          try { localStorage.setItem(STORAGE_KEYS.GRAPH_RIGID_MODE, String(next)) } catch {}
+          return next
+        })
+      }
+      // Esc: clear selection and close menus
+      if (e.key === 'Escape') {
+        setSelectedNodeIds(new Set())
+        setNodes(prev => prev.map(n => ({ ...n, selected: false })))
+        setContextMenu(null)
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)

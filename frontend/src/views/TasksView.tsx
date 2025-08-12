@@ -163,6 +163,32 @@ function TasksView() {
   // Handle URL parameters for opening specific tasks
   const { taskPath } = useParams()
   const navigate = useNavigate()
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+N: New Task (Board or To-Do)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        if (subView === 'board') {
+          handleCreateTask(defaultColumnId || 'todo')
+        } else if (subView === 'todo') {
+          setSelectedColumn('todo' as TaskState)
+          setDefaultDue(selectedDay)
+          setIsCreateModalOpen(true)
+        }
+        return
+      }
+      // Space/Enter on focused task list item toggles complete (handled per item via click); skip global handling
+      // Esc: close dialogs
+      if (e.key === 'Escape') {
+        if (isDetailModalOpen) setIsDetailModalOpen(false)
+        if (filtersOpen) setFiltersOpen(false)
+        if (isCreateModalOpen) setIsCreateModalOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [subView, defaultColumnId, selectedDay, isDetailModalOpen, filtersOpen, isCreateModalOpen])
 
   // Load nodes when component mounts or project changes
   useEffect(() => {

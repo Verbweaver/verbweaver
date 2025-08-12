@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import { Save, FileText, Settings, X, Eye, HelpCircle } from 'lucide-react'
@@ -30,6 +30,7 @@ function EditorView() {
   const [fontSize, setFontSize] = useState(EDITOR_DEFAULT_FONT_SIZE)
   const [isPreview, setIsPreview] = useState(false)
   const [previewHtml, setPreviewHtml] = useState<string>('')
+  const editorRef = useRef<any>(null)
 
   // Load file when nodeId changes
   useEffect(() => {
@@ -87,15 +88,86 @@ function EditorView() {
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      const editorHasFocus = !!(editorRef.current && typeof editorRef.current.hasTextFocus === 'function' && editorRef.current.hasTextFocus())
+
+      // Save
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
         handleSave()
+        return
+      }
+      // Toggle preview (Ctrl+P)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault()
+        setIsPreview((prev) => !prev)
+        return
+      }
+
+      // Formatting shortcuts only when editor has focus
+      if (!editorHasFocus) return
+
+      // Bold **selection**
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        applyWrap('**', '**')
+        return
+      }
+      // Italic *selection*
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'i') {
+        e.preventDefault()
+        applyWrap('*', '*')
+        return
+      }
+      // Link [selection](url)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        applyLink()
+        return
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [handleSave])
+
+  const applyWrap = (prefix: string, suffix: string) => {
+    const editor = editorRef.current
+    if (!editor) return
+    const model = editor.getModel?.()
+    const sel = editor.getSelection?.()
+    if (!model || !sel) return
+    const selectedText = model.getValueInRange(sel)
+    const replacement = `${prefix}${selectedText}${suffix}`
+    editor.executeEdits('markdown-wrap', [
+      { range: sel, text: replacement, forceMoveMarkers: true }
+    ])
+    // Set cursor inside the wrappers when empty selection
+    if (!selectedText) {
+      const pos = sel.getStartPosition()
+      const newPos = { lineNumber: pos.lineNumber, column: pos.column + prefix.length }
+      editor.setPosition(newPos)
+    }
+    editor.focus()
+  }
+
+  const applyLink = () => {
+    const editor = editorRef.current
+    if (!editor) return
+    const model = editor.getModel?.()
+    const sel = editor.getSelection?.()
+    if (!model || !sel) return
+    const selectedText = model.getValueInRange(sel)
+    const label = selectedText || 'link-text'
+    const replacement = `[${label}]()`
+    editor.executeEdits('markdown-link', [
+      { range: sel, text: replacement, forceMoveMarkers: true }
+    ])
+    // Place cursor inside the parentheses for URL entry
+    const start = sel.getStartPosition()
+    const newPos = { lineNumber: start.lineNumber, column: start.column + label.length + 3 } // [ + label + ](
+    editor.setPosition(newPos)
+    editor.focus()
+  }
 
   // Close file
   const handleCloseFile = useCallback(() => {
@@ -212,6 +284,27 @@ function EditorView() {
             <Editor
               value={content}
               onChange={handleEditorChange}
+              onMount={(editor, monaco) => {
+                editorRef.current = editor
+                try {
+                  const disposables: any[] = []
+                  // Ctrl/Cmd+B Bold
+                  disposables.push(editor.addCommand((monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyCode.KeyB, () => {
+                    applyWrap('**', '**')
+                  }))
+                  // Ctrl/Cmd+I Italic
+                  disposables.push(editor.addCommand((monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyCode.KeyI, () => {
+                    applyWrap('*', '*')
+                  }))
+                  // Ctrl/Cmd+K Link
+                  disposables.push(editor.addCommand((monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyCode.KeyK, () => {
+                    applyLink()
+                  }))
+                  editor.onDidDispose(() => {
+                    try { disposables.forEach(d => d?.dispose?.()) } catch {}
+                  })
+                } catch {}
+              }}
               language="markdown"
               theme={theme === 'dark' ? 'vs-dark' : 'light'}
               options={{
