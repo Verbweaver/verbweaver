@@ -252,6 +252,6 @@ export const createNodeFromTemplateDesktop = async (
     templateRelativePath,
     newNodeName,
     newParentRelativePath,
-    initialMetadata,
+    initialMetadata: initialMetadata ?? {},
   });
 }; 

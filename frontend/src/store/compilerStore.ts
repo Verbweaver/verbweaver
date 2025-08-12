@@ -13,36 +13,41 @@ interface CompilerState {
 export const useCompilerStore = create<CompilerState>()(
   persist(
     (set) => ({
-      selectedNodeIndices: new Set(),
+      selectedNodeIndices: new Set<number>(),
       lastClickedIndex: null,
-      setSelectedIndices: (indices) => set({ selectedNodeIndices: indices }),
-      setLastClickedIndex: (index) => set({ lastClickedIndex: index }),
-      clearSelection: () => set({ selectedNodeIndices: new Set(), lastClickedIndex: null }),
+      setSelectedIndices: (indices: Set<number>) => set({ selectedNodeIndices: indices }),
+      setLastClickedIndex: (index: number | null) => set({ lastClickedIndex: index }),
+      clearSelection: () => set({ selectedNodeIndices: new Set<number>(), lastClickedIndex: null }),
     }),
     {
       name: STORAGE_KEYS.COMPILER_SELECTION,
-      serialize: (state) => JSON.stringify({
-        selectedNodeIndices: Array.from(state.selectedNodeIndices || []),
-        lastClickedIndex: state.lastClickedIndex
+      serialize: (store) => JSON.stringify({
+        state: {
+          selectedNodeIndices: Array.from(store.state.selectedNodeIndices || []),
+          lastClickedIndex: store.state.lastClickedIndex ?? null
+        },
+        version: store.version ?? 0
       }),
       deserialize: (str) => {
         try {
-          const parsed = JSON.parse(str) as { selectedNodeIndices?: number[]; lastClickedIndex?: number | null }
+          const parsed = JSON.parse(str) as { state?: { selectedNodeIndices?: number[]; lastClickedIndex?: number | null }; version?: number }
           return {
             state: {
-              selectedNodeIndices: new Set(parsed.selectedNodeIndices || []),
-              lastClickedIndex: parsed.lastClickedIndex ?? null
-            }
+              selectedNodeIndices: new Set<number>(parsed.state?.selectedNodeIndices || []),
+              lastClickedIndex: parsed.state?.lastClickedIndex ?? null
+            },
+            version: parsed.version ?? 0
           }
         } catch {
           return {
             state: {
-              selectedNodeIndices: new Set(),
+              selectedNodeIndices: new Set<number>(),
               lastClickedIndex: null
-            }
+            },
+            version: 0
           }
         }
       }
     }
   )
-) 
+)
