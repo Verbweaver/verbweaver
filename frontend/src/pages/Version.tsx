@@ -143,6 +143,26 @@ export default function VersionControlView() {
     }
   };
 
+  // Keyboard shortcuts: Ctrl+R to refresh, Ctrl+Enter to commit (when message and files present)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        loadGitStatus();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (commitMessage.trim() && selectedFiles.size > 0) {
+          e.preventDefault();
+          handleCommit();
+        }
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [commitMessage, selectedFiles]);
+
   const handleFileToggle = (path: string) => {
     const newSelected = new Set(selectedFiles);
     if (newSelected.has(path)) {
