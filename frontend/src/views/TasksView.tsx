@@ -376,7 +376,7 @@ function TasksView() {
         }
         return true
       })
-  }, [tasksByStatus, selectedDay, completedColumnId, statusFilter, tagsFilter, defaultColumnId])
+  }, [tasksByStatus, selectedDay, completedColumnId, statusFilter, tagsFilter, defaultColumnId, showCompleted])
 
   const overdueTasks = useMemo(() => {
     const compareDate = relativeToSelected ? selectedDay : formatLocalYMD(new Date())
@@ -401,7 +401,7 @@ function TasksView() {
       const db = b.metadata.task.dueDate
       return overdueSortDesc ? db.localeCompare(da) : da.localeCompare(db)
     })
-  }, [tasksByStatus, selectedDay, relativeToSelected, completedColumnId, statusFilter, tagsFilter, defaultColumnId, overdueSortDesc])
+  }, [tasksByStatus, selectedDay, relativeToSelected, completedColumnId, statusFilter, tagsFilter, defaultColumnId, overdueSortDesc, showCompleted])
 
   const sevenDayStrip = useMemo(() => {
     const base = parseLocalYMD(selectedDay)
