@@ -157,14 +157,15 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         }
       } else if (!isElectron) {
         // Construct the full node object as expected by graphApi.createNode for web
+        const { metadata: nodeMetadata, ...restNodeData } = nodeData as any;
         const newNodePayload: GraphNode = {
           id: 'temp-' + Date.now(), // Web API typically assigns ID
           created: new Date().toISOString(),
           modified: new Date().toISOString(),
           tags: nodeData.tags || [],
           status: nodeData.status || 'idea',
-          metadata: nodeData.metadata || {},
-          ...nodeData, // Spread incoming data (label, title, type, position)
+          metadata: nodeMetadata || {},
+          ...restNodeData, // Spread incoming data (label, title, type, position) without duplicating metadata
         };
         newNode = await graphApi.createNode(projectId, newNodePayload);
       } else {
