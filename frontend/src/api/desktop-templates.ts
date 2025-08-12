@@ -235,7 +235,7 @@ export const createNodeFromTemplateDesktop = async (
   newParentRelativePath: string, // e.g., "nodes" or "nodes/subfolder"
   initialMetadata?: Record<string, any>
 ): Promise<any> => { // Return type should ideally match the expected node structure or void
-  if (!window.electronAPI || !window.electronAPI.createNodeFromTemplateFile) {
+  if (!window?.electronAPI || typeof window.electronAPI.createNodeFromTemplateFile !== 'function') {
     console.error("[desktopTemplatesApi] Electron API or createNodeFromTemplateFile not available");
     throw new Error('Electron API function createNodeFromTemplateFile not available');
   }
