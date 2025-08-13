@@ -1,8 +1,35 @@
-# Template System Documentation
+# Compiler Template System Documentation
 
 ## Overview
 
 The Verbweaver template system allows users to customize how their exported documents appear. Templates are Markdown files that use Pandoc's template syntax for variable substitution, conditionals, and loops. The system supports multiple output formats including HTML, PDF, DOCX, EPUB, and ODT.
+
+## Installation Requirements
+
+### Pandoc
+Pandoc is required for document conversion. Installation methods:
+
+**Windows:**
+```powershell
+winget install pandoc
+```
+
+**macOS:**
+```bash
+brew install pandoc
+```
+
+**Linux:**
+```bash
+sudo apt-get install pandoc
+```
+
+### LaTeX (for PDF)
+For PDF generation, a LaTeX distribution is required:
+
+**Windows:** Install MiKTeX or TeX Live
+**macOS:** Install MacTeX
+**Linux:** Install TeX Live
 
 ## Architecture
 
@@ -17,6 +44,190 @@ The Verbweaver template system allows users to customize how their exported docu
 3. **Content Aggregation**: Node content is collected and organized
 4. **Template Processing**: Variables are substituted and loops are processed
 5. **Pandoc Conversion**: The processed content is converted to the target format
+
+## Writing Nodes for Templates (Practical Guide)
+
+This section shows how to write Markdown nodes so templates can read your data reliably. You do not need to be a developer—just follow the patterns.
+
+### Anatomy of a Node
+
+Each node is a normal Markdown file with a YAML frontmatter block at the top.
+
+```markdown
+---
+title: Wireless AP Replacement
+type: node
+description: Replace end‑of‑life APs in building C.
+tags: [network, upgrade]
+assignee: alice
+dueDate: 2025-03-31
+---
+
+# $title
+
+Write your content here. You can add headings, lists, and images.
+```
+
+Frontmatter is where templates read “variables” for each node. Field names are simple (letters, numbers, dash/underscore). Values can be strings, numbers, booleans, arrays, or objects.
+
+### Making Node Data Available to Templates
+
+Templates can read two buckets of per‑node values:
+- `metadata` (your frontmatter)
+- `vars` (resolved values from schema, overrides, and computes)
+
+How the mapping works:
+- If a template schema defines `nodeVariables.<name>.path`, the compiler looks up that dotted path inside your frontmatter and uses it as a default.
+- If the schema also defines a `compute`, it will compute the value when the field is blank.
+- You can override per‑node values from the Compiler’s “Per‑Node Variables” grid.
+
+In templates you use:
+- `$nodes.metadata.<key>$` to read raw frontmatter
+- `$nodes.vars.<key>$` to read the resolved value (frontmatter → overrides → computed)
+
+Tip: When a variable supports overrides or compute, prefer `$nodes.vars.<key>$` in templates.
+
+### Example 1: CVSS for Findings (Security Reports)
+
+Goal: Each finding node carries a CVSS vector; the template shows a numeric score and a severity label.
+
+1) Add these fields in the node frontmatter (one node per finding):
+```yaml
+---
+title: SQL Injection on /login
+type: node
+metadata_version: 1
+cvss_vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+---
+```
+
+2) In the template frontmatter, declare:
+```yaml
+nodeVariables:
+  cvssVector: { type: string, path: metadata.cvss_vector }
+  cvss:       { type: number, compute: { fn: cvss.baseScore, args: ['${vars.cvssVector}'] } }
+  severity:   { type: string, compute: { fn: cvss.severity, args: ['${vars.cvss}'] } }
+```
+
+3) Use in the template body:
+```markdown
+$for(nodes)$
+### $nodes.title$
+
+CVSS: $nodes.vars.cvss$ ($nodes.vars.severity$)
+
+$nodes.content$
+$endfor$
+```
+
+If you don’t have a vector in a node, you can fill it in the Compiler’s per‑node grid; the score and severity compute automatically.
+
+### Example 2: Task Board / Project Work Items
+
+Let’s store a few useful task fields and read them in a template.
+
+Node frontmatter:
+```yaml
+---
+title: Create Marketing Plan Q3
+type: node
+description: Draft plan with goals, channels, budget.
+task:
+  status: in-progress
+  priority: high
+  owner: bob
+  estimateDays: 5
+---
+```
+
+Template schema (read fields and compute helper values):
+```yaml
+nodeVariables:
+  status:  { type: string, path: metadata.task.status }
+  owner:   { type: string, path: metadata.task.owner }
+  prio:    { type: string, path: metadata.task.priority }
+  days:    { type: number, path: metadata.task.estimateDays }
+
+variables:
+  totalDays:
+    type: number
+    compute: { fn: sum, args: ['${nodes[*].vars.days}'] }
+```
+
+Template body snippet:
+```markdown
+### Work Items
+
+| Title | Owner | Status | Priority | Estimate (days) |
+|------|-------|--------|----------|-----------------|
+$for(nodes)$
+| $nodes.title$ | $nodes.vars.owner$ | $nodes.vars.status$ | $nodes.vars.prio$ | $nodes.vars.days$ |
+$endfor$
+
+**Total Estimated Days:** $totalDays$
+```
+
+### Example 3: RACI Matrix (Document‑Level Table)
+
+Document frontmatter in the template declares the shape of the table; you fill rows in the Compiler UI (or default them in the template schema):
+```yaml
+variables:
+  raci:
+    type: array
+    item:
+      type: object
+      fields:
+        task: { type: string, label: Task, required: true }
+        r: { type: string, label: Responsible }
+        a: { type: string, label: Accountable }
+        c: { type: string, label: Consulted }
+        i: { type: string, label: Informed }
+    default:
+      - { task: Kickoff, r: Bob, a: Alice, c: Team, i: Execs }
+```
+
+Template body snippet:
+```markdown
+## RACI Matrix
+
+| Task | R | A | C | I |
+|------|---|---|---|---|
+$for(raci)$
+| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |
+$endfor$
+```
+
+Tip: In the Compiler you can import/export this table via CSV for quick editing.
+
+### Example 4: Simple Flags and Enums
+
+Node frontmatter:
+```yaml
+---
+title: Internal Onboarding Guide
+type: node
+internal: true
+audience: employee
+---
+```
+
+Template schema:
+```yaml
+variables:
+  isInternal: { type: boolean, compute: { fn: string.regexMatch, args: ['${title}', '(?i)internal'] } }
+  audience:
+    type: string
+    enum: [employee, partner, public]
+```
+
+Template snippet:
+```markdown
+$if(isInternal)$
+> This document is for internal use only.
+$endif$
+
+Target audience: $audience$
+```
 
 ## Template Variables
 
@@ -282,48 +493,31 @@ Validation warnings appear in the template validation response and are non-fatal
   - Prefilled from node frontmatter via `path`.
   - Users can override and import/export CSV; blanks fall back to frontmatter.
 
-## Example: Technical Report RACI + CVSS
+### Mapping Cheatsheet
 
-Frontmatter:
+- Read a frontmatter field directly in the template:
+  - `$nodes.metadata.priority$`
+- Expose a frontmatter field as a resolved variable with schema:
+  - Schema: `nodeVariables.priority: { type: string, path: metadata.priority }`
+  - Template: `$nodes.vars.priority$`
+- Aggregate node values across the selection:
+  - `${nodes[*].vars.days}` inside compute args
+- Replace undefined values at compile time:
+  - Use the per‑node grid or document variables in the Compiler.
 
-```yaml
-variables:
-  raci:
-    type: array
-    item:
-      type: object
-      fields:
-        task: { type: string, label: Task, required: true }
-        r: { type: string, label: Responsible }
-        a: { type: string, label: Accountable }
-        c: { type: string, label: Consulted }
-        i: { type: string, label: Informed }
+### Tips & Best Practices
 
-nodeVariables:
-  cvssVector: { type: string, label: CVSS Vector, path: metadata.cvss_vector }
-  cvss:       { type: number, label: CVSS, compute: { fn: cvss.baseScore, args: ['${vars.cvssVector}'] } }
-  severity:   { type: string, label: Severity, compute: { fn: cvss.severity, args: ['${vars.cvss}'] } }
-```
+1) Keep field names stable and lowercase; avoid spaces.
+2) Prefer `$nodes.vars.*$` in templates for values that may be overridden or computed.
+3) Use `path` in schema to prefill from frontmatter so authors can write data once.
+4) For large tables (RACI), use CSV import/export in the Compiler UI.
+5) Guard optional sections with `$if(...)$` to avoid empty headings.
 
-Template:
+### Common Mistakes (and Fixes)
 
-```markdown
-## RACI Matrix
-
-| Task | R | A | C | I |
-|------|---|---|---|---|
-$for(raci)$
-| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |
-$endfor$
-
-$for(nodes)$
-### $nodes.title$
-
-CVSS: $nodes.vars.cvss$ ($nodes.vars.severity$)
-
-$nodes.content$
-$endfor$
-```
+- “Template couldn’t parse my table rows”: ensure the array is an array of objects (see RACI example) or use the Compiler’s table editor.
+- “Value didn’t show up”: check that you referenced `$nodes.vars.key$` (resolved) versus `$nodes.metadata.key$` (raw); also check spelling.
+- “Dates render as text”: keep dates as ISO strings (YYYY-MM-DD) or add a compute to format.
 
 ## Template Syntax
 
@@ -505,32 +699,7 @@ Format-specific conversion errors are handled gracefully:
 - DOCX: Template reference problems
 - EPUB: Metadata validation errors
 
-## Installation Requirements
 
-### Pandoc
-Pandoc is required for document conversion. Installation methods:
-
-**Windows:**
-```powershell
-winget install pandoc
-```
-
-**macOS:**
-```bash
-brew install pandoc
-```
-
-**Linux:**
-```bash
-sudo apt-get install pandoc
-```
-
-### LaTeX (for PDF)
-For PDF generation, a LaTeX distribution is required:
-
-**Windows:** Install MiKTeX or TeX Live
-**macOS:** Install MacTeX
-**Linux:** Install TeX Live
 
 ## Best Practices
 
@@ -570,33 +739,3 @@ For PDF generation, a LaTeX distribution is required:
 **Custom variables not detected:**
 - Variables must be in `$variable$` format
 - Exclude Pandoc control variables from custom variables
-
-### Debug Mode
-Enable debug logging to troubleshoot template processing:
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-```
-
-## Future Enhancements
-
-### Planned Features
-- **Template editor**: Visual template editing interface
-- **Live preview**: Real-time template preview
-- **Template sharing**: Community template repository
-- **Advanced formatting**: CSS styling for HTML output
-- **Bibliography support**: Automatic citation management
-
-### Format Extensions
-- **MOBI**: Kindle format support (requires Calibre)
-- **LaTeX**: Direct LaTeX output
-- **AsciiDoc**: AsciiDoc format support
-- **ReStructuredText**: RST format support
-
-## Implementation Status
-
-✅ **Phase 1 Complete**: Template system architecture and basic functionality
-✅ **Phase 2 Complete**: Pandoc integration and multi-format export
-🔄 **Phase 3 Planned**: Advanced features and UI enhancements
-
-The template system is fully functional and ready for production use. All core features have been implemented and tested across multiple output formats. 
