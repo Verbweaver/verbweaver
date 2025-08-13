@@ -28,6 +28,7 @@ export interface ElectronAPI {
   createProject: (name: string, path: string) => Promise<string>;
   openProject: (path: string) => Promise<void>;
   getRecentProjects: () => Promise<string[]>;
+  reseedTemplates: (projectPath: string) => Promise<{ success: boolean }>;
   
   // Git operations
   gitInit: (projectPath: string) => Promise<void>;
@@ -117,6 +118,7 @@ const electronAPI: ElectronAPI = {
   createProject: (name: string, path: string): Promise<string> => ipcRenderer.invoke('project:create', name, path),
   openProject: (path: string): Promise<void> => ipcRenderer.invoke('project:open', path),
   getRecentProjects: () => ipcRenderer.invoke('project:getRecent'),
+  reseedTemplates: (projectPath: string) => ipcRenderer.invoke('project:reseedTemplates', projectPath),
   
   // Git operations
   gitInit: (projectPath: string) => ipcRenderer.invoke('git:init', projectPath),

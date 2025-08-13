@@ -850,30 +850,75 @@ This repository is a normal Git repo. Use the Version view to stage, commit, and
 `
       }
       await writeFile(join(projectPath, 'README.md'), readmeContent, 'utf-8');
-      
-      // Create Empty.md template
-      const emptyTemplateContent = `---
-id: ''
-title: Empty
-type: file
-created: '${new Date().toISOString()}'
-modified: '${new Date().toISOString()}'
-description: ''
-tags: []
-links: []
-task:
-  status: todo
-  priority: medium
-  assignee: null
-  dueDate: null
-  completedDate: null
-  description: ''
----
-# {title}
 
-{description}
+      // Seed templates from the global templates directory if configured
+      const userGlobalTemplatesBase = (store.get('globalTemplatesDir') as string) 
+        || join(app.getPath('userData'), 'templates');
+
+      const srcTemplates = join(userGlobalTemplatesBase, 'templates');
+
+      async function pathExists(p: string): Promise<boolean> {
+        try { await fs.stat(p); return true } catch { return false }
+      }
+
+      async function ensureDir(p: string) {
+        await fs.mkdir(p, { recursive: true });
+      }
+
+      async function copyFileOverwrite(src: string, dst: string) {
+        await ensureDir(path.dirname(dst));
+        await fs.copyFile(src, dst);
+      }
+
+      async function copyTemplatesRecursive(srcRoot: string, dstRoot: string) {
+        const entries = await fs.readdir(srcRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          const srcPath = path.join(srcRoot, entry.name);
+          if (entry.isDirectory()) {
+            await copyTemplatesRecursive(srcPath, path.join(dstRoot, entry.name));
+          } else {
+            await copyFileOverwrite(srcPath, path.join(dstRoot, entry.name));
+          }
+        }
+      }
+
+      // Copy only node templates into project/templates/nodes and compiler templates as-is
+      const srcNodes = join(srcTemplates, 'nodes');
+      if (await pathExists(srcNodes)) {
+        await copyTemplatesRecursive(srcNodes, join(templatesDir, 'nodes'));
+      } else if (await pathExists(srcTemplates)) {
+        // Legacy: if user kept templates/*.md directly, migrate them into templates/nodes/
+        const entries = await fs.readdir(srcTemplates, { withFileTypes: true });
+        for (const entry of entries) {
+          const srcPath = path.join(srcTemplates, entry.name);
+          if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+            await copyFileOverwrite(srcPath, join(templatesDir, 'nodes', entry.name));
+          }
+        }
+      }
+
+      // Copy compiler templates subtree if present
+      const srcCompiler = join(srcTemplates, 'compiler');
+      if (await pathExists(srcCompiler)) {
+        await copyTemplatesRecursive(srcCompiler, join(templatesDir, 'compiler'));
+      }
+
+      // If no template was copied, ensure at least a minimal Empty.md exists
+      const defaultEmptyPath = join(templatesDir, 'nodes', 'Empty.md');
+      if (!existsSync(defaultEmptyPath)) {
+        const emptyTemplateContent = `---
+title: Empty
+type: node
+description: A blank starting point.
+tags: [empty, basic]
+---
+
+# Empty Node
+
+Start your content here.
 `;
-      await writeFile(join(templatesDir, 'Empty.md'), emptyTemplateContent, 'utf-8');
+        await writeFile(defaultEmptyPath, emptyTemplateContent, 'utf-8');
+      }
       
       // Initialize Git repository
       const { spawn } = require('child_process');
@@ -937,6 +982,95 @@ task:
     } catch (error) {
       console.error('Failed to create project:', error);
       throw error; // Re-throw to be caught by the renderer
+    }
+  });
+
+  // Re-seed templates for an existing desktop project from the global templates directory
+  ipcMain.handle('project:reseedTemplates', async (_evt, projectPath: string) => {
+    try {
+      // Validate the target path to prevent misuse: must match current project path
+      const current = store.get('currentProjectPath') as string | undefined
+      if (!current || !projectPath || (require('path').resolve(projectPath) !== require('path').resolve(current))) {
+        throw new Error('Invalid project path')
+      }
+      const templatesDir = join(projectPath, 'templates');
+      await fs.mkdir(templatesDir, { recursive: true });
+
+      const userGlobalTemplatesBase = (store.get('globalTemplatesDir') as string)
+        || join(app.getPath('userData'), 'templates');
+      const srcTemplates = join(userGlobalTemplatesBase, 'templates');
+
+      async function pathExists(p: string): Promise<boolean> {
+        try { await fs.stat(p); return true } catch { return false }
+      }
+      async function ensureDir(p: string) { await fs.mkdir(p, { recursive: true }); }
+      async function copyFileOverwrite(src: string, dst: string) {
+        await ensureDir(path.dirname(dst));
+        await fs.copyFile(src, dst);
+      }
+      async function copyRecursive(srcRoot: string, dstRoot: string) {
+        const entries = await fs.readdir(srcRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          const srcPath = path.join(srcRoot, entry.name);
+          if (entry.isDirectory()) {
+            await copyRecursive(srcPath, path.join(dstRoot, entry.name));
+          } else {
+            await copyFileOverwrite(srcPath, path.join(dstRoot, entry.name));
+          }
+        }
+      }
+
+      // Copy node templates
+      const srcNodes = join(srcTemplates, 'nodes');
+      if (await pathExists(srcNodes)) {
+        await copyRecursive(srcNodes, join(templatesDir, 'nodes'));
+      }
+
+      // Copy compiler templates (ensure default ones exist if missing)
+      const srcCompiler = join(srcTemplates, 'compiler');
+      const dstCompiler = join(templatesDir, 'compiler');
+      if (await pathExists(srcCompiler)) {
+        await copyRecursive(srcCompiler, dstCompiler);
+      }
+      // If compiler folder is still empty/missing, seed minimal defaults for markdown/pdf/docx/html/epub/odt
+      try {
+        await fs.mkdir(dstCompiler, { recursive: true });
+        const fmts = ['markdown','html','pdf','docx','epub','odt'];
+        for (const fmt of fmts) {
+          const base = join(dstCompiler, fmt);
+          await fs.mkdir(base, { recursive: true });
+          // minimal simple.md
+          const simplePath = join(base, 'simple.md');
+          if (!existsSync(simplePath)) {
+            const simpleContent = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\n---\n\n# $title$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n\n$endfor$\n`;
+            await fs.writeFile(simplePath, simpleContent, 'utf-8');
+          }
+          const academicPath = join(base, 'academic.md');
+          if (!existsSync(academicPath)) {
+            const academicContent = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\n---\n\n# $title$\n\n$if(toc)$\n## Table of Contents\n$toc$\n$endif$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n\n$endfor$\n`;
+            await fs.writeFile(academicPath, academicContent, 'utf-8');
+          }
+          const techPath = join(base, 'technical-report.md');
+          if (!existsSync(techPath)) {
+            const techContent = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\nsummary: $summary$\n---\n\n# $title$\n\n## Executive Summary\n\n$summary$\n\n$if(toc)$\n## Table of Contents\n$toc$\n$endif$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n\n$endfor$\n`;
+            await fs.writeFile(techPath, techContent, 'utf-8');
+          }
+        }
+      } catch {}
+
+      // Remove legacy flat Empty.md if nodes version exists
+      try {
+        const flat = join(templatesDir, 'Empty.md');
+        const nodes = join(templatesDir, 'nodes', 'Empty.md');
+        if (existsSync(flat) && existsSync(nodes)) {
+          await fs.unlink(flat);
+        }
+      } catch {}
+
+      return { success: true };
+    } catch (e) {
+      console.error('Failed to reseed templates for desktop project:', e);
+      throw e;
     }
   });
 
