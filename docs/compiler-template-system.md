@@ -593,8 +593,10 @@ $endif$
 
 ## Default Templates
 
-### Simple Template
-A basic template with minimal formatting:
+### Simple Template (all formats)
+Purpose: minimal, readable exports. Now includes a “Variables” section per node when node vars are present.
+
+Markdown version:
 ```markdown
 ---
 title: $title$
@@ -611,20 +613,37 @@ $for(nodes)$
 
 $nodes.content$
 
+$if(nodes.vars)$
+### Variables
+$for(nodes.vars)$
+- $it.key$: $it.value$
+$endfor$
+$endif$
+
 $if(nodes.metadata)$
-**Metadata:** $nodes.metadata$
+### Metadata
+$for(nodes.metadata)$
+- $it.key$: $it.value$
+$endfor$
 $endif$
 
 $if(nodes.attachments)$
-**Attachments:** $nodes.attachments$
+### Attachments
+$for(nodes.attachments)$
+- $it.name$ ($it.size$)
+$endfor$
 $endif$
 
 ---
 $endfor$
 ```
 
-### Academic Template
-A more structured template suitable for academic documents:
+HTML version shows the same sections with semantic headings and lists.
+
+### Academic Template (all formats)
+Purpose: add ToC and clearly separated node sections. Also surfaces node vars.
+
+Markdown version:
 ```markdown
 ---
 title: $title$
@@ -643,12 +662,25 @@ $for(nodes)$
 
 $nodes.content$
 
+$if(nodes.vars)$
+\subsection*{Variables}
+$for(nodes.vars)$
+\textbf{$it.key$}: $it.value$\\
+$endfor$
+$endif$
+
 $if(nodes.metadata)$
-\textbf{Metadata:} $nodes.metadata$
+\subsection*{Metadata}
+$for(nodes.metadata)$
+\textbf{$it.key$}: $it.value$\\
+$endfor$
 $endif$
 
 $if(nodes.attachments)$
-\textbf{Attachments:} $nodes.attachments$
+\subsection*{Attachments}
+$for(nodes.attachments)$
+\textbf{$it.name$} ($it.size$)\\
+$endfor$
 $endif$
 
 $endfor$
@@ -657,6 +689,93 @@ $endfor$
 
 [References would be automatically generated here]
 ```
+
+HTML version uses <h3> subsections and paragraphs for Variables, Metadata, and Attachments.
+
+### Technical Report Template (all formats)
+Purpose: opinionated report with executive summary, changelog, stakeholders, RACI table, and per‑node content.
+
+Markdown version (excerpt):
+```markdown
+---
+title: $title$
+author: $author$
+date: $date$
+summary: $summary$
+changelog:
+  - { date: 2025-01-01, version: 0.1, author: $author$, note: Initial draft }
+stakeholders:
+  - { name: Alice, role: Sponsor, contact: alice@example.com }
+raci:
+  - { task: Kickoff, r: Bob, a: Alice, c: Team, i: Execs }
+---
+
+# $title$
+
+$if(toc)$
+## Table of Contents
+$toc$
+$endif$
+
+## Executive Summary
+
+$summary$
+
+## Document Changelog
+
+| Date | Version | Author | Change |
+|------|---------|--------|--------|
+$for(changelog)$
+| $it.date$ | $it.version$ | $it.author$ | $it.note$ |
+$endfor$
+
+## Stakeholder Registry
+
+| Name | Role | Contact |
+|------|------|---------|
+$for(stakeholders)$
+| $it.name$ | $it.role$ | $it.contact$ |
+$endfor$
+
+## RACI Matrix
+
+| Task | R | A | C | I |
+|------|---|---|---|---|
+$for(raci)$
+| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |
+$endfor$
+
+$for(nodes)$
+## $nodes.title$
+
+$nodes.content$
+
+$if(nodes.vars.cvss)$
+> CVSS: $nodes.vars.cvss$ ($nodes.vars.severity$)
+$endif$
+
+$if(nodes.vars)$
+### Variables
+$for(nodes.vars)$
+- $it.key$: $it.value$
+$endfor$
+$endif$
+
+$endfor$
+
+$if(appendices)$
+## Appendices
+$for(appendices)$
+### $it.title$
+
+$it.content$
+$endfor$
+$endif$
+```
+
+Notes:
+- The RACI table is fed by the `variables.raci` document variable (editable in the Compiler UI with CSV import/export).
+- The CVSS line appears when your schema computes or provides `nodes.vars.cvss`/`nodes.vars.severity` (see CVSS example earlier).
 
 ## API Endpoints
 
