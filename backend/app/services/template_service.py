@@ -474,6 +474,14 @@ class TemplateService:
     $for(nodes)$
     <h2>$nodes.title$</h2>
     $nodes.content$
+    $if(nodes.vars)$
+    <h3>Variables</h3>
+    <ul>
+    $for(nodes.vars)$
+      <li><strong>$it.key$:</strong> $it.value$</li>
+    $endfor$
+    </ul>
+    $endif$
     $endfor$
 </body>
 </html>"""
@@ -490,6 +498,13 @@ $for(nodes)$
 ## $nodes.title$
 
 $nodes.content$
+
+$if(nodes.vars)$
+### Variables
+$for(nodes.vars)$
+- $it.key$: $it.value$
+$endfor$
+$endif$
 
 $endfor$"""
     
@@ -529,6 +544,15 @@ $endfor$"""
     <h2>$nodes.title$</h2>
     $nodes.content$
     
+    $if(nodes.vars)$
+    <div class="metadata">
+        <h3>Variables</h3>
+        $for(nodes.vars)$
+        <p><strong>$it.key$:</strong> $it.value$</p>
+        $endfor$
+    </div>
+    $endif$
+
     $if(nodes.metadata)$
     <div class="metadata">
         <h3>Metadata</h3>
@@ -568,6 +592,13 @@ $for(nodes)$
 ## $nodes.title$
 
 $nodes.content$
+
+$if(nodes.vars)$
+### Variables
+$for(nodes.vars)$
+- **$it.key$:** $it.value$
+$endfor$
+$endif$
 
 $if(nodes.metadata)$
 ### Metadata
