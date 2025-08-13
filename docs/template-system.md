@@ -133,6 +133,119 @@ Evaluation order:
 Error handling:
 - On errors or missing inputs, computed values become `null`. Use `$if(var)$...$endif$` guards in templates.
 
+### Function Reference
+
+Below are the supported compute functions with explanations and examples. In examples, `${...}` selectors reference values from the compile context.
+
+#### cvss.baseScore(vector: string) -> number | null
+- **Purpose**: Compute CVSS v3.x base score from a vector string (approximate implementation).
+- **Args**:
+  - `vector`: e.g., `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`
+- **Returns**: Base score (0.0 – 10.0) or `null` if invalid.
+- **Schema example**:
+```yaml
+nodeVariables:
+  cvssVector: { type: string, path: metadata.cvss_vector }
+  cvss:
+    type: number
+    compute: { fn: cvss.baseScore, args: ['${vars.cvssVector}'] }
+```
+- **Template usage**: `CVSS: $nodes.vars.cvss$`
+
+#### cvss.severity(scoreOrVector: number|string) -> string | null
+- **Purpose**: Compute qualitative severity from a score or vector.
+- **Args**: number (score) or string (vector).
+- **Returns**: `Critical` | `High` | `Medium` | `Low` or `null`.
+- **Schema example**:
+```yaml
+nodeVariables:
+  severity:
+    type: string
+    compute: { fn: cvss.severity, args: ['${vars.cvss}'] }
+```
+- **Template usage**: `$nodes.vars.severity$`
+
+#### mean(array<number>) -> number | null
+- **Purpose**: Average of numeric array.
+- **Args**: Array of numbers (or strings parseable as numbers).
+- **Returns**: Mean or `null` if empty.
+- **Schema example (document scope)**:
+```yaml
+variables:
+  avgCvss:
+    type: number
+    compute: { fn: mean, args: ['${nodes[*].vars.cvss}'] }
+```
+- **Template usage**: `Average: $avgCvss$`
+
+#### sum(array<number>) -> number | null
+- **Purpose**: Sum of numeric array.
+- **Schema example**:
+```yaml
+variables:
+  totalEffort:
+    type: number
+    compute: { fn: sum, args: ['${nodes[*].metadata.task.levelOfEffort}'] }
+```
+
+#### round(number, decimals=0) -> number | null
+- **Purpose**: Round a number to a fixed number of decimals.
+- **Schema example**:
+```yaml
+variables:
+  avgCvssRounded:
+    type: number
+    compute: { fn: round, args: ['${avgCvss}', 1] }
+```
+
+#### min(array<number>) / max(array<number>) -> number | null
+- **Purpose**: Minimum/maximum of a numeric array.
+- **Schema example**:
+```yaml
+variables:
+  maxCvss: { type: number, compute: { fn: max, args: ['${nodes[*].vars.cvss}'] } }
+  minCvss: { type: number, compute: { fn: min, args: ['${nodes[*].vars.cvss}'] } }
+```
+
+#### count(array<any>|any) -> number
+- **Purpose**: Count elements; if a non-array is passed, returns 1 if non-null else 0.
+- **Schema example**:
+```yaml
+variables:
+  findingCount: { type: number, compute: { fn: count, args: ['${nodes[*].title}'] } }
+```
+
+#### string.upper(text) / string.lower(text) -> string
+- **Purpose**: Uppercase or lowercase transformation.
+- **Schema example**:
+```yaml
+variables:
+  authorUpper: { type: string, compute: { fn: string.upper, args: ['${author}'] } }
+```
+
+#### string.regexMatch(text, pattern) -> boolean
+- **Purpose**: Test if text matches a regular expression.
+- **Schema example**:
+```yaml
+variables:
+  hasInternalTag: { type: boolean, compute: { fn: string.regexMatch, args: ['${title}', '(?i)internal'] } }
+```
+- **Template usage**:
+```markdown
+$if(hasInternalTag)$
+> Note: This document is tagged as internal.
+$endif$
+```
+
+#### date.now() -> string (ISO) / date.today() -> string (YYYY-MM-DD)
+- **Purpose**: Timestamps for stamping exports.
+- **Schema example**:
+```yaml
+variables:
+  exportedAt: { type: string, compute: { fn: date.now } }
+  exportDate: { type: string, compute: { fn: date.today } }
+```
+
 ### Schema Validation Notes
 
 Verbweaver performs a light validation on the schema declared in frontmatter:
