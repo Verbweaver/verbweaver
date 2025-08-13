@@ -240,6 +240,12 @@ class TemplateService:
             try:
                 # Build pandoc command
                 cmd = ['pandoc', temp_file_path, '-o', output_file]
+                # Ensure resources (images) resolve relative to project root
+                try:
+                    if os.path.isdir(self.project_path):
+                        cmd.extend(['--resource-path', self.project_path])
+                except Exception:
+                    pass
 
                 # Enable table of contents when requested
                 if options and (options.get('includeTOC') or options.get('includeToc')):
