@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Response
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app.services.template_service import TemplateService
 from pydantic import BaseModel
 
@@ -10,6 +10,7 @@ import subprocess, tempfile, os
 class PreviewRequest(BaseModel):
     markdown_text: str
     project_path: Optional[str] = None
+    file_path: Optional[str] = None  # project-relative path of the Markdown file (for resolving relative assets)
 
 @router.post("/preview", response_class=Response)
 async def preview_markdown(request: PreviewRequest):
@@ -21,13 +22,42 @@ async def preview_markdown(request: PreviewRequest):
             "-f", "markdown",
             "-t", "html",
             "--standalone",
-            "--self-contained",
+            "--self-contained",  # inline images so preview can render without extra network fetches
         ]
+        # Configure resource-path for resolving images
+        resource_paths: List[str] = []
+        if request.project_path and os.path.exists(request.project_path):
+            resource_paths.append(request.project_path)
+            if request.file_path:
+                # Use the markdown file's directory, if known
+                base_dir = os.path.normpath(os.path.join(request.project_path, os.path.dirname(request.file_path)))
+                if os.path.isdir(base_dir):
+                    resource_paths.append(base_dir)
+        if resource_paths:
+            cmd.extend(["--resource-path", os.pathsep.join(resource_paths)])
         
+        # Normalize image paths in markdown to be POSIX-style and project-relative
+        import re as _re
+        def _rewrite_img_paths(md: str) -> str:
+            # Replace backslashes with slashes and strip a single leading slash for project-relative roots
+            def repl(m: Any) -> str:
+                prefix, path, suffix = m.group(1), m.group(2), m.group(3)
+                p = path
+                low = p.lower()
+                if low.startswith('http://') or low.startswith('https://') or low.startswith('mailto:') or low.startswith('#'):
+                    return m.group(0)
+                p = p.replace('\\', '/')
+                if p.startswith('/'):
+                    p = p[1:]
+                return f"{prefix}{p}{suffix}"
+            return _re.sub(r'(!\[[^\]]*\]\()([^)]*)(\))', repl, md)
+
+        normalized_markdown = _rewrite_img_paths(request.markdown_text)
+
         # Create temporary markdown file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.md', 
                                        delete=False, encoding='utf-8') as temp_file:
-            temp_file.write(request.markdown_text)
+            temp_file.write(normalized_markdown)
             temp_file_path = temp_file.name
         
         try:
@@ -137,6 +167,12 @@ async def preview_markdown(request: PreviewRequest):
         }}
         .markdown-preview strong {{
             color: #f3f4f6;
+        }}
+        .markdown-preview img {{
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0.5rem 0;
         }}
     </style>
 </head>
