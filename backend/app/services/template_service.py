@@ -92,72 +92,137 @@ class TemplateService:
         return len(errors) == 0, custom_variables
     
     def process_template(self, template_content: str, data: Dict[str, Any]) -> str:
-        """Process template with provided data"""
+        """Process template with provided data.
+        Supports a subset of Pandoc-like template syntax inside Markdown content:
+        - $var$
+        - $if(var)$ ... $endif$
+        - $for(nodes)$ ... $endfor$
+        - $if(nodes.metadata)$, $for(nodes.metadata)$ and the $it.key$/$it.value$ placeholders
+        - $if(nodes.attachments)$, $for(nodes.attachments)$ and $it.name$/$it.size$
+        """
         processed_content = template_content
-        
-        # Replace standard variables
+
+        # Replace simple variables first
         for key, value in data.items():
-            if isinstance(value, str):
-                processed_content = processed_content.replace(f'${key}$', value)
-            elif isinstance(value, (int, float)):
+            if isinstance(value, (str, bool, int, float)):
                 processed_content = processed_content.replace(f'${key}$', str(value))
-        
-        # Handle nodes array
+
+        # Top-level conditionals like $if(toc)$ ... $endif$
+        def replace_top_level_if(var_name: str, text: str) -> str:
+            pattern = re.compile(rf"\$if\({re.escape(var_name)}\)\$(.*?)\$endif\$", re.DOTALL)
+            truthy = bool(data.get(var_name))
+            def repl(match):
+                return match.group(1) if truthy else ''
+            return pattern.sub(repl, text)
+
+        for cond in ['toc', 'includeMetadata', 'include_metadata']:
+            processed_content = replace_top_level_if(cond, processed_content)
+
+        # Generate a basic Table of Contents if requested and placeholder is present
+        if data.get('toc') and '$toc$' in processed_content:
+            toc_md = self._generate_basic_toc(data.get('nodes', []))
+            processed_content = processed_content.replace('$toc$', toc_md)
+
+        # Handle nodes array and node-scoped controls
         if 'nodes' in data:
             processed_content = self._process_nodes_array(processed_content, data['nodes'])
-        
+
         return processed_content
     
     def _process_nodes_array(self, template: str, nodes: List[Dict[str, Any]]) -> str:
-        """Process the nodes array in the template"""
-        # Find the for loop pattern
+        """Process the nodes array in the template."""
         for_match = re.search(r'\$for\(nodes\)\$(.*?)\$endfor\$', template, re.DOTALL)
         if not for_match:
             return template
-        
+
         loop_content = for_match.group(1)
-        nodes_content = []
-        
+        rendered_nodes: List[str] = []
+
         for node in nodes:
-            node_content = loop_content
-            
-            # Replace node variables
+            node_block = loop_content
+
+            # Replace scalar node fields, e.g., $nodes.title$, $nodes.content$
             for key, value in node.items():
                 if isinstance(value, str):
-                    node_content = node_content.replace(f'$nodes.{key}$', value)
+                    node_block = node_block.replace(f'$nodes.{key}$', value)
                 elif isinstance(value, (int, float)):
-                    node_content = node_content.replace(f'$nodes.{key}$', str(value))
+                    node_block = node_block.replace(f'$nodes.{key}$', str(value))
                 elif isinstance(value, dict):
-                    # Handle metadata
+                    # Replace $nodes.metadata.foo$
                     for meta_key, meta_value in value.items():
-                        node_content = node_content.replace(
-                            f'$nodes.{key}.{meta_key}$', 
-                            str(meta_value)
-                        )
-                elif isinstance(value, list):
-                    # Handle attachments
-                    if key == 'attachments':
-                        attachments_content = []
-                        for attachment in value:
-                            attachment_text = f"- {attachment.get('name', 'Unknown')}"
-                            if 'size' in attachment:
-                                attachment_text += f" ({attachment['size']})"
-                            attachments_content.append(attachment_text)
-                        node_content = node_content.replace(
-                            '$nodes.attachments$', 
-                            '\n'.join(attachments_content)
-                        )
-            
-            nodes_content.append(node_content)
-        
-        # Replace the entire for loop with processed content
-        return template.replace(
-            for_match.group(0),
-            '\n\n'.join(nodes_content)
-        )
+                        node_block = node_block.replace(f'$nodes.{key}.{meta_key}$', str(meta_value))
+
+            # Node-scoped conditionals
+            def eval_node_if(var_expr: str, present: bool, text: str) -> str:
+                pattern = re.compile(rf"\$if\({re.escape(var_expr)}\)\$(.*?)\$endif\$", re.DOTALL)
+                return pattern.sub(lambda m: m.group(1) if present else '', text)
+
+            has_meta = isinstance(node.get('metadata'), dict) and len(node.get('metadata')) > 0
+            node_block = eval_node_if('nodes.metadata', has_meta, node_block)
+
+            has_atts = isinstance(node.get('attachments'), list) and len(node.get('attachments')) > 0
+            node_block = eval_node_if('nodes.attachments', has_atts, node_block)
+
+            # Expand metadata loop $for(nodes.metadata)$ ... $endfor$
+            meta_loop = re.search(r'\$for\(nodes\.metadata\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
+            if meta_loop:
+                inner = meta_loop.group(1)
+                items: List[str] = []
+                if has_meta:
+                    for mk, mv in node['metadata'].items():
+                        item = inner
+                        item = item.replace('$it.key$', str(mk))
+                        item = item.replace('$it.value$', str(mv))
+                        items.append(item)
+                node_block = node_block.replace(meta_loop.group(0), '\n'.join(items))
+
+            # Expand attachments loop $for(nodes.attachments)$ ... $endfor$
+            att_loop = re.search(r'\$for\(nodes\.attachments\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
+            if att_loop:
+                inner = att_loop.group(1)
+                items = []
+                if has_atts:
+                    for att in node['attachments']:
+                        if isinstance(att, dict):
+                            item = inner
+                            for k, v in att.items():
+                                item = item.replace(f'$it.{k}$', str(v))
+                            items.append(item)
+                node_block = node_block.replace(att_loop.group(0), '\n'.join(items))
+
+            # Basic $nodes.attachments$ single placeholder support
+            if '$nodes.attachments$' in node_block and has_atts:
+                bullet_lines = []
+                for att in node['attachments']:
+                    if isinstance(att, dict):
+                        name = att.get('name', 'Unknown')
+                        size = att.get('size', '')
+                        bullet = f"- {name} ({size})" if size else f"- {name}"
+                        bullet_lines.append(bullet)
+                node_block = node_block.replace('$nodes.attachments$', '\n'.join(bullet_lines))
+
+            rendered_nodes.append(node_block)
+
+        return template.replace(for_match.group(0), '\n\n'.join(rendered_nodes))
+
+    def _generate_basic_toc(self, nodes: List[Dict[str, Any]]) -> str:
+        """Generate a simple Markdown Table of Contents based on node titles and headings.
+        This is a lightweight fallback so `$toc$` doesn't leak into output.
+        """
+        lines: List[str] = []
+        for node in nodes:
+            title = node.get('title')
+            if title:
+                lines.append(f"- {title}")
+                # Parse H2-level headings from node content for nested entries
+                content = node.get('content', '') or ''
+                for line in content.split('\n'):
+                    if line.startswith('## '):
+                        lines.append(f"  - {line[3:].strip()}")
+        return '\n'.join(lines) if lines else ''
     
     def convert_with_pandoc(self, markdown_content: str, output_format: str, 
-                           output_file: str, working_dir: str = None) -> Tuple[bool, str]:
+                           output_file: str, working_dir: str = None, options: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
         """Convert markdown content to target format using Pandoc"""
         try:
             # Check if Pandoc is available
@@ -175,6 +240,10 @@ class TemplateService:
             try:
                 # Build pandoc command
                 cmd = ['pandoc', temp_file_path, '-o', output_file]
+
+                # Enable table of contents when requested
+                if options and (options.get('includeTOC') or options.get('includeToc')):
+                    cmd.append('--toc')
                 
                 # Add format-specific options
                 if output_format == 'pdf':

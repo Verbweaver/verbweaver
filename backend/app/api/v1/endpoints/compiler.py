@@ -79,6 +79,9 @@ class ContentAggregator:
             'title': options.get('title', 'Document'),
             'author': options.get('author', 'Unknown'),
             'date': options.get('date', ''),
+            # Support both includeTOC and includeToc from clients
+            'toc': bool(options.get('includeTOC') or options.get('includeToc')),
+            'includeMetadata': bool(options.get('includeMetadata', True)),
             'nodes': []
         }
         
@@ -440,7 +443,7 @@ class PandocExporter:
         try:
             # Convert using Pandoc with proper working directory
             success, message = self.template_service.convert_with_pandoc(
-                content, output_format, output_file, self.project_path
+                content, output_format, output_file, self.project_path, options
             )
             
             print(f"PandocExporter: Conversion result - Success: {success}, Message: {message}")
