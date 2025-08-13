@@ -1,3 +1,150 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Dict, Any
+import os
+from pathlib import Path
+from app.core.config import settings
+from app.services.template_service import TemplateService
+from app.core.security import get_current_user
+from app.models import User
+
+router = APIRouter()
+
+
+def _ensure_dirs() -> None:
+    Path(settings.GLOBAL_TEMPLATES_DIR).mkdir(parents=True, exist_ok=True)
+    # Subfolders for organization
+    Path(settings.GLOBAL_TEMPLATES_DIR, 'project').mkdir(exist_ok=True)
+    Path(settings.GLOBAL_TEMPLATES_DIR, 'templates').mkdir(exist_ok=True)
+    Path(settings.GLOBAL_TEMPLATES_DIR, 'templates', 'compiler').mkdir(parents=True, exist_ok=True)
+
+
+def _seed_defaults() -> None:
+    """Create default template files in the global store if they do not exist."""
+    root = Path(settings.GLOBAL_TEMPLATES_DIR)
+    _ensure_dirs()
+
+    # Project README template
+    readme_path = root / 'project' / 'README.md'
+    if not readme_path.exists():
+        readme_path.write_text(
+            """# {{ PROJECT_NAME }}
+
+Welcome to your Verbweaver project.
+
+## Getting Started
+
+Project description: {{ PROJECT_DESCRIPTION }}
+
+Verbweaver organizes ideas and tasks as Markdown files under the `nodes/` folder. Each node can be a task; task fields live in YAML frontmatter.
+
+### Project Structure
+
+- `nodes/` — content and task nodes (Markdown)
+- `uploads/` — files you attach to nodes
+- `templates/` — templates for new nodes and compiler exports
+- `.verbweaver/` — project settings and internal data
+
+### Views
+
+- Graph, Tasks (Board/Calendar/To‑Do), Editor, Version Control, Compiler
+
+""",
+            encoding='utf-8'
+        )
+
+    # Node template: Empty.md. Prefer templates/nodes/Empty.md but also seed a
+    # flattened copy in templates/ for backward compatibility.
+    empty_nodes_dir = root / 'templates' / 'nodes'
+    empty_nodes_dir.mkdir(parents=True, exist_ok=True)
+    empty_nodes_path = empty_nodes_dir / 'Empty.md'
+    empty_flat_dir = root / 'templates'
+    empty_flat_dir.mkdir(parents=True, exist_ok=True)
+    empty_flat_path = empty_flat_dir / 'Empty.md'
+    if not empty_nodes_path.exists() and not empty_flat_path.exists():
+        content = """---
+title: Empty
+type: node
+description: A blank starting point.
+tags: []
+---
+
+# $title$
+
+Start your content here.
+"""
+        empty_nodes_path.write_text(content, encoding='utf-8')
+        empty_flat_path.write_text(content, encoding='utf-8')
+
+    # Compiler templates (simple, academic, technical-report) per format
+    ts = TemplateService('.')
+    for fmt in ['markdown', 'html', 'pdf', 'docx', 'epub', 'odt']:
+        fmt_dir = root / 'templates' / 'compiler' / fmt
+        fmt_dir.mkdir(parents=True, exist_ok=True)
+        files = {
+            'simple.md': ts._get_simple_template(fmt),
+            'academic.md': ts._get_academic_template(fmt),
+            'technical-report.md': ts._get_technical_report_template(fmt),
+        }
+        for name, content in files.items():
+            path = fmt_dir / name
+            if not path.exists():
+                path.write_text(content, encoding='utf-8')
+
+
+def _require_admin(user: User):
+    # Minimal check; adapt to your User model/roles
+    if not getattr(user, 'is_admin', False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Admin access required')
+
+
+@router.get("/global", response_model=Dict[str, Any])
+async def list_global_templates(current_user: User = Depends(get_current_user)):
+    _require_admin(current_user)
+    _ensure_dirs()
+    _seed_defaults()
+    root = Path(settings.GLOBAL_TEMPLATES_DIR)
+    def collect(dir_path: Path) -> List[Dict[str, str]]:
+        items = []
+        if dir_path.exists():
+            for p in dir_path.rglob('*.md'):
+                rel = p.relative_to(root).as_posix()
+                items.append({ 'path': rel, 'name': p.name })
+        return items
+    return {
+        'templates': collect(root)
+    }
+
+
+@router.get("/global/{rel_path:path}")
+async def get_global_template(rel_path: str, current_user: User = Depends(get_current_user)):
+    _require_admin(current_user)
+    _ensure_dirs()
+    abs_path = Path(settings.GLOBAL_TEMPLATES_DIR) / rel_path
+    if not abs_path.exists() or not abs_path.is_file():
+        raise HTTPException(status_code=404, detail='Template not found')
+    return {'path': rel_path, 'content': abs_path.read_text(encoding='utf-8')}
+
+
+@router.put("/global/{rel_path:path}")
+async def upsert_global_template(rel_path: str, payload: Dict[str, Any], current_user: User = Depends(get_current_user)):
+    _require_admin(current_user)
+    _ensure_dirs()
+    content = payload.get('content', '')
+    abs_path = Path(settings.GLOBAL_TEMPLATES_DIR) / rel_path
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    abs_path.write_text(content, encoding='utf-8')
+    return {'message': 'Saved', 'path': rel_path}
+
+
+@router.delete("/global/{rel_path:path}")
+async def delete_global_template(rel_path: str, current_user: User = Depends(get_current_user)):
+    _require_admin(current_user)
+    abs_path = Path(settings.GLOBAL_TEMPLATES_DIR) / rel_path
+    if abs_path.exists():
+        abs_path.unlink()
+        return {'message': 'Deleted'}
+    raise HTTPException(status_code=404, detail='Template not found')
+
 """
 Templates API endpoints
 """

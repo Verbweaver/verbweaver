@@ -12,7 +12,9 @@ export const desktopTemplatesApi = {
 
     // Consistently use forward slashes for internal path manipulation
     const normalizedProjectPath = projectPath.replace(/\\/g, '/');
+    // Support new structure: templates/nodes for node templates
     const templatesPath = `${normalizedProjectPath}/templates`;
+    const nodeTemplatesPath = `${templatesPath}/nodes`;
     console.log(`[desktopTemplatesApi] Intended templatesPath: "${templatesPath}"`);
 
     try {
@@ -36,7 +38,11 @@ export const desktopTemplatesApi = {
       }
       
       if (templatesDirExists) {
-        const emptyTemplatePath = `${templatesPath}/Empty.md`;
+        // Ensure templates/nodes exists and seed Empty.md there (no flat fallback)
+        try {
+          await window.electronAPI.createDirectory(nodeTemplatesPath);
+        } catch {}
+        const emptyTemplatePath = `${nodeTemplatesPath}/Empty.md`;
         console.log(`[desktopTemplatesApi] Checking/Ensuring Empty.md at: "${emptyTemplatePath}"`);
         try {
           await window.electronAPI.readFile(emptyTemplatePath);
@@ -44,17 +50,16 @@ export const desktopTemplatesApi = {
         } catch (emptyFileError: any) {
           console.warn(`[desktopTemplatesApi] Empty.md not found at "${emptyTemplatePath}", creating it. Error:`, emptyFileError.message);
           const emptyTemplateContent = `---
-title: Empty
-type: file
-description: A blank template for new nodes.
-tags: []
----
-
-# {title}
-
-This is a basic empty node.
-
-{description}`;
+ title: Empty
+ type: node
+ description: A blank starting point.
+ tags: [empty, basic]
+ ---
+ 
+ # Empty Node
+ 
+ Start your content here.
+`;
           try {
             await window.electronAPI.writeFile(emptyTemplatePath, emptyTemplateContent);
             console.log(`[desktopTemplatesApi] Successfully created Empty.md at "${emptyTemplatePath}".`);
@@ -64,15 +69,21 @@ This is a basic empty node.
         }
       }
       
-      console.log(`[desktopTemplatesApi] Reading files from templates directory: "${templatesPath}"`);
-      const files = await window.electronAPI.readDirectory(templatesPath);
+      // Gather templates from both templates/ and templates/nodes/
+      const files: Array<{ name: string; path: string; type: 'file' | 'directory' }> = [];
+      console.log(`[desktopTemplatesApi] Reading files from templates directory: "${templatesPath}" and nodes: "${nodeTemplatesPath}"`);
+      // Only enumerate nodes/ for node templates; ignore md files placed directly under templates/
+      try {
+        const nodeFiles = await window.electronAPI.readDirectory(nodeTemplatesPath);
+        files.push(...nodeFiles.map(f => ({ ...f, path: `${nodeTemplatesPath}/${f.name}` })));
+      } catch {}
       console.log(`[desktopTemplatesApi] Files found in "${templatesPath}":`, files.map(f => f.name));
       
       const templates: Template[] = [];
       
       for (const fileInfo of files) {
         if (fileInfo.name.endsWith('.md')) {
-          const filePath = `${templatesPath}/${fileInfo.name}`;
+          const filePath = fileInfo.path;
           console.log(`[desktopTemplatesApi] Reading template file: "${filePath}"`);
           const content: string = await window.electronAPI.readFile(filePath);
           console.log(`[desktopTemplatesApi] Content for "${fileInfo.name}" read, length: ${content.length}`);
@@ -112,9 +123,14 @@ This is a basic empty node.
               }
             }
             
+            // Normalize path to project-relative under templates/ (flatten nodes/ for UI)
+            const displayName = fileInfo.name.replace(/\.md$/, '');
+            const rel = filePath.replace(/^.*\/templates\//, 'templates/').replace(/\\/g,'/');
+            // Always present under templates/nodes to avoid duplicates
+            const flattened = rel.startsWith('templates/nodes/') ? `templates/${fileInfo.name}` : `templates/${fileInfo.name}`;
             templates.push({
-              path: `templates/${fileInfo.name}`, // This path is relative to project root for UI consistency
-              name: fileInfo.name.replace(/\.md$/, ''),
+              path: flattened,
+              name: displayName,
               metadata,
               content: markdownContent.trim()
             });

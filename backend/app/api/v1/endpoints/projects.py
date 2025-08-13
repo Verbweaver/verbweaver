@@ -16,6 +16,7 @@ from app.database import get_db
 from app.models import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse # GitConfigBase removed as initialize_project returns it
 from app.services.git_service import GitService
+from app.core.config import settings
 # from app.services.node_service import NodeService # No longer needed
 from app.core.security import get_current_user
 from app.models import User
@@ -112,6 +113,54 @@ async def create_project(
     # NodeService calls for creating initial folders/templates are removed 
     # as GitService.initialize_project() now handles this.
     
+    # 7. Seed project with global templates (README + templates/) if available
+    try:
+        project_path = db_project.git_config.get('path') or ''
+        if project_path and os.path.isdir(settings.GLOBAL_TEMPLATES_DIR or ''):
+            # Seed README.md from global template if present
+            readme_template = os.path.join(settings.GLOBAL_TEMPLATES_DIR, 'project', 'README.md')
+            if os.path.exists(readme_template):
+                with open(readme_template, 'r', encoding='utf-8') as f:
+                    tmpl = f.read()
+                name = project_data.name or 'Project'
+                desc = (project_data.description or '').strip()
+                content = tmpl.replace('{{ PROJECT_NAME }}', name).replace('{{ PROJECT_DESCRIPTION }}', desc)
+                # Always write README for a freshly created project to reflect latest global template
+                with open(os.path.join(project_path, 'README.md'), 'w', encoding='utf-8') as f:
+                    f.write(content)
+
+            # Copy templates tree (node and compiler templates)
+            import shutil
+            src_templates = os.path.join(settings.GLOBAL_TEMPLATES_DIR, 'templates')
+            dst_templates = os.path.join(project_path, 'templates')
+            if os.path.isdir(src_templates):
+                os.makedirs(dst_templates, exist_ok=True)
+                # Copy compiler subtree only
+                compiler_src = os.path.join(src_templates, 'compiler')
+                if os.path.isdir(compiler_src):
+                    for root, dirs, files in os.walk(compiler_src):
+                        rel = os.path.relpath(root, compiler_src)
+                        target_dir = os.path.join(dst_templates, 'compiler', rel) if rel != '.' else os.path.join(dst_templates, 'compiler')
+                        os.makedirs(target_dir, exist_ok=True)
+                        for file in files:
+                            src = os.path.join(root, file)
+                            dst = os.path.join(target_dir, file)
+                            shutil.copy2(src, dst)
+
+                # Copy node templates subtree only (preferred location)
+                nodes_dir = os.path.join(src_templates, 'nodes')
+                if os.path.isdir(nodes_dir):
+                    for root, dirs, files in os.walk(nodes_dir):
+                        rel = os.path.relpath(root, nodes_dir)
+                        target_dir = os.path.join(dst_templates, 'nodes', rel) if rel != '.' else os.path.join(dst_templates, 'nodes')
+                        os.makedirs(target_dir, exist_ok=True)
+                        for file in files:
+                            src = os.path.join(root, file)
+                            dst = os.path.join(target_dir, file)
+                            shutil.copy2(src, dst)
+    except Exception as e:
+        logger.warning(f"Global template seeding failed: {e}")
+
     logger.info(f"Project '{db_project.name}' (ID: {db_project.id}) fully created. Final repo path: {db_project.git_config.get('path')}")
     return db_project
 
@@ -253,6 +302,82 @@ async def update_project_settings(
     except Exception as e:
         logger.error(f"Error updating project settings: {e}")
         raise HTTPException(status_code=500, detail="Error updating project settings")
+
+
+@router.post("/{project_id}/templates/reseed")
+async def reseed_project_templates(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Copy global templates into an existing project's templates folder and README.
+    Does not overwrite files that already exist in the project.
+    """
+    # Verify access
+    result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project_path = project.git_config.get('path')
+    if not project_path or not os.path.isdir(project_path):
+        raise HTTPException(status_code=404, detail="Project directory not found")
+
+    try:
+        import shutil
+        # README: always overwrite to apply latest
+        readme_template = os.path.join(settings.GLOBAL_TEMPLATES_DIR, 'project', 'README.md')
+        if os.path.exists(readme_template):
+            with open(readme_template, 'r', encoding='utf-8') as f:
+                tmpl = f.read()
+            name = project.name or 'Project'
+            desc = (project.description or '').strip()
+            content = tmpl.replace('{{ PROJECT_NAME }}', name).replace('{{ PROJECT_DESCRIPTION }}', desc)
+            dst = os.path.join(project_path, 'README.md')
+            with open(dst, 'w', encoding='utf-8') as f:
+                f.write(content)
+
+        # templates tree from global store
+        src_templates = os.path.join(settings.GLOBAL_TEMPLATES_DIR, 'templates')
+        dst_templates = os.path.join(project_path, 'templates')
+        if os.path.isdir(src_templates):
+            os.makedirs(dst_templates, exist_ok=True)
+
+            # Copy compiler subtree (overwrite)
+            compiler_src = os.path.join(src_templates, 'compiler')
+            if os.path.isdir(compiler_src):
+                for root, dirs, files in os.walk(compiler_src):
+                    rel = os.path.relpath(root, compiler_src)
+                    target_dir = os.path.join(dst_templates, 'compiler', rel) if rel != '.' else os.path.join(dst_templates, 'compiler')
+                    os.makedirs(target_dir, exist_ok=True)
+                    for file in files:
+                        shutil.copy2(os.path.join(root, file), os.path.join(target_dir, file))
+
+            # Copy node templates subtree (overwrite)
+            nodes_src = os.path.join(src_templates, 'nodes')
+            if os.path.isdir(nodes_src):
+                for root, dirs, files in os.walk(nodes_src):
+                    rel = os.path.relpath(root, nodes_src)
+                    target_dir = os.path.join(dst_templates, 'nodes', rel) if rel != '.' else os.path.join(dst_templates, 'nodes')
+                    os.makedirs(target_dir, exist_ok=True)
+                    for file in files:
+                        shutil.copy2(os.path.join(root, file), os.path.join(target_dir, file))
+
+            # Optional cleanup: remove legacy root-level Empty.md if nodes version exists
+            legacy_flat = os.path.join(dst_templates, 'Empty.md')
+            nodes_version = os.path.join(dst_templates, 'nodes', 'Empty.md')
+            try:
+                if os.path.exists(legacy_flat) and os.path.exists(nodes_version):
+                    os.remove(legacy_flat)
+            except Exception:
+                pass
+
+        return {"message": "Templates re-seeded (overwrote existing files)"}
+    except Exception as e:
+        logger.error(f"Re-seed templates failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to re-seed templates")
 
 
 @router.get("/{project_id}/settings/compiler")
