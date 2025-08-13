@@ -808,37 +808,47 @@ function setupIpcHandlers() {
         'utf-8'
       );
       
-      // Create README.md
-      const readmeContent = `# ${projectName}
+      // Create README.md (prefer external template so users can customize it)
+      let readmeContent: string
+      try {
+        const tmplPath = isDevelopment
+          ? join(__dirname, '../../resources/project-templates/README.md')
+          : join(process.resourcesPath, 'project-templates', 'README.md')
+        const tmpl = await fs.readFile(tmplPath, 'utf-8')
+        readmeContent = tmpl.replace(/\{\{\s*PROJECT_NAME\s*\}\}/g, projectName)
+      } catch {
+        // Fallback inline README content
+        readmeContent = `# ${projectName}
 
-This is a Verbweaver project for ${projectName}.
+Welcome to your Verbweaver project.
 
 ## Getting Started
 
-This project uses Verbweaver to organize ideas, tasks, and content using a graph-based approach.
-All content nodes (which can also be managed as tasks) are stored as Markdown files in the \`nodes/\` directory.
-Task-specific information (like status, due date) is stored in the metadata (frontmatter) of these files.
+Verbweaver organizes ideas and tasks as Markdown files under the \`nodes/\` folder. Task fields (status, due date, etc.) live in each file's YAML frontmatter.
 
 ### Project Structure
 
-- \`nodes/\` - Contains all content nodes and task items (Markdown files).
-- \`docs/\` - Project documentation.
-- \`templates/\` - Reusable templates for content or graph appearance.
-- \`.verbweaver/\` - Verbweaver configuration and metadata for this project.
+- \`nodes/\` — all content nodes and tasks (Markdown)
+- \`uploads/\` — files you attach to nodes (keeps original filenames)
+- \`templates/\` — templates for new nodes and compiler
+- \`docs/\` — optional documentation
+- \`.verbweaver/\` — project settings and internal data
 
 ### Views
 
-- **Graph** - Visual representation of relationships between content in \`nodes/\`.
-- **Editor** - Edit content and metadata of files in \`nodes/\`.
- - **Tasks** - Task management view that operates on items in \`nodes/\` based on their metadata.
-- **Version Control** - Git integration for tracking changes.
-- **Compiler** - Export content to various formats.
+- Graph: Mind Map and Outline subviews; Hide Uploads and Rigid Mode controls; lock nodes in place
+- Tasks: Board, Calendar, and To‑Do (Overdue, Today, Unscheduled; drag‑and‑drop; complete/uncomplete)
+- Editor: Markdown editing with shortcuts (Bold, Italic, Link, Preview); Duplicate File
+- Version Control: Git status, branches, commits
+- Compiler: Export to PDF/DOCX/HTML/EPUB; templates; optional metadata and ToC
+
+Tips: Use Manage Statuses to configure task columns; set Default Template in Project Settings.
 
 ## Version Control
 
-This project is backed by Git for version control. All changes are tracked and you can view the history in the Version Control view.
-`;
-      
+This repository is a normal Git repo. Use the Version view to stage, commit, and review history.
+`
+      }
       await writeFile(join(projectPath, 'README.md'), readmeContent, 'utf-8');
       
       // Create Empty.md template
