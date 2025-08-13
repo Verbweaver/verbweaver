@@ -35,6 +35,183 @@ The Verbweaver template system allows users to customize how their exported docu
 ### Custom Variables
 Custom variables are dynamically detected from the template and can be set by users through the UI.
 
+### Schema-Driven Variables (Document and Node Scopes)
+
+Templates can declare a schema in YAML frontmatter to describe expected variables for both document-level values and per-node values. The application uses this schema to render type-aware editors, CSV import/export, and to prefill values from node frontmatter.
+
+Frontmatter keys:
+
+```yaml
+variables:
+  avgCvss:
+    type: number
+    label: Average CVSS
+    compute:
+      fn: mean
+      args: ['${nodes[*].vars.cvss}']
+  raci:
+    type: array
+    item:
+      type: object
+      fields:
+        task: { type: string, label: Task, required: true }
+        r:    { type: string, label: Responsible }
+        a:    { type: string, label: Accountable }
+        c:    { type: string, label: Consulted }
+        i:    { type: string, label: Informed }
+    default:
+      - { task: Kickoff, r: Bob, a: Alice, c: Team, i: Execs }
+
+nodeVariables:
+  cvssVector:
+    type: string
+    label: CVSS Vector
+    path: metadata.cvss_vector   # prefill from node frontmatter if present
+  cvss:
+    type: number
+    label: CVSS Score
+    # compute is applied after merging frontmatter and per-node overrides
+    compute:
+      fn: cvss.baseScore
+      args: ['${vars.cvssVector}']
+  severity:
+    type: string
+    label: Severity
+    compute:
+      fn: cvss.severity
+      args: ['${vars.cvss}']
+```
+
+Field options:
+- `type`: string | number | boolean | array
+- `label`: human-friendly label (optional)
+- `description`: helper text (optional)
+- `required`: boolean (document scope only for now)
+- `min`, `max`: numeric bounds for number types
+- `enum`: array of allowed values (renders as a select)
+- `default`: default value for document variables
+- `path`: for `nodeVariables`, dotted path into node frontmatter to prefill (e.g., `metadata.cvss`)
+- `item`: when `type: array`, item schema (supports `type: object` with `fields`)
+- `compute`: computed value (see below)
+
+## Computed Fields
+
+Computed fields are derived values that the compiler calculates at compile time. They can be declared for both document-level variables and `nodeVariables`.
+
+Syntax:
+
+```yaml
+compute:
+  fn: <functionName>
+  args: [<arg1>, <arg2>, ...]
+```
+
+Arguments support references via `${...}` selectors:
+- Document scope values: `${title}`, `${author}`, etc.
+- Node scope values: `${vars.cvssVector}`, `${metadata.foo}`.
+- Aggregates over selected nodes: `${nodes[*].vars.cvss}`.
+
+Supported functions (initial set):
+- `cvss.baseScore(vector: string) -> number | null`
+- `cvss.severity(scoreOrVector: number|string) -> string | null` (Critical/High/Medium/Low)
+- `mean(array<number>) -> number | null`
+- `sum(array<number>) -> number | null`
+- `round(number, decimals=0) -> number | null`
+- `string.upper(text) -> string`
+- `string.lower(text) -> string`
+ - `min(array<number>) -> number | null`
+ - `max(array<number>) -> number | null`
+ - `count(array<any>|any) -> number` (treats non-array as 0/1)
+ - `string.regexMatch(text, pattern) -> boolean`
+ - `date.now() -> string (ISO)`
+ - `date.today() -> string (YYYY-MM-DD)`
+
+Evaluation order:
+1. Node-scoped values: merge `path` from frontmatter and compile-time overrides, then apply `compute` if value still missing. Results are exposed to templates under `$nodes.vars.*$`.
+2. Document variables: after nodes are resolved, compute doc variables and merge into the template data.
+
+Error handling:
+- On errors or missing inputs, computed values become `null`. Use `$if(var)$...$endif$` guards in templates.
+
+### Schema Validation Notes
+
+Verbweaver performs a light validation on the schema declared in frontmatter:
+- `variables` and `nodeVariables` must be objects when present.
+- `type` must be one of: `string`, `number`, `boolean`, `array`.
+- For `array` types:
+  - `item` must be an object.
+  - If `item.type: object`, then `item.fields` must be a non-empty object; each field must use a primitive `type` (string|number|boolean).
+  - If `item.type` is a primitive, it must be string|number|boolean.
+- `nodeVariables.path` (if provided) must be a dotted string path (e.g., `metadata.cvss`).
+- `compute` must be an object with `fn` (string) and optional `args` (array). Unknown function names are warned but not fatal.
+
+Validation warnings appear in the template validation response and are non-fatal; invalid Pandoc syntax remains a hard error.
+
+## Using Node Variables in Templates
+
+- Scalar: `$nodes.vars.cvss$`, `$nodes.vars.severity$`
+- Conditional: `$if(nodes.vars)$ ... $endif$`
+- Loop over pairs:
+  ```markdown
+  $for(nodes.vars)$
+  - $it.key$: $it.value$
+  $endfor$
+  ```
+
+## Compiler UI Behavior (Desktop/Web)
+
+- Document variables:
+  - Rendered per `variables` schema; supports number min/max, boolean, enum selects.
+  - Arrays of objects (e.g., `raci`) include an inline grid with add/remove rows and CSV import/export.
+  - Advanced mode: JSON input is accepted for ad-hoc arrays/objects.
+- Per-node variables:
+  - Rendered when `nodeVariables` exist in schema.
+  - Prefilled from node frontmatter via `path`.
+  - Users can override and import/export CSV; blanks fall back to frontmatter.
+
+## Example: Technical Report RACI + CVSS
+
+Frontmatter:
+
+```yaml
+variables:
+  raci:
+    type: array
+    item:
+      type: object
+      fields:
+        task: { type: string, label: Task, required: true }
+        r: { type: string, label: Responsible }
+        a: { type: string, label: Accountable }
+        c: { type: string, label: Consulted }
+        i: { type: string, label: Informed }
+
+nodeVariables:
+  cvssVector: { type: string, label: CVSS Vector, path: metadata.cvss_vector }
+  cvss:       { type: number, label: CVSS, compute: { fn: cvss.baseScore, args: ['${vars.cvssVector}'] } }
+  severity:   { type: string, label: Severity, compute: { fn: cvss.severity, args: ['${vars.cvss}'] } }
+```
+
+Template:
+
+```markdown
+## RACI Matrix
+
+| Task | R | A | C | I |
+|------|---|---|---|---|
+$for(raci)$
+| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |
+$endfor$
+
+$for(nodes)$
+### $nodes.title$
+
+CVSS: $nodes.vars.cvss$ ($nodes.vars.severity$)
+
+$nodes.content$
+$endfor$
+```
+
 ## Template Syntax
 
 ### Basic Variable Substitution

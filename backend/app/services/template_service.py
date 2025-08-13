@@ -53,8 +53,11 @@ class TemplateService:
             logger.error(f"Failed to read template {template_path}: {e}")
             return None
     
-    def validate_template(self, template_content: str) -> Tuple[bool, List[str]]:
-        """Validate template syntax and extract custom variables"""
+    def validate_template(self, template_content: str) -> Tuple[bool, List[str], Dict[str, Any], List[str]]:
+        """Validate template syntax and extract custom variables and schema (variables/nodeVariables).
+        Also performs light schema-structure validation to surface authoring errors early.
+        Returns: (is_valid, custom_variables, schema, validation_messages)
+        """
         errors = []
         custom_variables = []
         
@@ -89,7 +92,106 @@ class TemplateService:
         except Exception as e:
             errors.append(f"Template validation error: {e}")
         
-        return len(errors) == 0, custom_variables
+        # Extract schema from frontmatter if present
+        schema: Dict[str, Any] = {}
+        try:
+            if template_content.startswith('---'):
+                text = template_content.split('\n', 1)[1]
+                fm_text, _rest = None, None
+                if '\n---\n' in text:
+                    fm_text, _rest = text.split('\n---\n', 1)
+                elif '\r\n---\r\n' in text:
+                    fm_text, _rest = text.split('\r\n---\r\n', 1)
+                if fm_text is not None:
+                    fm = yaml.safe_load(fm_text) or {}
+                    if isinstance(fm, dict):
+                        schema = {
+                            'variables': fm.get('variables') or {},
+                            'nodeVariables': fm.get('nodeVariables') or {}
+                        }
+        except Exception:
+            schema = {}
+
+        # Lightweight schema validation
+        try:
+            def _is_primitive_type(t: Any) -> bool:
+                return t in ('string', 'number', 'boolean')
+
+            def _validate_compute(defn: Dict[str, Any]):
+                comp = defn.get('compute')
+                if comp is None:
+                    return
+                if not isinstance(comp, dict):
+                    errors.append('compute must be an object with fn and optional args')
+                    return
+                fn = comp.get('fn')
+                if not isinstance(fn, str) or not fn:
+                    errors.append('compute.fn must be a non-empty string')
+                args = comp.get('args', [])
+                if args is not None and not isinstance(args, list):
+                    errors.append('compute.args must be an array if provided')
+                # Optional: check against allowed function names (keep in sync with compiler)
+                allowed_fns = {
+                    'cvss.baseScore','cvss.severity',
+                    'mean','sum','round','math.mean','math.sum','math.round',
+                    'min','max','count','math.min','math.max','count',
+                    'string.upper','string.lower','string.regexMatch',
+                    'date.now','date.today'
+                }
+                if isinstance(fn, str) and fn not in allowed_fns:
+                    # Not fatal; warn to help authors
+                    errors.append(f"Unknown compute.fn '{fn}' (will be ignored if unsupported)")
+
+            def _validate_var_def(k: str, defn: Any, scope: str):
+                if not isinstance(defn, dict):
+                    errors.append(f"{scope}.{k} must be an object")
+                    return
+                t = defn.get('type')
+                if t not in ('string','number','boolean','array'):
+                    errors.append(f"{scope}.{k}.type must be one of string|number|boolean|array")
+                if t == 'array':
+                    item = defn.get('item')
+                    if not isinstance(item, dict):
+                        errors.append(f"{scope}.{k}.item must be an object when type is array")
+                    else:
+                        if item.get('type') == 'object':
+                            fields = item.get('fields')
+                            if not isinstance(fields, dict) or not fields:
+                                errors.append(f"{scope}.{k}.item.fields must be a non-empty object for object arrays")
+                            else:
+                                for fk, fv in fields.items():
+                                    if not isinstance(fv, dict):
+                                        errors.append(f"{scope}.{k}.item.fields.{fk} must be an object")
+                                    elif not _is_primitive_type(fv.get('type','string')):
+                                        errors.append(f"{scope}.{k}.item.fields.{fk}.type must be string|number|boolean")
+                        else:
+                            # primitive array
+                            if not _is_primitive_type(item.get('type','string')):
+                                errors.append(f"{scope}.{k}.item.type must be string|number|boolean")
+                if scope == 'nodeVariables':
+                    # Optional dotted path
+                    if 'path' in defn and not isinstance(defn.get('path'), str):
+                        errors.append(f"{scope}.{k}.path must be a string if provided")
+                # Validate compute if present
+                _validate_compute(defn)
+
+            # variables
+            if isinstance(schema.get('variables'), dict):
+                for k, defn in schema['variables'].items():
+                    _validate_var_def(str(k), defn, 'variables')
+            elif schema.get('variables') not in (None, {}):
+                errors.append('variables must be an object')
+
+            # nodeVariables
+            if isinstance(schema.get('nodeVariables'), dict):
+                for k, defn in schema['nodeVariables'].items():
+                    _validate_var_def(str(k), defn, 'nodeVariables')
+            elif schema.get('nodeVariables') not in (None, {}):
+                errors.append('nodeVariables must be an object')
+        except Exception as e:
+            errors.append(f"Schema validation error: {e}")
+        
+        return len(errors) == 0, custom_variables, (schema or {'variables': {}, 'nodeVariables': {}}), errors
     
     def process_template(self, template_content: str, data: Dict[str, Any]) -> str:
         """Process template with provided data.
@@ -141,16 +243,24 @@ class TemplateService:
         for node in nodes:
             node_block = loop_content
 
-            # Replace scalar node fields, e.g., $nodes.title$, $nodes.content$
+            # Helper: recursively replace $nodes.<path>$ for nested dicts
+            def replace_nested(prefix: str, obj: Any, text: str) -> str:
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        text = replace_nested(f"{prefix}.{k}", v, text)
+                elif isinstance(obj, list):
+                    # No direct single placeholder replacement for lists; handled via loops if needed
+                    pass
+                else:
+                    text = text.replace(f'$nodes.{prefix}$', str(obj))
+                return text
+
+            # Replace scalar node fields, e.g., $nodes.title$, $nodes.content$ and nested dicts like metadata.*, vars.*
             for key, value in node.items():
-                if isinstance(value, str):
-                    node_block = node_block.replace(f'$nodes.{key}$', value)
-                elif isinstance(value, (int, float)):
+                if isinstance(value, (str, int, float)):
                     node_block = node_block.replace(f'$nodes.{key}$', str(value))
                 elif isinstance(value, dict):
-                    # Replace $nodes.metadata.foo$
-                    for meta_key, meta_value in value.items():
-                        node_block = node_block.replace(f'$nodes.{key}.{meta_key}$', str(meta_value))
+                    node_block = replace_nested(key, value, node_block)
 
             # Node-scoped conditionals
             def eval_node_if(var_expr: str, present: bool, text: str) -> str:
@@ -159,6 +269,8 @@ class TemplateService:
 
             has_meta = isinstance(node.get('metadata'), dict) and len(node.get('metadata')) > 0
             node_block = eval_node_if('nodes.metadata', has_meta, node_block)
+            has_vars = isinstance(node.get('vars'), dict) and len(node.get('vars')) > 0
+            node_block = eval_node_if('nodes.vars', has_vars, node_block)
 
             has_atts = isinstance(node.get('attachments'), list) and len(node.get('attachments')) > 0
             node_block = eval_node_if('nodes.attachments', has_atts, node_block)
@@ -175,6 +287,19 @@ class TemplateService:
                         item = item.replace('$it.value$', str(mv))
                         items.append(item)
                 node_block = node_block.replace(meta_loop.group(0), '\n'.join(items))
+
+            # Expand vars loop $for(nodes.vars)$ ... $endfor$
+            vars_loop = re.search(r'\$for\(nodes\.vars\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
+            if vars_loop:
+                inner = vars_loop.group(1)
+                items: List[str] = []
+                if has_vars:
+                    for mk, mv in node['vars'].items():
+                        item = inner
+                        item = item.replace('$it.key$', str(mk))
+                        item = item.replace('$it.value$', str(mv))
+                        items.append(item)
+                node_block = node_block.replace(vars_loop.group(0), '\n'.join(items))
 
             # Expand attachments loop $for(nodes.attachments)$ ... $endfor$
             att_loop = re.search(r'\$for\(nodes\.attachments\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
@@ -248,7 +373,7 @@ class TemplateService:
                     pass
 
                 # Enable table of contents when requested
-                if options and (options.get('includeTOC') or options.get('includeToc')):
+                if options and (options.get('includeTOC') or options.get('includeToc') or options.get('includeToc') is True or options.get('includeToc') == 'true'):
                     cmd.append('--toc')
                 
                 # Add format-specific options
