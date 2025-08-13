@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Save, Moon, Sun, Bell, GitBranch, Shield, LogOut, UserCircle, Palette, FolderOpen } from 'lucide-react';
+import { Save, Moon, Sun, Bell, GitBranch, Shield, LogOut, UserCircle, Palette, FolderOpen, FileCode } from 'lucide-react';
 import { useAuthStore } from '../services/auth';
 import { cn } from '@/lib/utils';
 
@@ -12,6 +12,7 @@ const settingsTabs = [
   { name: 'Appearance', href: '/settings/appearance', icon: Palette, exact: false },
   { name: 'Security', href: '/settings/security', icon: Shield, exact: false },
   { name: 'Project', href: '/settings/project', icon: FolderOpen, exact: false },
+  { name: 'Templates', href: '/settings/templates', icon: FileCode, exact: false },
 ];
 
 export default function Settings() {
@@ -23,8 +24,8 @@ export default function Settings() {
   };
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto flex flex-col md:flex-row md:space-x-6">
-      <div className="md:w-1/4 mb-6 md:mb-0">
+    <div className="p-4 md:p-6 max-w-none w-full flex flex-col md:flex-row md:space-x-6">
+      <div className="md:w-1/4 mb-6 md:mb-0 md:max-h-[calc(100vh-2rem)] md:overflow-auto">
         <h1 className="text-2xl font-bold mb-6 text-foreground">Settings</h1>
         <nav className="space-y-1">
           {settingsTabs.map((tab) => (
@@ -58,7 +59,7 @@ export default function Settings() {
         )}
       </div>
 
-      <div className="md:w-3/4">
+      <div className="md:w-3/4 md:max-h-[calc(100vh-2rem)] md:overflow-auto">
         <Outlet />
       </div>
     </div>

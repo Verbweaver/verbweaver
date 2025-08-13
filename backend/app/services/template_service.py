@@ -319,6 +319,11 @@ class TemplateService:
             academic_template = self._get_academic_template(format_type)
             academic_path = format_dir / "academic.md"
             academic_path.write_text(academic_template, encoding='utf-8')
+
+            # Create technical-report template
+            technical_template = self._get_technical_report_template(format_type)
+            technical_path = format_dir / "technical-report.md"
+            technical_path.write_text(technical_template, encoding='utf-8')
     
     def _get_simple_template(self, format_type: str) -> str:
         """Get simple template for a format"""
@@ -454,3 +459,139 @@ $endfor$
 $endif$
 
 $endfor$""" 
+
+    def _get_technical_report_template(self, format_type: str) -> str:
+        """Technical report template with executive summary, changelog, stakeholders, RACI, appendices."""
+        if format_type == 'html':
+            return """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>$title$</title>
+  <style>
+    body { font-family: Georgia, serif; margin: 40px; line-height: 1.6; }
+    h1, h2 { border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ccc; padding: 6px 8px; }
+    .small { font-size: 0.9em; color: #555; }
+  </style>
+  $if(toc)$<div><strong>Table of Contents</strong>$toc$</div>$endif$
+  <h1>$title$</h1>
+  <div class="small">Author: $author$ • Date: $date$</div>
+</head>
+<body>
+
+<h2>Executive Summary</h2>
+<p>$summary$</p>
+
+<h2>Document Changelog</h2>
+<table>
+  <thead><tr><th>Date</th><th>Version</th><th>Author</th><th>Change</th></tr></thead>
+  <tbody>
+    $for(changelog)$
+    <tr><td>$it.date$</td><td>$it.version$</td><td>$it.author$</td><td>$it.note$</td></tr>
+    $endfor$
+  </tbody>
+  </table>
+
+<h2>Stakeholder Registry</h2>
+<table>
+  <thead><tr><th>Name</th><th>Role</th><th>Contact</th></tr></thead>
+  <tbody>
+    $for(stakeholders)$
+    <tr><td>$it.name$</td><td>$it.role$</td><td>$it.contact$</td></tr>
+    $endfor$
+  </tbody>
+</table>
+
+<h2>RACI Matrix</h2>
+<table>
+  <thead><tr><th>Task</th><th>R</th><th>A</th><th>C</th><th>I</th></tr></thead>
+  <tbody>
+    $for(raci)$
+    <tr><td>$it.task$</td><td>$it.r$</td><td>$it.a$</td><td>$it.c$</td><td>$it.i$</td></tr>
+    $endfor$
+  </tbody>
+</table>
+
+$for(nodes)$
+<h2>$nodes.title$</h2>
+$nodes.content$
+$endfor$
+
+$if(appendices)$
+<h2>Appendices</h2>
+$for(appendices)$
+<h3>$it.title$</h3>
+$it.content$
+$endfor$
+$endif$
+
+</body>
+</html>"""
+        else:
+            return """---
+title: $title$
+author: $author$
+date: $date$
+summary: $summary$
+changelog:
+  - { date: 2025-01-01, version: 0.1, author: $author$, note: Initial draft }
+stakeholders:
+  - { name: Alice, role: Sponsor, contact: alice@example.com }
+raci:
+  - { task: Kickoff, r: Bob, a: Alice, c: Team, i: Execs }
+appendices:
+  - { title: Appendix A, content: "Additional materials." }
+---
+
+# $title$
+
+$if(toc)$
+## Table of Contents
+$toc$
+$endif$
+
+## Executive Summary
+
+$summary$
+
+## Document Changelog
+
+| Date | Version | Author | Change |
+|------|---------|--------|--------|
+$for(changelog)$
+| $it.date$ | $it.version$ | $it.author$ | $it.note$ |
+$endfor$
+
+## Stakeholder Registry
+
+| Name | Role | Contact |
+|------|------|---------|
+$for(stakeholders)$
+| $it.name$ | $it.role$ | $it.contact$ |
+$endfor$
+
+## RACI Matrix
+
+| Task | R | A | C | I |
+|------|---|---|---|---|
+$for(raci)$
+| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |
+$endfor$
+
+$for(nodes)$
+## $nodes.title$
+
+$nodes.content$
+$endfor$
+
+$if(appendices)$
+## Appendices
+$for(appendices)$
+### $it.title$
+
+$it.content$
+$endfor$
+$endif$
+"""

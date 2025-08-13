@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '../../store/projectStore';
 import { projectsApi } from '../../api/projects';
 import { Button } from '../../components/ui/Button';
-import { Save, AlertCircle } from 'lucide-react';
+import { Save, AlertCircle, RefreshCcw } from 'lucide-react';
 import ColumnManager, { KanbanColumn } from '../../components/tasks/ColumnManager';
 import { templatesApi, Template } from '../../api/templates';
 import { desktopTemplatesApi } from '../../api/desktop-templates';
@@ -20,6 +20,7 @@ export default function ProjectSettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [reseeding, setReseeding] = useState(false)
   // Tasks/Statuses settings
   const [taskColumns, setTaskColumns] = useState<KanbanColumn[]>([
     { id: 'todo', title: 'To Do', color: 'bg-gray-500' },
@@ -119,6 +120,27 @@ export default function ProjectSettingsPage() {
       await loadTasksSettings();
     }
   };
+
+  const reseedTemplatesIntoProject = async () => {
+    if (!currentProject) return
+    setReseeding(true)
+    try {
+      if (isElectron && (window as any).electronAPI && (useProjectStore.getState().currentProjectPath)) {
+        const projectPath = (useProjectStore.getState().currentProjectPath)!
+        // Desktop: reseed via IPC so local files get overwritten
+        await (window as any).electronAPI.createDirectory(projectPath) // ensure exists
+        await (window as any).electronAPI.readDirectory(projectPath) // ensure permissions
+        await (window as any).electronAPI.reseedTemplates(projectPath)
+      } else {
+        await projectsApi.reseedTemplates(currentProject.id)
+      }
+      setSuccess('Templates re-seeded into this project')
+    } catch (e) {
+      setError('Failed to re-seed templates');
+    } finally {
+      setReseeding(false)
+    }
+  }
 
   const loadTemplatesList = async () => {
     try {
@@ -272,6 +294,14 @@ export default function ProjectSettingsPage() {
               ))}
             </select>
           </div>
+        </div>
+
+        <div>
+          <h3 className="text-md font-medium text-foreground mb-2">Templates</h3>
+          <p className="text-sm text-muted-foreground mb-3">Copy current global templates (README, node, compiler) into this project again.</p>
+          <button onClick={reseedTemplatesIntoProject} className="px-3 py-2 border rounded text-sm flex items-center gap-2" disabled={reseeding}>
+            <RefreshCcw className="w-4 h-4"/> {reseeding ? 'Re-seeding…' : 'Re-seed templates into this project'}
+          </button>
         </div>
 
         {isColumnManagerOpen && (

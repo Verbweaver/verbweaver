@@ -81,8 +81,11 @@ Thumbs.db
             (repo_path_obj / 'nodes').mkdir(exist_ok=True)
             templates_dir = repo_path_obj / 'templates'
             templates_dir.mkdir(exist_ok=True)
+            # Prefer new structure: templates/nodes/ for node templates
+            node_templates_dir = templates_dir / 'nodes'
+            node_templates_dir.mkdir(exist_ok=True)
 
-            # Create Empty.md template
+            # Create Empty.md node template under templates/nodes
             empty_template_content = """---
 title: Empty
 type: node
@@ -94,7 +97,7 @@ tags: [empty, basic]
 
 Start your content here.
 """
-            empty_template_path = templates_dir / 'Empty.md'
+            empty_template_path = node_templates_dir / 'Empty.md'
             async with aiofiles.open(empty_template_path, 'w') as f:
                 await f.write(empty_template_content)
 
