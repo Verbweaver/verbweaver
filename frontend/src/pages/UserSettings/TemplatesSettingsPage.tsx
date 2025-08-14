@@ -83,17 +83,25 @@ export default function TemplatesSettingsPage() {
     try {
       if (isElectron) {
         let base = await (window as any).electronAPI.getStoreValue('globalTemplatesDir')
-        if (!base) {
+        if (!base || base === '/templates' || base === 'templates') {
           // Default to userData/templates
-          const prefs = await (window as any).electronAPI.getPreferences()
           const userData = (await (window as any).electronAPI.getStoreValue('userDataPath')) || ''
-          base = `${userData || ''}/templates`
-          await (window as any).electronAPI.setStoreValue('globalTemplatesDir', base)
+          if (!userData) {
+            // As a last resort, do nothing to avoid showing "/templates"
+            console.warn('[Templates] Could not resolve userData path; skip default base')
+          } else {
+            base = `${String(userData).replace(/\\/g,'/')}/templates`
+            await (window as any).electronAPI.setStoreValue('globalTemplatesDir', base)
+          }
         }
-        setDesktopDir(base)
-        await ensureDesktopDefaults(base)
-    const files = await listDesktopTemplates(base)
-        setItems(files)
+        if (base) {
+          setDesktopDir(base)
+          await ensureDesktopDefaults(base)
+          const files = await listDesktopTemplates(base)
+          setItems(files)
+        } else {
+          setItems([])
+        }
       } else {
         const res = await apiClient.get('/templates/global')
         setItems(res.data.templates || [])
@@ -159,7 +167,67 @@ export default function TemplatesSettingsPage() {
   return (
     <div>
       <h2 className="text-xl font-semibold mb-2">Templates</h2>
-      <p className="text-sm text-muted-foreground mb-4">Global templates used when creating new projects. In the web app, only admins can edit.</p>
+      <p className="text-sm text-muted-foreground mb-2">Global templates used when creating new projects. In the web app, only admins can edit.</p>
+      {isElectron && (
+        <div className="text-xs bg-accent/40 border border-border rounded p-2 mb-3 flex items-center gap-2">
+          <span className="font-medium">Folder:</span>
+          <span className="truncate" title={desktopDir || 'Not set'}>{desktopDir || 'Not set'}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              className="px-2 py-0.5 border rounded"
+              title="Open folder"
+              disabled={!desktopDir}
+              onClick={async () => {
+                if (!desktopDir) return
+                const api = (window as any).electronAPI
+                try {
+                  if (api?.showItemInFolder) {
+                    await api.showItemInFolder(desktopDir)
+                    return
+                  }
+                } catch {}
+                try {
+                  if (api?.openExternal) {
+                    const url = `file://${desktopDir.replace(/\\/g,'/')}`
+                    await api.openExternal(url)
+                    return
+                  }
+                } catch {}
+                try {
+                  if (api?.openPath) {
+                    await api.openPath(desktopDir)
+                    return
+                  }
+                } catch {}
+                toast.error('Unable to open folder')
+              }}
+            >Open</button>
+            <button
+              className="px-2 py-0.5 border rounded"
+              title="Copy path"
+              disabled={!desktopDir}
+              onClick={async () => {
+                if (!desktopDir) return
+                if (navigator?.clipboard?.writeText) {
+                  await navigator.clipboard.writeText(desktopDir)
+                  toast.success('Path copied to clipboard')
+                } else {
+                  const ta = document.createElement('textarea')
+                  ta.value = desktopDir
+                  ta.style.position = 'fixed'
+                  ta.style.opacity = '0'
+                  document.body.appendChild(ta)
+                  ta.focus()
+                  ta.select()
+                  try { document.execCommand('copy') } catch {}
+                  document.body.removeChild(ta)
+                  toast.success('Path copied to clipboard')
+                }
+              }}
+            >Copy</button>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-12 gap-3">
         <div className="col-span-4 border rounded p-2 h-[60vh] overflow-auto">
           <div className="flex items-center justify-between mb-2">
