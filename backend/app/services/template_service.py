@@ -202,23 +202,89 @@ class TemplateService:
         - $if(nodes.metadata)$, $for(nodes.metadata)$ and the $it.key$/$it.value$ placeholders
         - $if(nodes.attachments)$, $for(nodes.attachments)$ and $it.name$/$it.size$
         """
-        processed_content = template_content
+        # Normalize newlines for consistent regex behavior
+        processed_content = template_content.replace('\r\n', '\n').replace('\r', '\n')
 
         # Replace simple variables first
         for key, value in data.items():
             if isinstance(value, (str, bool, int, float)):
                 processed_content = processed_content.replace(f'${key}$', str(value))
 
-        # Top-level conditionals like $if(toc)$ ... $endif$
+        # Top-level conditionals like $if(toc)$ ... $endif$, plus $if(nodes)$ and $ifnot(nodes)$
+        def compute_truthy(value: Any) -> bool:
+            if isinstance(value, list):
+                return len(value) > 0
+            return bool(value)
+
         def replace_top_level_if(var_name: str, text: str) -> str:
             pattern = re.compile(rf"\$if\({re.escape(var_name)}\)\$(.*?)\$endif\$", re.DOTALL)
-            truthy = bool(data.get(var_name))
-            def repl(match):
-                return match.group(1) if truthy else ''
-            return pattern.sub(repl, text)
+            truthy = compute_truthy(data.get(var_name))
+            return pattern.sub(lambda m: m.group(1) if truthy else '', text)
 
-        for cond in ['toc', 'includeMetadata', 'include_metadata']:
+        def replace_top_level_ifnot(var_name: str, text: str) -> str:
+            pattern = re.compile(rf"\$ifnot\({re.escape(var_name)}\)\$(.*?)\$endif\$", re.DOTALL)
+            truthy = compute_truthy(data.get(var_name))
+            return pattern.sub(lambda m: m.group(1) if not truthy else '', text)
+
+        for cond in ['toc', 'includeMetadata', 'include_metadata', 'nodes']:
             processed_content = replace_top_level_if(cond, processed_content)
+            processed_content = replace_top_level_ifnot(cond, processed_content)
+
+        # Helper to resolve dotted path against arbitrary data dict
+        def resolve_path(expr: str, ctx: Dict[str, Any]) -> Any:
+            cur: Any = ctx
+            for part in str(expr).split('.') if expr else []:
+                if isinstance(cur, dict) and part in cur:
+                    cur = cur[part]
+                else:
+                    return None
+            return cur
+
+        # Generic top-level loops for document variables: $for(var)$...$endfor$
+        # Supports arrays of primitives/objects and dicts.
+        # IMPORTANT: Do NOT consume $for(nodes)$ here; nodes require special processing later.
+        loop_pat = re.compile(r"\$for\(([a-zA-Z_][a-zA-Z0-9_\.]*)\)\$(.*?)\$endfor\$", re.DOTALL)
+        pos = 0
+        rebuilt: List[str] = []
+        while True:
+            m = loop_pat.search(processed_content, pos)
+            if not m:
+                rebuilt.append(processed_content[pos:])
+                break
+            expr = m.group(1)
+            inner = m.group(2)
+            # Leave $for(nodes)$ blocks untouched for node-specific processing
+            if expr.startswith('nodes'):
+                rebuilt.append(processed_content[pos:m.end()])
+                pos = m.end()
+                continue
+            value = resolve_path(expr, data)
+            rendered = ''
+            if isinstance(value, list):
+                items_out: List[str] = []
+                for it in value:
+                    chunk = inner
+                    if isinstance(it, dict):
+                        for k, v in it.items():
+                            chunk = chunk.replace(f'$it.{k}$', str(v))
+                    else:
+                        chunk = chunk.replace('$it$', str(it))
+                    items_out.append(chunk)
+                rendered = '\n'.join(items_out)
+            elif isinstance(value, dict):
+                items_out = []
+                for k, v in value.items():
+                    chunk = inner
+                    chunk = chunk.replace('$it.key$', str(k))
+                    chunk = chunk.replace('$it.value$', str(v))
+                    items_out.append(chunk)
+                rendered = '\n'.join(items_out)
+            else:
+                rendered = ''
+            rebuilt.append(processed_content[pos:m.start()])
+            rebuilt.append(rendered)
+            pos = m.end()
+        processed_content = ''.join(rebuilt)
 
         # Generate a basic Table of Contents if requested and placeholder is present
         if data.get('toc') and '$toc$' in processed_content:
@@ -227,21 +293,55 @@ class TemplateService:
 
         # Handle nodes array and node-scoped controls
         if 'nodes' in data:
-            processed_content = self._process_nodes_array(processed_content, data['nodes'])
+            # Process all occurrences of $for(nodes)$ blocks iteratively
+            prev = None
+            while prev != processed_content:
+                prev = processed_content
+                processed_content = self._process_nodes_array(processed_content, data['nodes'])
+
+        # Final safety cleanup: strip any leftover control tokens to prevent leaking into output
+        # This only removes the markers; at this point, content should already be correctly included/excluded.
+        processed_content = re.sub(r"\$if\([^)]+\)\$", '', processed_content)
+        processed_content = re.sub(r"\$ifnot\([^)]+\)\$", '', processed_content)
+        processed_content = processed_content.replace('$endif$', '')
 
         return processed_content
     
     def _process_nodes_array(self, template: str, nodes: List[Dict[str, Any]]) -> str:
-        """Process the nodes array in the template."""
-        for_match = re.search(r'\$for\(nodes\)\$(.*?)\$endfor\$', template, re.DOTALL)
-        if not for_match:
-            return template
+        """Process all $for(nodes)$ ... $endfor$ loops in the template (zero or more occurrences)."""
+        pattern = re.compile(r'\$for\(nodes\)\$(.*?)\$endfor\$', re.DOTALL)
+        out_parts: List[str] = []
+        idx = 0
+        while True:
+            m = pattern.search(template, idx)
+            if not m:
+                out_parts.append(template[idx:])
+                break
 
-        loop_content = for_match.group(1)
-        rendered_nodes: List[str] = []
+            # Append text before this loop
+            out_parts.append(template[idx:m.start()])
 
-        for node in nodes:
-            node_block = loop_content
+            loop_content = m.group(1)
+            rendered_nodes: List[str] = []
+
+            for node in nodes:
+                node_block = loop_content
+
+            # Helper: resolve dotted expression like nodes.vars.appendix against current node
+            def resolve_node_expr(expr: str, node_obj: Dict[str, Any]) -> Any:
+                try:
+                    path_expr = expr.strip()
+                    if path_expr.startswith('nodes.'):
+                        path_expr = path_expr[len('nodes.'):]
+                    cur: Any = node_obj
+                    for part in str(path_expr).split('.') if path_expr else []:
+                        if isinstance(cur, dict) and part in cur:
+                            cur = cur[part]
+                        else:
+                            return None
+                    return cur
+                except Exception:
+                    return None
 
             # Helper: recursively replace $nodes.<path>$ for nested dicts
             def replace_nested(prefix: str, obj: Any, text: str) -> str:
@@ -262,52 +362,93 @@ class TemplateService:
                 elif isinstance(value, dict):
                     node_block = replace_nested(key, value, node_block)
 
-            # Node-scoped conditionals
-            def eval_node_if(var_expr: str, present: bool, text: str) -> str:
-                pattern = re.compile(rf"\$if\({re.escape(var_expr)}\)\$(.*?)\$endif\$", re.DOTALL)
-                return pattern.sub(lambda m: m.group(1) if present else '', text)
+            # Node-scoped conditionals: support $if(nodes.<path>)$ ... $endif$ and $ifnot(nodes.<path>)$ ... $endif$
+            def apply_node_conditionals(text: str) -> str:
+                # $if(expr)$ ... $endif$
+                if_pat = re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
+                # $ifnot(expr)$ ... $endif$
+                ifnot_pat = re.compile(r"\$ifnot\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
 
+                # Single-pass evaluation to avoid nesting issues
+                def if_repl(m):
+                    expr = m.group(1).strip()
+                    if expr.startswith('nodes.'):
+                        val = resolve_node_expr(expr, node)
+                        return m.group(2) if bool(val) else ''
+                    return m.group(0)
+
+                def ifnot_repl(m):
+                    expr = m.group(1).strip()
+                    if expr.startswith('nodes.'):
+                        val = resolve_node_expr(expr, node)
+                        return m.group(2) if (not bool(val)) else ''
+                    return m.group(0)
+
+                text = if_pat.sub(if_repl, text)
+                text = ifnot_pat.sub(ifnot_repl, text)
+                return text
+
+            # Also support legacy convenience checks for metadata/vars/attachments presence
             has_meta = isinstance(node.get('metadata'), dict) and len(node.get('metadata')) > 0
-            node_block = eval_node_if('nodes.metadata', has_meta, node_block)
+            if has_meta:
+                node_block = re.sub(r"\$if\(nodes\.metadata\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
+            else:
+                node_block = re.sub(r"\$if\(nodes\.metadata\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
+
             has_vars = isinstance(node.get('vars'), dict) and len(node.get('vars')) > 0
-            node_block = eval_node_if('nodes.vars', has_vars, node_block)
+            if has_vars:
+                node_block = re.sub(r"\$if\(nodes\.vars\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
+            else:
+                node_block = re.sub(r"\$if\(nodes\.vars\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
 
             has_atts = isinstance(node.get('attachments'), list) and len(node.get('attachments')) > 0
-            node_block = eval_node_if('nodes.attachments', has_atts, node_block)
+            if has_atts:
+                node_block = re.sub(r"\$if\(nodes\.attachments\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
+            else:
+                node_block = re.sub(r"\$if\(nodes\.attachments\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
 
-            # Expand metadata loop $for(nodes.metadata)$ ... $endfor$
-            meta_loop = re.search(r'\$for\(nodes\.metadata\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
-            if meta_loop:
+            # Apply generic node conditionals ($if(nodes.path)$ and $ifnot(nodes.path)$)
+            node_block = apply_node_conditionals(node_block)
+
+            # Expand metadata loop $for(nodes.metadata)$ ... $endfor$ (all occurrences)
+            while True:
+                meta_loop = re.search(r'\$for\(nodes\.metadata\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
+                if not meta_loop:
+                    break
                 inner = meta_loop.group(1)
                 items: List[str] = []
                 if has_meta:
-                    for mk, mv in node['metadata'].items():
+                    for mk, mv in node.get('metadata', {}).items():
                         item = inner
                         item = item.replace('$it.key$', str(mk))
                         item = item.replace('$it.value$', str(mv))
                         items.append(item)
                 node_block = node_block.replace(meta_loop.group(0), '\n'.join(items))
 
-            # Expand vars loop $for(nodes.vars)$ ... $endfor$
-            vars_loop = re.search(r'\$for\(nodes\.vars\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
-            if vars_loop:
+            # Expand vars loop $for(nodes.vars)$ ... $endfor$ (all occurrences)
+            while True:
+                vars_loop = re.search(r'\$for\(nodes\.vars\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
+                if not vars_loop:
+                    break
                 inner = vars_loop.group(1)
                 items: List[str] = []
                 if has_vars:
-                    for mk, mv in node['vars'].items():
+                    for mk, mv in node.get('vars', {}).items():
                         item = inner
                         item = item.replace('$it.key$', str(mk))
                         item = item.replace('$it.value$', str(mv))
                         items.append(item)
                 node_block = node_block.replace(vars_loop.group(0), '\n'.join(items))
 
-            # Expand attachments loop $for(nodes.attachments)$ ... $endfor$
-            att_loop = re.search(r'\$for\(nodes\.attachments\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
-            if att_loop:
+            # Expand attachments loop $for(nodes.attachments)$ ... $endfor$ (all occurrences)
+            while True:
+                att_loop = re.search(r'\$for\(nodes\.attachments\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
+                if not att_loop:
+                    break
                 inner = att_loop.group(1)
-                items = []
+                items: List[str] = []
                 if has_atts:
-                    for att in node['attachments']:
+                    for att in node.get('attachments', []):
                         if isinstance(att, dict):
                             item = inner
                             for k, v in att.items():
@@ -325,10 +466,13 @@ class TemplateService:
                         bullet = f"- {name} ({size})" if size else f"- {name}"
                         bullet_lines.append(bullet)
                 node_block = node_block.replace('$nodes.attachments$', '\n'.join(bullet_lines))
-
+            # Always append the processed node block
             rendered_nodes.append(node_block)
 
-        return template.replace(for_match.group(0), '\n\n'.join(rendered_nodes))
+            out_parts.append('\n\n'.join(rendered_nodes))
+            idx = m.end()
+
+        return ''.join(out_parts)
 
     def _generate_basic_toc(self, nodes: List[Dict[str, Any]]) -> str:
         """Generate a simple Markdown Table of Contents based on node titles and headings.
@@ -752,6 +896,12 @@ variables:
         c: { type: string }
         i: { type: string }
 nodeVariables:
+  appendix:
+    type: boolean
+    label: Appendix
+    description: Treat this node as an appendix section
+    path: metadata.appendix
+    default: false
   cvss_vector:
     type: string
     description: Optional CVSS v3 vector string from node metadata.
@@ -798,10 +948,21 @@ $for(raci)$
 $endfor$
 
 $for(nodes)$
+$ifnot(nodes.vars.appendix)$
 ## $nodes.title$
 
 $nodes.content$
+$endif$
 $endfor$
 
+$if(nodes)$
 ## Appendices
+$for(nodes)$
+$if(nodes.vars.appendix)$
+### $nodes.title$
+
+$nodes.content$
+$endif$
+$endfor$
+$endif$
 """

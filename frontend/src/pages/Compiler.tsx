@@ -227,31 +227,56 @@ function CompilerView() {
       try {
         setIsPrefillingNodeVars(true)
         const updates: Record<string, Record<string, any>> = { ...(nodeVariables || {}) }
+
+        // Build a best-effort resolver over the nodes/ tree to handle minor path mismatches
+        const normalize = (s: string) => s.replace(/\\/g, '/');
+        const slugify = (name: string) => {
+          const idx = name.lastIndexOf('.')
+          const base = idx >= 0 ? name.slice(0, idx) : name
+          const ext = idx >= 0 ? name.slice(idx) : ''
+          const s = base.toLowerCase().replace(/[ _]+/g, '-').replace(/-+/g, '-')
+          return `${s}${ext.toLowerCase()}`
+        }
+        const flatten = (items: any[], prefix: string): string[] => {
+          const out: string[] = []
+          for (const it of items || []) {
+            const rel = prefix ? `${prefix}/${it.name}` : it.name
+            if (it.type === 'directory') out.push(...flatten(it.children || [], rel))
+            else if (it.type === 'file') out.push(rel)
+          }
+          return out
+        }
+        let indexBySlug: Record<string, string> = {}
+        try {
+          const tree = await editorApi.getFileTree(currentProject.id, 'nodes')
+          const all = flatten(tree, '').map(p => normalize(`nodes/${p}`))
+          indexBySlug = Object.fromEntries(all.map(p => [slugify(p.split('/').pop() || p), p]))
+        } catch {}
+
         await Promise.all(orderedNodes.map(async (p) => {
-          try {
-            const file = await editorApi.getFile(currentProject.id, p)
+          const tryRead = async (pathAttempt: string) => {
+            const file = await editorApi.getFile(currentProject.id, pathAttempt)
             const meta = file?.metadata || {}
             updates[p] = updates[p] || {}
             for (const k of varNames) {
-              // Do not override explicit user edits
               if (updates[p][k] !== undefined && updates[p][k] !== '') continue
               const pathExpr = nvDefs[k]?.path as string | undefined
               if (!pathExpr) continue
-              // Resolve dotted path from metadata
               const parts = pathExpr.split('.')
               let cur: any = meta
-              for (const part of parts) {
-                if (cur && typeof cur === 'object' && part in cur) {
-                  cur = cur[part]
-                } else {
-                  cur = undefined
-                  break
-                }
-              }
+              for (const part of parts) { if (cur && typeof cur === 'object' && part in cur) cur = cur[part]; else { cur = undefined; break } }
               if (cur !== undefined) updates[p][k] = cur
             }
+          }
+          try {
+            await tryRead(normalize(p))
           } catch {
-            // ignore per-file errors
+            // Fallback by slug
+            const name = (normalize(p).split('/').pop() || '').trim()
+            const candidate = indexBySlug[slugify(name)]
+            if (candidate) {
+              try { await tryRead(candidate) } catch {}
+            }
           }
         }))
         setNodeVariables(updates)
@@ -926,4 +951,4 @@ function CompilerView() {
   )
 }
 
-export default CompilerView 
+export default CompilerView

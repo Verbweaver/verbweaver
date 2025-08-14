@@ -187,14 +187,13 @@ export default function TemplatesSettingsPage() {
 `        a: { type: string }\n` +
 `        c: { type: string }\n` +
 `        i: { type: string }\n` +
-`  appendices:\n` +
-`    type: array\n` +
-`    item:\n` +
-`      type: object\n` +
-`      fields:\n` +
-`        title: { type: string }\n` +
-`        content: { type: string }\n` +
 `nodeVariables:\n` +
+`  appendix:\n` +
+`    type: boolean\n` +
+`    label: Appendix\n` +
+`    description: Treat this node as an appendix section\n` +
+`    path: metadata.appendix\n` +
+`    default: false\n` +
 `  cvss_vector:\n` +
 `    type: string\n` +
 `    description: Optional CVSS v3 vector string from node metadata.\n` +
@@ -205,12 +204,12 @@ export default function TemplatesSettingsPage() {
 `    path: metadata.cvss\n` +
 `---\n\n` +
 `# $title$\n\n` +
-`## Executive Summary\n\n` +
-`$summary$\n\n` +
 `$if(toc)$\n` +
 `## Table of Contents\n` +
 `$toc$\n` +
 `$endif$\n\n` +
+`## Executive Summary\n\n` +
+`$summary$\n\n` +
 `## Document Changelog\n\n` +
 `| Date | Version | Author | Change |\n` +
 `|------|---------|--------|--------|\n` +
@@ -230,14 +229,18 @@ export default function TemplatesSettingsPage() {
 `| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |\n` +
 `$endfor$\n\n` +
 `$for(nodes)$\n` +
+`$ifnot(nodes.vars.appendix)$\n` +
 `## $nodes.title$\n\n` +
 `$nodes.content$\n` +
+`$endif$\n` +
 `$endfor$\n\n` +
-`$if(appendices)$\n` +
+`$if(nodes)$\n` +
 `## Appendices\n` +
-`$for(appendices)$\n` +
-`### $it.title$\n\n` +
-`$it.content$\n` +
+`$for(nodes)$\n` +
+`$if(nodes.vars.appendix)$\n` +
+`### $nodes.title$\n\n` +
+`$nodes.content$\n` +
+`$endif$\n` +
 `$endfor$\n` +
 `$endif$\n`
     for (const f of fmts) {
