@@ -1046,20 +1046,175 @@ Start your content here.
         for (const fmt of fmts) {
           const base = join(dstCompiler, fmt);
           await fs.mkdir(base, { recursive: true });
-          // minimal simple.md
+          // minimal simple.md (now schema-driven to match backend defaults)
           const simplePath = join(base, 'simple.md');
           if (!existsSync(simplePath)) {
-            const simpleContent = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\n---\n\n# $title$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n\n$endfor$\n`;
+            const simpleContent = `---\n` +
+`title: $title$\n` +
+`author: $author$\n` +
+`date: $date$\n` +
+`variables:\n` +
+`  toc:\n` +
+`    type: boolean\n` +
+`    description: Include a generated table of contents at the top.\n` +
+`nodeVariables:\n` +
+`  cvss:\n` +
+`    type: number\n` +
+`    description: Optional CVSS base score if present on a node's metadata.\n` +
+`    path: metadata.cvss\n` +
+`---\n\n` +
+`# $title$\n\n` +
+`$if(toc)$\n` +
+`## Table of Contents\n` +
+`$toc$\n` +
+`$endif$\n\n` +
+`$for(nodes)$\n` +
+`## $nodes.title$\n\n` +
+`$nodes.content$\n\n` +
+`$if(nodes.vars)$\n` +
+`### Variables\n` +
+`$for(nodes.vars)$\n` +
+`- $it.key$: $it.value$\n` +
+`$endfor$\n` +
+`$endif$\n\n` +
+`$endfor$\n`;
             await fs.writeFile(simplePath, simpleContent, 'utf-8');
           }
           const academicPath = join(base, 'academic.md');
           if (!existsSync(academicPath)) {
-            const academicContent = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\n---\n\n# $title$\n\n$if(toc)$\n## Table of Contents\n$toc$\n$endif$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n\n$endfor$\n`;
+            const academicContent = `---\n` +
+`title: $title$\n` +
+`author: $author$\n` +
+`date: $date$\n` +
+`variables:\n` +
+`  toc:\n` +
+`    type: boolean\n` +
+`    description: Include a generated table of contents.\n` +
+`  includeMetadata:\n` +
+`    type: boolean\n` +
+`    description: Show each node's metadata under its content.\n` +
+`nodeVariables:\n` +
+`  cvss_vector:\n` +
+`    type: string\n` +
+`    description: Optional CVSS v3 vector from node metadata.\n` +
+`    path: metadata.cvss_vector\n` +
+`  cvss:\n` +
+`    type: number\n` +
+`    description: Optional CVSS base score from node metadata.\n` +
+`    path: metadata.cvss\n` +
+`---\n\n` +
+`# $title$\n\n` +
+`$if(toc)$\n` +
+`## Table of Contents\n` +
+`$toc$\n` +
+`$endif$\n\n` +
+`$for(nodes)$\n` +
+`## $nodes.title$\n\n` +
+`$nodes.content$\n\n` +
+`$if(nodes.vars)$\n` +
+`### Variables\n` +
+`$for(nodes.vars)$\n` +
+`- **$it.key$:** $it.value$\n` +
+`$endfor$\n` +
+`$endif$\n\n` +
+`$if(includeMetadata)$\n` +
+`$if(nodes.metadata)$\n` +
+`### Metadata\n` +
+`$for(nodes.metadata)$\n` +
+`- **$it.key$:** $it.value$\n` +
+`$endfor$\n` +
+`$endif$\n` +
+`$endif$\n\n` +
+`$if(nodes.attachments)$\n` +
+`### Attachments\n` +
+`$for(nodes.attachments)$\n` +
+`- $it.name$ ($it.size$)\n` +
+`$endfor$\n` +
+`$endif$\n\n` +
+`$endfor$\n`;
             await fs.writeFile(academicPath, academicContent, 'utf-8');
           }
           const techPath = join(base, 'technical-report.md');
           if (!existsSync(techPath)) {
-            const techContent = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\nsummary: $summary$\n---\n\n# $title$\n\n## Executive Summary\n\n$summary$\n\n$if(toc)$\n## Table of Contents\n$toc$\n$endif$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n\n$endfor$\n`;
+            const techContent = `---\n` +
+`title: $title$\n` +
+`author: $author$\n` +
+`date: $date$\n` +
+`summary: $summary$\n` +
+`variables:\n` +
+`  toc:\n` +
+`    type: boolean\n` +
+`    description: Include a generated table of contents.\n` +
+`  summary:\n` +
+`    type: string\n` +
+`    description: Executive summary paragraph.\n` +
+`  changelog:\n` +
+`    type: array\n` +
+`    item:\n` +
+`      type: object\n` +
+`      fields:\n` +
+`        date: { type: string }\n` +
+`        version: { type: string }\n` +
+`        author: { type: string }\n` +
+`        note: { type: string }\n` +
+`  stakeholders:\n` +
+`    type: array\n` +
+`    item:\n` +
+`      type: object\n` +
+`      fields:\n` +
+`        name: { type: string }\n` +
+`        role: { type: string }\n` +
+`        contact: { type: string }\n` +
+`  raci:\n` +
+`    type: array\n` +
+`    item:\n` +
+`      type: object\n` +
+`      fields:\n` +
+`        task: { type: string }\n` +
+`        r: { type: string }\n` +
+`        a: { type: string }\n` +
+`        c: { type: string }\n` +
+`        i: { type: string }\n` +
+`nodeVariables:\n` +
+`  cvss_vector:\n` +
+`    type: string\n` +
+`    description: Optional CVSS v3 vector string from node metadata.\n` +
+`    path: metadata.cvss_vector\n` +
+`  cvss:\n` +
+`    type: number\n` +
+`    description: Optional CVSS base score from node metadata.\n` +
+`    path: metadata.cvss\n` +
+`---\n\n` +
+`# $title$\n\n` +
+`## Executive Summary\n\n` +
+`$summary$\n\n` +
+`$if(toc)$\n` +
+`## Table of Contents\n` +
+`$toc$\n` +
+`$endif$\n\n` +
+`## Document Changelog\n\n` +
+`| Date | Version | Author | Change |\n` +
+`|------|---------|--------|--------|\n` +
+`$for(changelog)$\n` +
+`| $it.date$ | $it.version$ | $it.author$ | $it.note$ |\n` +
+`$endfor$\n\n` +
+`## Stakeholder Registry\n\n` +
+`| Name | Role | Contact |\n` +
+`|------|------|---------|\n` +
+`$for(stakeholders)$\n` +
+`| $it.name$ | $it.role$ | $it.contact$ |\n` +
+`$endfor$\n\n` +
+`## RACI Matrix\n\n` +
+`| Task | R | A | C | I |\n` +
+`|------|---|---|---|---|\n` +
+`$for(raci)$\n` +
+`| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |\n` +
+`$endfor$\n\n` +
+`$for(nodes)$\n` +
+`## $nodes.title$\n\n` +
+`$nodes.content$\n` +
+`$endfor$\n\n` +
+`## Appendices\n`;
             await fs.writeFile(techPath, techContent, 'utf-8');
           }
         }
@@ -1353,8 +1508,25 @@ Start your content here.
     }
 
     // 1. Read the template file
-    const absoluteTemplatePath = path.join(projectPath, templateRelativePath);
-    if (!existsSync(absoluteTemplatePath)) {
+    // Accept multiple relative forms: "templates/nodes/X.md", "templates/X.md" (flattened), or just "X.md"
+    const candidates: string[] = [];
+    const rel = templateRelativePath.replace(/\\/g, '/');
+    if (path.isAbsolute(rel)) {
+      candidates.push(rel);
+    } else {
+      candidates.push(path.join(projectPath, rel));
+      // If UI sent flattened path under templates/ (without nodes/), try templates/nodes/
+      if (rel.startsWith('templates/') && !rel.startsWith('templates/nodes/')) {
+        const rest = rel.substring('templates/'.length);
+        candidates.push(path.join(projectPath, 'templates', 'nodes', rest));
+      }
+      // If UI sent just filename, look under templates/nodes/
+      if (!rel.includes('/') && rel.toLowerCase().endsWith('.md')) {
+        candidates.push(path.join(projectPath, 'templates', 'nodes', rel));
+      }
+    }
+    let absoluteTemplatePath = candidates.find(p => existsSync(p));
+    if (!absoluteTemplatePath) {
       throw new Error(`Template file not found: ${templateRelativePath}`);
     }
     const templateFileContent = await fs.readFile(absoluteTemplatePath, 'utf8');

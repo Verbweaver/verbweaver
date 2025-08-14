@@ -66,10 +66,180 @@ export default function TemplatesSettingsPage() {
     const emptyNode = `---\ntitle: Empty\ntype: node\ndescription: A blank starting point.\n---\n\n# $title$\n\nStart your content here.\n`
     if (!(await exists(`${root}/templates/nodes/Empty.md`))) await write(`${root}/templates/nodes/Empty.md`, emptyNode)
 
-    // Simple/Academic/Technical-report compiler templates (markdown version is enough for users to edit)
-    const simpleMd = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\n---\n\n# $title$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n\n$endfor$\n`
-    const academicMd = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\n---\n\n# $title$\n\n$if(toc)$\n## Table of Contents\n$toc$\n$endif$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n\n$endfor$\n`
-    const technicalMd = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\nsummary: $summary$\nchangelog:\n  - { date: 2025-01-01, version: 0.1, author: $author$, note: Initial draft }\nstakeholders:\n  - { name: Alice, role: Sponsor, contact: alice@example.com }\nraci:\n  - { task: Kickoff, r: Bob, a: Alice, c: Team, i: Execs }\nappendices:\n  - { title: Appendix A, content: "Additional materials." }\n---\n\n# $title$\n\n$if(toc)$\n## Table of Contents\n$toc$\n$endif$\n\n## Executive Summary\n\n$summary$\n\n## Document Changelog\n\n| Date | Version | Author | Change |\n|------|---------|--------|--------|\n$for(changelog)$\n| $it.date$ | $it.version$ | $it.author$ | $it.note$ |\n$endfor$\n\n## Stakeholder Registry\n\n| Name | Role | Contact |\n|------|------|---------|\n$for(stakeholders)$\n| $it.name$ | $it.role$ | $it.contact$ |\n$endfor$\n\n## RACI Matrix\n\n| Task | R | A | C | I |\n|------|---|---|---|---|\n$for(raci)$\n| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |\n$endfor$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n$endfor$\n\n$if(appendices)$\n## Appendices\n$for(appendices)$\n### $it.title$\n\n$it.content$\n$endfor$\n$endif$\n`
+    // Simple/Academic/Technical-report compiler templates (markdown) with schema-driven variables
+    const simpleMd = `---\n` +
+`title: $title$\n` +
+`author: $author$\n` +
+`date: $date$\n` +
+`variables:\n` +
+`  toc:\n` +
+`    type: boolean\n` +
+`    description: Include a generated table of contents at the top.\n` +
+`nodeVariables:\n` +
+`  cvss:\n` +
+`    type: number\n` +
+`    description: Optional CVSS base score if present on a node's metadata.\n` +
+`    path: metadata.cvss\n` +
+`---\n\n` +
+`# $title$\n\n` +
+`$if(toc)$\n` +
+`## Table of Contents\n` +
+`$toc$\n` +
+`$endif$\n\n` +
+`$for(nodes)$\n` +
+`## $nodes.title$\n\n` +
+`$nodes.content$\n\n` +
+`$if(nodes.vars)$\n` +
+`### Variables\n` +
+`$for(nodes.vars)$\n` +
+`- $it.key$: $it.value$\n` +
+`$endfor$\n` +
+`$endif$\n\n` +
+`$endfor$\n`
+
+    const academicMd = `---\n` +
+`title: $title$\n` +
+`author: $author$\n` +
+`date: $date$\n` +
+`variables:\n` +
+`  toc:\n` +
+`    type: boolean\n` +
+`    description: Include a generated table of contents.\n` +
+`  includeMetadata:\n` +
+`    type: boolean\n` +
+`    description: Show each node's metadata under its content.\n` +
+`nodeVariables:\n` +
+`  cvss_vector:\n` +
+`    type: string\n` +
+`    description: Optional CVSS v3 vector from node metadata.\n` +
+`    path: metadata.cvss_vector\n` +
+`  cvss:\n` +
+`    type: number\n` +
+`    description: Optional CVSS base score from node metadata.\n` +
+`    path: metadata.cvss\n` +
+`---\n\n` +
+`# $title$\n\n` +
+`$if(toc)$\n` +
+`## Table of Contents\n` +
+`$toc$\n` +
+`$endif$\n\n` +
+`$for(nodes)$\n` +
+`## $nodes.title$\n\n` +
+`$nodes.content$\n\n` +
+`$if(nodes.vars)$\n` +
+`### Variables\n` +
+`$for(nodes.vars)$\n` +
+`- **$it.key$:** $it.value$\n` +
+`$endfor$\n` +
+`$endif$\n\n` +
+`$if(includeMetadata)$\n` +
+`$if(nodes.metadata)$\n` +
+`### Metadata\n` +
+`$for(nodes.metadata)$\n` +
+`- **$it.key$:** $it.value$\n` +
+`$endfor$\n` +
+`$endif$\n` +
+`$endif$\n\n` +
+`$if(nodes.attachments)$\n` +
+`### Attachments\n` +
+`$for(nodes.attachments)$\n` +
+`- $it.name$ ($it.size$)\n` +
+`$endfor$\n` +
+`$endif$\n\n` +
+`$endfor$\n`
+
+    const technicalMd = `---\n` +
+`title: $title$\n` +
+`author: $author$\n` +
+`date: $date$\n` +
+`summary: $summary$\n` +
+`variables:\n` +
+`  toc:\n` +
+`    type: boolean\n` +
+`    description: Include a generated table of contents.\n` +
+`  summary:\n` +
+`    type: string\n` +
+`    description: Executive summary paragraph.\n` +
+`  changelog:\n` +
+`    type: array\n` +
+`    item:\n` +
+`      type: object\n` +
+`      fields:\n` +
+`        date: { type: string }\n` +
+`        version: { type: string }\n` +
+`        author: { type: string }\n` +
+`        note: { type: string }\n` +
+`  stakeholders:\n` +
+`    type: array\n` +
+`    item:\n` +
+`      type: object\n` +
+`      fields:\n` +
+`        name: { type: string }\n` +
+`        role: { type: string }\n` +
+`        contact: { type: string }\n` +
+`  raci:\n` +
+`    type: array\n` +
+`    item:\n` +
+`      type: object\n` +
+`      fields:\n` +
+`        task: { type: string }\n` +
+`        r: { type: string }\n` +
+`        a: { type: string }\n` +
+`        c: { type: string }\n` +
+`        i: { type: string }\n` +
+`  appendices:\n` +
+`    type: array\n` +
+`    item:\n` +
+`      type: object\n` +
+`      fields:\n` +
+`        title: { type: string }\n` +
+`        content: { type: string }\n` +
+`nodeVariables:\n` +
+`  cvss_vector:\n` +
+`    type: string\n` +
+`    description: Optional CVSS v3 vector string from node metadata.\n` +
+`    path: metadata.cvss_vector\n` +
+`  cvss:\n` +
+`    type: number\n` +
+`    description: Optional CVSS base score from node metadata.\n` +
+`    path: metadata.cvss\n` +
+`---\n\n` +
+`# $title$\n\n` +
+`## Executive Summary\n\n` +
+`$summary$\n\n` +
+`$if(toc)$\n` +
+`## Table of Contents\n` +
+`$toc$\n` +
+`$endif$\n\n` +
+`## Document Changelog\n\n` +
+`| Date | Version | Author | Change |\n` +
+`|------|---------|--------|--------|\n` +
+`$for(changelog)$\n` +
+`| $it.date$ | $it.version$ | $it.author$ | $it.note$ |\n` +
+`$endfor$\n\n` +
+`## Stakeholder Registry\n\n` +
+`| Name | Role | Contact |\n` +
+`|------|------|---------|\n` +
+`$for(stakeholders)$\n` +
+`| $it.name$ | $it.role$ | $it.contact$ |\n` +
+`$endfor$\n\n` +
+`## RACI Matrix\n\n` +
+`| Task | R | A | C | I |\n` +
+`|------|---|---|---|---|\n` +
+`$for(raci)$\n` +
+`| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |\n` +
+`$endfor$\n\n` +
+`$for(nodes)$\n` +
+`## $nodes.title$\n\n` +
+`$nodes.content$\n` +
+`$endfor$\n\n` +
+`$if(appendices)$\n` +
+`## Appendices\n` +
+`$for(appendices)$\n` +
+`### $it.title$\n\n` +
+`$it.content$\n` +
+`$endfor$\n` +
+`$endif$\n`
     for (const f of fmts) {
       const baseFmt = `${root}/templates/compiler/${f}`
       if (!(await exists(`${baseFmt}/simple.md`))) await write(`${baseFmt}/simple.md`, simpleMd)
