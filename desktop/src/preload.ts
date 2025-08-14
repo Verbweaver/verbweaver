@@ -31,6 +31,7 @@ export interface ElectronAPI {
   getRecentProjects: () => Promise<string[]>;
   pruneRecentProjects: () => Promise<string[]>;
   reseedTemplates: (projectPath: string) => Promise<{ success: boolean }>;
+  seedGlobalTemplates: (baseDir?: string) => Promise<{ success: boolean; message?: string }>;
   
   // Git operations
   gitInit: (projectPath: string) => Promise<void>;
@@ -125,6 +126,7 @@ const electronAPI: ElectronAPI = {
   getRecentProjects: () => ipcRenderer.invoke('project:getRecent'),
   pruneRecentProjects: () => ipcRenderer.invoke('project:pruneRecent'),
   reseedTemplates: (projectPath: string) => ipcRenderer.invoke('project:reseedTemplates', projectPath),
+  seedGlobalTemplates: (baseDir?: string) => ipcRenderer.invoke('templates:seedGlobalDefaults', baseDir),
   
   // Git operations
   gitInit: (projectPath: string) => ipcRenderer.invoke('git:init', projectPath),
