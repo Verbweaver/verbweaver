@@ -61,7 +61,32 @@ class NodeService:
         full_path = os.path.join(self.project_path, path)
         
         if not os.path.exists(full_path):
-            return None
+            # Fallback: attempt to resolve common mismatches (case, spaces vs hyphens/underscores)
+            try:
+                dir_rel = os.path.dirname(path)
+                base = os.path.basename(path)
+                dir_abs = os.path.join(self.project_path, dir_rel)
+                if os.path.isdir(dir_abs):
+                    name_no_ext, req_ext = os.path.splitext(base)
+                    def normalize_name(n: str) -> str:
+                        s, _ext = os.path.splitext(n)
+                        s = s.lower().replace(' ', '-').replace('_', '-')
+                        s = re.sub(r'-+', '-', s)
+                        return f"{s}{_ext.lower()}"
+                    requested_norm = normalize_name(base)
+                    for entry in os.listdir(dir_abs):
+                        cand_norm = normalize_name(entry)
+                        if cand_norm == requested_norm:
+                            # Found a canonical match; update pointers
+                            canon_name = entry
+                            full_path = os.path.join(dir_abs, canon_name)
+                            path = os.path.join(dir_rel, canon_name).replace('\\', '/')
+                            break
+            except Exception:
+                pass
+            # If still not found, bail out
+            if not os.path.exists(full_path):
+                return None
         
         is_directory = os.path.isdir(full_path)
         name = os.path.basename(path)

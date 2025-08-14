@@ -1176,6 +1176,13 @@ Start your content here.
 `        c: { type: string }\n` +
 `        i: { type: string }\n` +
 `nodeVariables:\n` +
+`  appendix:\n` +
+`    type: boolean\n` +
+`    label: Appendix\n` +
+`    description: Treat this node as an appendix section\n` +
+`    path: metadata.appendix\n` +
+`    default: false\n` +
+`nodeVariables:\n` +
 `  cvss_vector:\n` +
 `    type: string\n` +
 `    description: Optional CVSS v3 vector string from node metadata.\n` +
@@ -1211,10 +1218,20 @@ Start your content here.
 `| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |\n` +
 `$endfor$\n\n` +
 `$for(nodes)$\n` +
+`$ifnot(nodes.vars.appendix)$\n` +
 `## $nodes.title$\n\n` +
 `$nodes.content$\n` +
+`$endif$\n` +
 `$endfor$\n\n` +
-`## Appendices\n`;
+`$if(nodes)$\n` +
+`## Appendices\n` +
+`$for(nodes)$\n` +
+`$if(nodes.vars.appendix)$\n` +
+`### $nodes.title$\n\n` +
+`$nodes.content$\n` +
+`$endif$\n` +
+`$endfor$\n` +
+`$endif$\n`;
             await fs.writeFile(techPath, techContent, 'utf-8');
           }
         }
