@@ -690,7 +690,7 @@ $endfor$
 [References would be automatically generated here]
 ```
 
-HTML version uses <h3> subsections and paragraphs for Variables, Metadata, and Attachments.
+HTML version uses `<h3>` subsections and paragraphs for Variables, Metadata, and Attachments.
 
 ### Technical Report Template (all formats)
 Purpose: opinionated report with executive summary, changelog, stakeholders, RACI table, and per‑node content.
