@@ -559,13 +559,10 @@ function setupIpcHandlers() {
   ipcMain.handle('fs:readDirectory', async (_event, dirPath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
-      if (!projectPath) {
-        throw new Error('No project is currently open. Please open or create a project first.');
-      }
-      
-      // If dirPath is already absolute, use it directly
-      // Otherwise, join it with the project path
-      const fullPath = path.isAbsolute(dirPath) ? dirPath : path.join(projectPath as string, dirPath);
+      // Allow absolute paths even if no project is open (for global templates folder)
+      const fullPath = path.isAbsolute(dirPath)
+        ? dirPath
+        : (projectPath ? path.join(projectPath as string, dirPath) : dirPath);
       const items = await fs.readdir(fullPath, { withFileTypes: true });
       
       return items.map(item => ({
@@ -600,11 +597,9 @@ function setupIpcHandlers() {
   ipcMain.handle('fs:readFile', async (_, filePath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
-      if (!projectPath) {
-        throw new Error('No project is currently open. Please open or create a project first.');
-      }
-      
-      const fullPath = path.isAbsolute(filePath) ? filePath : path.join(projectPath as string, filePath);
+      const fullPath = path.isAbsolute(filePath)
+        ? filePath
+        : (projectPath ? path.join(projectPath as string, filePath) : filePath);
       const content = await readFile(fullPath, 'utf-8');
       return content;
     } catch (error) {
@@ -615,11 +610,9 @@ function setupIpcHandlers() {
   ipcMain.handle('fs:readFileBinary', async (_, filePath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
-      if (!projectPath) {
-        throw new Error('No project is currently open. Please open or create a project first.');
-      }
-      
-      const fullPath = path.isAbsolute(filePath) ? filePath : path.join(projectPath as string, filePath);
+      const fullPath = path.isAbsolute(filePath)
+        ? filePath
+        : (projectPath ? path.join(projectPath as string, filePath) : filePath);
       const content = await readFile(fullPath);
       return content;
     } catch (error) {
@@ -629,15 +622,18 @@ function setupIpcHandlers() {
 
   ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
     try {
+      // Allow absolute paths; if relative and a project exists, resolve relative to it
+      const projectPath = store.get('currentProjectPath') as string | undefined
+      const fullPath = path.isAbsolute(filePath) ? filePath : (projectPath ? path.join(projectPath, filePath) : filePath)
       // Ensure parent directory exists
       const { dirname } = require('path');
-      const dir = dirname(filePath);
+      const dir = dirname(fullPath);
       
       if (!existsSync(dir)) {
         await mkdir(dir, { recursive: true });
       }
       
-      await writeFile(filePath, content, 'utf-8');
+      await writeFile(fullPath, content, 'utf-8');
     } catch (error) {
       throw new Error(`Failed to write file: ${error}`);
     }
@@ -658,10 +654,8 @@ function setupIpcHandlers() {
 
   ipcMain.handle('fs:createDirectory', async (_event, dirPath: string) => {
     try {
-      const projectPath = store.get('currentProjectPath');
-      if (!projectPath) throw new Error('No project path set');
-      
-      const fullPath = path.isAbsolute(dirPath) ? dirPath : path.join(projectPath as string, dirPath);
+      const projectPath = store.get('currentProjectPath') as string | undefined;
+      const fullPath = path.isAbsolute(dirPath) ? dirPath : (projectPath ? path.join(projectPath, dirPath) : dirPath);
       await mkdir(fullPath, { recursive: true });
       return { success: true };
     } catch (error) {
@@ -735,6 +729,17 @@ function setupIpcHandlers() {
     } catch (error) {
       console.error('Failed to move file:', error);
       throw error;
+    }
+  });
+
+  // Utility: path exists check (absolute or project-relative)
+  ipcMain.handle('fs:pathExists', async (_event, somePath: string) => {
+    try {
+      const projectPath = store.get('currentProjectPath') as string | undefined
+      const fullPath = path.isAbsolute(somePath) ? somePath : (projectPath ? path.join(projectPath, somePath) : somePath)
+      return existsSync(fullPath)
+    } catch {
+      return false
     }
   });
 
@@ -972,6 +977,8 @@ Start your content here.
       
       // Set current project path in electron-store for the main process
       store.set('currentProjectPath', projectPath);
+      // Cache userData path for renderer convenience
+      try { store.set('userDataPath', app.getPath('userData')); } catch {}
       
       // Add to recent projects (also in electron-store)
       const recentProjects = store.get('recentProjects', []) as string[];
@@ -1082,6 +1089,8 @@ Start your content here.
       
       // Set current project path in electron-store for the main process
       store.set('currentProjectPath', projectPath);
+      // Cache userData path in case it wasn't already
+      try { store.set('userDataPath', app.getPath('userData')); } catch {}
 
       // Add to recent projects
       const recentProjects = store.get('recentProjects', []) as string[];
@@ -1099,6 +1108,15 @@ Start your content here.
 
   ipcMain.handle('project:getRecent', async () => {
     return store.get('recentProjects', []) as string[];
+  });
+
+  ipcMain.handle('project:pruneRecent', async () => {
+    const recent = (store.get('recentProjects', []) as string[]).filter(p => typeof p === 'string')
+    const kept = recent.filter(p => existsSync(p))
+    if (kept.length !== recent.length) {
+      store.set('recentProjects', kept)
+    }
+    return kept
   });
 
   // Graph operations (new)
@@ -1965,7 +1983,12 @@ Start your content here.
   });
 
   ipcMain.handle('shell:showItemInFolder', async (_, itemPath: string) => {
-    shell.showItemInFolder(itemPath);
+    try { shell.showItemInFolder(itemPath); } catch (e) { console.warn('showItemInFolder failed:', e); }
+  });
+
+  ipcMain.handle('shell:openPath', async (_, anyPath: string) => {
+    // Open a folder or file path via shell.openPath
+    try { await shell.openPath(anyPath); } catch (e) { console.warn('openPath failed:', e); }
   });
 
   // Window operations
@@ -2029,6 +2052,7 @@ Start your content here.
   ipcMain.handle('set-store-value', async (_, key: string, value: any) => {
     store.set(key, value);
   });
+
 
   ipcMain.handle('get-app-version', async () => {
     return app.getVersion();
@@ -2161,6 +2185,15 @@ app.whenReady().then(async () => {
   createWindow();
   createMenu();
   setupIpcHandlers();
+  // Persist userData path early so renderer can derive defaults
+  try { store.set('userDataPath', app.getPath('userData')); } catch {}
+  // Initialize default global templates base if not set
+  try {
+    const existing = store.get('globalTemplatesDir') as string | undefined
+    if (!existing || existing === '/templates' || existing === 'templates') {
+      store.set('globalTemplatesDir', join(app.getPath('userData'), 'templates'))
+    }
+  } catch {}
 });
 
 app.on('window-all-closed', () => {

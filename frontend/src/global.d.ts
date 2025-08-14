@@ -24,11 +24,13 @@ declare global {
       downloadFile: (filePath: string, originalName: string) => Promise<{ success: boolean; data: Buffer; filename: string; mimeType: string }>;
       moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean }>;
       readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
+      pathExists?: (somePath: string) => Promise<boolean>;
       
       // Project operations
       createProject: (name: string, path: string) => Promise<string>;
       openProject: (path: string) => Promise<void>;
       getRecentProjects: () => Promise<string[]>;
+      pruneRecentProjects?: () => Promise<string[]>;
       
       // Graph operations
       updateNodeMetadata: (filePath: string, metadataChanges: Record<string, any>) => Promise<void>;
