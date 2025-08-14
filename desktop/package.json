@@ -58,6 +58,10 @@
         "to": "backend"
       },
       {
+        "from": "../assets/templates",
+        "to": "templates-defaults"
+      },
+      {
         "from": "../docs",
         "to": "docs"
       },

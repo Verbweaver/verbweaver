@@ -49,6 +49,31 @@ let backendPort: number | null = null;
 
 // Configuration
 const isDevelopment = process.env.NODE_ENV === 'development';
+// Resolve templates defaults root (repo assets in dev, packaged in prod)
+async function resolveTemplatesDefaultsRoot(): Promise<string | null> {
+  const devAssets = join(__dirname, '../../../assets/templates');
+  const packagedDefaults = join(process.resourcesPath, 'templates-defaults');
+  const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
+  if (isDevelopment && await exists(devAssets)) return devAssets;
+  if (await exists(packagedDefaults)) return packagedDefaults;
+  return null;
+}
+
+async function copyTree(src: string, dst: string) {
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const e of entries) {
+    const s = path.join(src, e.name);
+    const d = path.join(dst, e.name);
+    if (e.isDirectory()) {
+      await fs.mkdir(d, { recursive: true });
+      await copyTree(s, d);
+    } else {
+      await fs.mkdir(path.dirname(d), { recursive: true });
+      await fs.copyFile(s, d);
+    }
+  }
+}
+
 const BACKEND_STARTUP_TIMEOUT = 60000; // 60 seconds
 
 // Security: Set Content Security Policy
@@ -131,8 +156,10 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     const preferences = (store.get('preferences', {}) as any) || {};
     const defaultDbPath = join(userDataDir, 'verbweaver.db');
     const defaultGitRoot = join(userDataDir, 'git-repos');
+    const defaultGlobalTemplates = join(userDataDir, 'templates');
     const dbUrl = (preferences.databaseUrl as string) || process.env.DATABASE_URL || `sqlite+aiosqlite:///${defaultDbPath}`;
     const gitRoot = (preferences.gitProjectsRoot as string) || process.env.GIT_PROJECTS_ROOT || defaultGitRoot;
+    const globalTemplatesDir = (store.get('globalTemplatesDir') as string) || process.env.GLOBAL_TEMPLATES_DIR || defaultGlobalTemplates;
 
     if (useBundledBinary) {
       const platformDir = process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux');
@@ -149,6 +176,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
           PORT: port.toString(),
           DATABASE_URL: dbUrl,
           GIT_PROJECTS_ROOT: gitRoot,
+          GLOBAL_TEMPLATES_DIR: globalTemplatesDir,
           SECRET_KEY: store.get('secretKey', 'default-secret-key-change-in-production') as string,
           BACKEND_CORS_ORIGINS: JSON.stringify([
             'http://localhost:3000',
@@ -197,6 +225,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
           PYTHONUNBUFFERED: '1',
           DATABASE_URL: dbUrl,
           GIT_PROJECTS_ROOT: gitRoot,
+          GLOBAL_TEMPLATES_DIR: globalTemplatesDir,
           SECRET_KEY: store.get('secretKey', 'default-secret-key-change-in-production') as string,
           BACKEND_CORS_ORIGINS: JSON.stringify([
             'http://localhost:3000',
@@ -860,7 +889,33 @@ This repository is a normal Git repo. Use the Version view to stage, commit, and
       const userGlobalTemplatesBase = (store.get('globalTemplatesDir') as string) 
         || join(app.getPath('userData'), 'templates');
 
-      const srcTemplates = join(userGlobalTemplatesBase, 'templates');
+      // Helper to resolve a source root for templates (dev prefers repo assets)
+      const resolveTemplatesSource = async (): Promise<string | null> => {
+        const userTemplatesRoot = join(userGlobalTemplatesBase, 'templates');
+        const defaults = await resolveTemplatesDefaultsRoot();
+        const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
+        if (await exists(userTemplatesRoot)) return userTemplatesRoot;
+        if (defaults) return defaults;
+        return null;
+      };
+
+      // If user's global templates are missing, copy from defaults (repo assets in dev; packaged in prod)
+      try {
+        const userTemplatesRoot = join(userGlobalTemplatesBase, 'templates');
+        const packagedDefaults = await resolveTemplatesDefaultsRoot();
+        const ensureExists = async (p: string) => { try { await fs.mkdir(p, { recursive: true }); } catch {} };
+        const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
+        if (!(await exists(userTemplatesRoot)) && packagedDefaults && await exists(packagedDefaults)) {
+          await ensureExists(userTemplatesRoot);
+          await copyTree(packagedDefaults, userTemplatesRoot);
+        }
+      } catch (e) {
+        console.warn('Failed to seed user global templates from packaged defaults:', e);
+      }
+
+      // Choose source root and copy
+      const srcChosen = await resolveTemplatesSource();
+      const srcTemplates = srcChosen ?? join(userGlobalTemplatesBase, 'templates');
 
       async function pathExists(p: string): Promise<boolean> {
         try { await fs.stat(p); return true } catch { return false }
@@ -1005,7 +1060,33 @@ Start your content here.
 
       const userGlobalTemplatesBase = (store.get('globalTemplatesDir') as string)
         || join(app.getPath('userData'), 'templates');
-      const srcTemplates = join(userGlobalTemplatesBase, 'templates');
+
+      // Helper to resolve a source root for templates (dev prefers repo assets)
+      const resolveTemplatesSource = async (): Promise<string | null> => {
+        const userTemplatesRoot = join(userGlobalTemplatesBase, 'templates');
+        const defaults = await resolveTemplatesDefaultsRoot();
+        const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
+        if (await exists(userTemplatesRoot)) return userTemplatesRoot;
+        if (defaults) return defaults;
+        return null;
+      };
+
+      // If user's global templates are missing, seed from defaults before reseed
+      try {
+        const userTemplatesRoot = join(userGlobalTemplatesBase, 'templates');
+        const packagedDefaults = await resolveTemplatesDefaultsRoot();
+        const ensureExists = async (p: string) => { try { await fs.mkdir(p, { recursive: true }); } catch {} };
+        const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
+        if (!(await exists(userTemplatesRoot)) && packagedDefaults && await exists(packagedDefaults)) {
+          await ensureExists(userTemplatesRoot);
+          await copyTree(packagedDefaults, userTemplatesRoot);
+        }
+      } catch (e) {
+        console.warn('Failed to seed user global templates from packaged defaults:', e);
+      }
+
+      const srcChosen = await resolveTemplatesSource();
+      const srcTemplates = srcChosen ?? join(userGlobalTemplatesBase, 'templates');
 
       async function pathExists(p: string): Promise<boolean> {
         try { await fs.stat(p); return true } catch { return false }
@@ -1252,6 +1333,33 @@ Start your content here.
       throw e;
     }
   });
+
+  // Seed global templates directory from defaults (repo assets in dev; packaged in prod)
+  ipcMain.handle('templates:seedGlobalDefaults', async (_evt, baseDir?: string) => {
+    try {
+      const base = baseDir || (store.get('globalTemplatesDir') as string) || join(app.getPath('userData'), 'templates')
+      const dstRoot = join(base, 'templates')
+      const defaults = await resolveTemplatesDefaultsRoot()
+      if (!defaults) return { success: false, message: 'No defaults found' }
+      try { await fs.mkdir(dstRoot, { recursive: true }) } catch {}
+      // Always copy defaults (overwrite policy mirrors reseed/new project logic)
+      await copyTree(defaults, dstRoot)
+      // Also seed project README
+      const projectsDefaults = join(path.dirname(defaults), 'projects')
+      const projectDst = join(base, 'project')
+      try { await fs.mkdir(projectDst, { recursive: true }) } catch {}
+      try {
+        const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } }
+        if (await exists(projectsDefaults)) {
+          await copyTree(projectsDefaults, projectDst)
+        }
+      } catch {}
+      return { success: true }
+    } catch (e) {
+      console.warn('templates:seedGlobalDefaults failed:', e)
+      return { success: false, message: String(e) }
+    }
+  })
 
   ipcMain.handle('project:open', async (_, projectPath: string) => {
     try {

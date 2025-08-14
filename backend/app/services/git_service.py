@@ -85,26 +85,30 @@ Thumbs.db
             node_templates_dir = templates_dir / 'nodes'
             node_templates_dir.mkdir(exist_ok=True)
 
-            # Create Empty.md node template under templates/nodes
-            empty_template_content = """---
-title: Empty
-type: node
-description: A blank starting point.
-tags: [empty, basic]
----
-
-# Empty Node
-
-Start your content here.
-"""
-            empty_template_path = node_templates_dir / 'Empty.md'
-            async with aiofiles.open(empty_template_path, 'w') as f:
-                await f.write(empty_template_content)
-
-            # Create compiler templates
-            from app.services.template_service import TemplateService
-            template_service = TemplateService(str(repo_path_obj))
-            template_service.create_default_templates()
+            # Copy default node and compiler templates from global templates dir if available
+            try:
+                import shutil
+                global_base = Path(settings.GLOBAL_TEMPLATES_DIR)
+                src_nodes = global_base / 'templates' / 'nodes'
+                if src_nodes.exists():
+                    for root, dirs, files in os.walk(src_nodes):
+                        rel = Path(root).relative_to(src_nodes)
+                        target_dir = node_templates_dir / rel if str(rel) != '.' else node_templates_dir
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        for file in files:
+                            shutil.copy2(Path(root) / file, target_dir / file)
+                # Compiler templates
+                src_compiler = global_base / 'templates' / 'compiler'
+                dst_compiler = templates_dir / 'compiler'
+                if src_compiler.exists():
+                    for root, dirs, files in os.walk(src_compiler):
+                        rel = Path(root).relative_to(src_compiler)
+                        target_dir = dst_compiler / rel if str(rel) != '.' else dst_compiler
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        for file in files:
+                            shutil.copy2(Path(root) / file, target_dir / file)
+            except Exception as e:
+                print(f"Warning: failed to seed default templates: {e}")
 
             # Stage and commit the .gitignore, nodes/, templates/, and compiler templates
             subprocess.run(['git', 'add', '.gitignore', 'nodes/', 'templates/'], cwd=str(repo_path_obj), check=True, capture_output=True)
