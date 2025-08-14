@@ -490,9 +490,23 @@ class TemplateService:
 title: $title$
 author: $author$
 date: $date$
+variables:
+  toc:
+    type: boolean
+    description: Include a generated table of contents at the top.
+nodeVariables:
+  cvss:
+    type: number
+    description: Optional CVSS base score if present on a node's metadata.
+    path: metadata.cvss
 ---
 
 # $title$
+
+$if(toc)$
+## Table of Contents
+$toc$
+$endif$
 
 $for(nodes)$
 ## $nodes.title$
@@ -579,6 +593,22 @@ $endfor$"""
 title: $title$
 author: $author$
 date: $date$
+variables:
+  toc:
+    type: boolean
+    description: Include a generated table of contents.
+  includeMetadata:
+    type: boolean
+    description: Show each node's metadata under its content.
+nodeVariables:
+  cvss_vector:
+    type: string
+    description: Optional CVSS v3 vector from node metadata.
+    path: metadata.cvss_vector
+  cvss:
+    type: number
+    description: Optional CVSS base score from node metadata.
+    path: metadata.cvss
 ---
 
 # $title$
@@ -600,11 +630,13 @@ $for(nodes.vars)$
 $endfor$
 $endif$
 
+$if(includeMetadata)$
 $if(nodes.metadata)$
 ### Metadata
 $for(nodes.metadata)$
 - **$it.key$:** $it.value$
 $endfor$
+$endif$
 $endif$
 
 $if(nodes.attachments)$
@@ -675,13 +707,7 @@ $for(nodes)$
 $nodes.content$
 $endfor$
 
-$if(appendices)$
-<h2>Appendices</h2>
-$for(appendices)$
-<h3>$it.title$</h3>
-$it.content$
-$endfor$
-$endif$
+ <h2>Appendices</h2>
 
 </body>
 </html>"""
@@ -691,14 +717,49 @@ title: $title$
 author: $author$
 date: $date$
 summary: $summary$
-changelog:
-  - { date: 2025-01-01, version: 0.1, author: $author$, note: Initial draft }
-stakeholders:
-  - { name: Alice, role: Sponsor, contact: alice@example.com }
-raci:
-  - { task: Kickoff, r: Bob, a: Alice, c: Team, i: Execs }
-appendices:
-  - { title: Appendix A, content: "Additional materials." }
+variables:
+  toc:
+    type: boolean
+    description: Include a generated table of contents.
+  summary:
+    type: string
+    description: Executive summary paragraph.
+  changelog:
+    type: array
+    item:
+      type: object
+      fields:
+        date: { type: string }
+        version: { type: string }
+        author: { type: string }
+        note: { type: string }
+  stakeholders:
+    type: array
+    item:
+      type: object
+      fields:
+        name: { type: string }
+        role: { type: string }
+        contact: { type: string }
+  raci:
+    type: array
+    item:
+      type: object
+      fields:
+        task: { type: string }
+        r: { type: string }
+        a: { type: string }
+        c: { type: string }
+        i: { type: string }
+nodeVariables:
+  cvss_vector:
+    type: string
+    description: Optional CVSS v3 vector string from node metadata.
+    path: metadata.cvss_vector
+  cvss:
+    type: number
+    description: Optional CVSS base score from node metadata.
+    path: metadata.cvss
 ---
 
 # $title$
@@ -742,12 +803,5 @@ $for(nodes)$
 $nodes.content$
 $endfor$
 
-$if(appendices)$
 ## Appendices
-$for(appendices)$
-### $it.title$
-
-$it.content$
-$endfor$
-$endif$
 """
