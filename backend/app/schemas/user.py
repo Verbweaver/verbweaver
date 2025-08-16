@@ -1,7 +1,7 @@
 """
 User Pydantic Schemas
 """
-from pydantic import BaseModel, EmailStr, validator, Field
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from typing import Optional, Dict, Any
 from datetime import datetime
 from app.core.config import settings # For PASSWORD_MIN_LENGTH
@@ -15,7 +15,8 @@ class UserCreate(UserBase):
     """Schema for user registration, includes password."""
     password: str
     
-    @validator('password')
+    @field_validator('password')
+    @classmethod
     def password_not_empty(cls, v):
         if not v or not v.strip():
             raise ValueError('Password cannot be empty')
