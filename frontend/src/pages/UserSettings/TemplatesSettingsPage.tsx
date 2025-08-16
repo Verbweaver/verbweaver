@@ -68,7 +68,10 @@ export default function TemplatesSettingsPage() {
           setDesktopDir(base)
           // Seed from main using assets or packaged defaults
           try { await (window as any).electronAPI.seedGlobalTemplates(base) } catch {}
-          const files = await listDesktopTemplates(base)
+          // List both project and templates subtrees
+          const filesProject = await listDesktopTemplates(`${base}/project`)
+          const filesTemplates = await listDesktopTemplates(`${base}/templates`)
+          const files = [...filesProject.map(i => ({ path: `project/${i.path}`, name: i.name })), ...filesTemplates.map(i => ({ path: `templates/${i.path}`, name: i.name }))]
           setItems(files)
         } else {
           setItems([])
