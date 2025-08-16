@@ -1,9 +1,3 @@
-declare global {
-  interface Window {
-    electronAPI: ElectronAPI;
-  }
-}
-
 interface Dependency {
   name: string;
   available: boolean;
@@ -19,4 +13,10 @@ interface ElectronAPI {
   unwatchProject?: () => void;
   checkDependencies: () => Promise<Dependency[]>;
   openInstallUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
+}
+
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
+  }
 } 
