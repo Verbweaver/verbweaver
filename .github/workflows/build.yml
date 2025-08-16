@@ -39,4 +39,6 @@ jobs:
           pip install pytest
       - name: Run backend tests
         working-directory: backend
-        run: pytest -q
+        env:
+          PYTHONWARNINGS: ignore
+        run: pytest -q --tb=no
