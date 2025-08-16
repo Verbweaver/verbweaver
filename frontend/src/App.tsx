@@ -17,6 +17,7 @@ import SecuritySettingsPage from './pages/UserSettings/SecuritySettingsPage'
 import ProfileSettingsPage from './pages/UserSettings/ProfileSettingsPage'
 import AppearanceSettingsPage from './pages/UserSettings/AppearanceSettingsPage'
 import ProjectSettingsPage from './pages/UserSettings/ProjectSettingsPage'
+import TemplatesSettingsPage from './pages/UserSettings/TemplatesSettingsPage'
 import { useProjectStore } from './store/projectStore'
 import { useThemeStore } from './store/themeStore'
 import { useAuthStore } from './services/auth'
@@ -132,11 +133,12 @@ function App() {
         <Route path="threads/:taskPath" element={<Navigate to="/tasks/:taskPath" replace />} />
         <Route path="version" element={<Version />} />
         <Route path="compiler" element={<Compiler />} />
-        <Route path="settings" element={<Settings />}>
+          <Route path="settings" element={<Settings />}>
           <Route index element={<ProfileSettingsPage />} />
           <Route path="appearance" element={<AppearanceSettingsPage />} />
           <Route path="security" element={<SecuritySettingsPage />} />
           <Route path="project" element={<ProjectSettingsPage />} />
+            <Route path="templates" element={<TemplatesSettingsPage />} />
         </Route>
         <Route path="help" element={<Help />} />
       </Route>

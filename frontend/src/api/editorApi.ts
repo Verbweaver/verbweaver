@@ -16,10 +16,11 @@ export interface FileCreate {
 }
 
 export const editorApi = {
-  previewMarkdown: async (markdown: string, projectPath?: string): Promise<string> => {
+  previewMarkdown: async (markdown: string, projectPath?: string, filePath?: string): Promise<string> => {
     const requestBody = {
       markdown_text: markdown,
-      project_path: projectPath
+      project_path: projectPath,
+      file_path: filePath
     }
     
     const response = await apiClient.post('/preview', requestBody, {
@@ -29,19 +30,23 @@ export const editorApi = {
   },
 
   getFileTree: async (projectId: string, path: string = ''): Promise<FileNode[]> => {
-    const response = await apiClient.get(`/projects/${projectId}/tree`, {
+    const response = await apiClient.get(`/editor/${projectId}/tree`, {
       params: { path }
     })
     return response.data.tree || []
   },
 
   getFile: async (projectId: string, path: string): Promise<{ path: string; name: string; content: string; metadata?: any }> => {
-    const response = await apiClient.get(`/projects/${projectId}/files/${encodeURIComponent(path)}`)
+    const normalize = (p: string) => p.replace(/\\/g, '/');
+    const encodePath = (p: string) => normalize(p).split('/').map(seg => encodeURIComponent(seg)).join('/');
+    const response = await apiClient.get(`/editor/${projectId}/files/${encodePath(path)}`)
     return response.data
   },
 
   writeFile: async (projectId: string, path: string, content: string, metadata?: any): Promise<any> => {
-    const response = await apiClient.put(`/projects/${projectId}/files/${encodeURIComponent(path)}`, {
+    const normalize = (p: string) => p.replace(/\\/g, '/');
+    const encodePath = (p: string) => normalize(p).split('/').map(seg => encodeURIComponent(seg)).join('/');
+    const response = await apiClient.put(`/editor/${projectId}/files/${encodePath(path)}`, {
       content,
       metadata,
     })
@@ -52,7 +57,7 @@ export const editorApi = {
     const fileName = path.split('/').pop() || 'untitled.md'
     const filePath = path
     
-    const response = await apiClient.post(`/projects/${projectId}/files`, {
+    const response = await apiClient.post(`/editor/${projectId}/files`, {
       path: filePath,
       name: fileName,
       content: content,

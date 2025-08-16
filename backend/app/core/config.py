@@ -120,6 +120,10 @@ class Settings(BaseSettings):
     # Rate limiting
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
+
+    # Global templates storage (for seeding new projects; editable via admin UI)
+    DATA_DIR: str = Field(default="./app_data", env="DATA_DIR")
+    GLOBAL_TEMPLATES_DIR: Optional[str] = Field(default=None, env="GLOBAL_TEMPLATES_DIR")
     
     @validator("WEBAUTHN_EXPECTED_ORIGIN", pre=True, always=True)
     def default_webauthn_expected_origin(cls, v, values):
@@ -133,3 +137,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings() 
+
+# Derive GLOBAL_TEMPLATES_DIR if not explicitly set
+if not settings.GLOBAL_TEMPLATES_DIR:
+    settings.GLOBAL_TEMPLATES_DIR = os.path.join(settings.DATA_DIR, "templates")

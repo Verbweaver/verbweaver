@@ -24,6 +24,8 @@ interface TemplateContent {
   content: string
   is_valid: boolean
   custom_variables: string[]
+  schema?: any
+  messages?: string[]
 }
 
 interface CompileResult {

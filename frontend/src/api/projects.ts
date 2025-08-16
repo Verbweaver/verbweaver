@@ -109,4 +109,9 @@ export const projectsApi = {
       try { await apiClient.put(`/projects/${projectId}/settings/threads`, tasksSettings) } catch {}
     }
   },
+
+  // Re-seed templates (README, node, compiler) into an existing project
+  reseedTemplates: async (projectId: string): Promise<void> => {
+    await apiClient.post(`/projects/${projectId}/templates/reseed`)
+  },
 } 
