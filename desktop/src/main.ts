@@ -2465,6 +2465,26 @@ Start your content here.
       throw error;
     }
   });
+
+  // Dependency checker handlers
+  ipcMain.handle('dependencies:check', async () => {
+    try {
+      return await checkDependencies();
+    } catch (error) {
+      console.error('Failed to check dependencies:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('dependencies:openInstallUrl', async (_, url: string) => {
+    try {
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to open install URL:', error);
+      return { success: false, error: String(error) };
+    }
+  });
 }
 
 // App event handlers
@@ -2544,3 +2564,87 @@ process.on('SIGTERM', () => {
   void stopBackend();
   process.exit(0);
 });
+
+// Dependency checker service
+interface DependencyCheck {
+  name: string;
+  available: boolean;
+  version?: string;
+  installUrl?: string;
+  installInstructions?: string;
+}
+
+async function checkDependencies(): Promise<DependencyCheck[]> {
+  const dependencies: DependencyCheck[] = [];
+  
+  // Check Pandoc
+  try {
+    const result = await new Promise<{ success: boolean; version?: string }>((resolve) => {
+      const child = require('child_process').spawn('pandoc', ['--version'], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      
+      let output = '';
+      child.stdout.on('data', (data: Buffer) => {
+        output += data.toString();
+      });
+      
+      child.on('close', (code: number) => {
+        if (code === 0) {
+          const versionMatch = output.match(/pandoc\s+(\d+\.\d+\.\d+)/);
+          resolve({ success: true, version: versionMatch?.[1] });
+        } else {
+          resolve({ success: false });
+        }
+      });
+      
+      child.on('error', () => {
+        resolve({ success: false });
+      });
+    });
+    
+    dependencies.push({
+      name: 'Pandoc',
+      available: result.success,
+      version: result.version,
+      installUrl: 'https://pandoc.org/installing.html',
+      installInstructions: getPandocInstallInstructions()
+    });
+  } catch (error) {
+    dependencies.push({
+      name: 'Pandoc',
+      available: false,
+      installUrl: 'https://pandoc.org/installing.html',
+      installInstructions: getPandocInstallInstructions()
+    });
+  }
+  
+  return dependencies;
+}
+
+function getPandocInstallInstructions(): string {
+  const platform = process.platform;
+  
+  switch (platform) {
+    case 'win32':
+      return `Windows Installation:
+1. Download from https://pandoc.org/installing.html
+2. Or use winget: winget install pandoc
+3. Or use Chocolatey: choco install pandoc`;
+    
+    case 'darwin':
+      return `macOS Installation:
+1. Use Homebrew: brew install pandoc
+2. Or download from https://pandoc.org/installing.html`;
+    
+    case 'linux':
+      return `Linux Installation:
+Ubuntu/Debian: sudo apt-get install pandoc
+Fedora: sudo dnf install pandoc
+Arch: sudo pacman -S pandoc
+Or download from https://pandoc.org/installing.html`;
+    
+    default:
+      return 'Please visit https://pandoc.org/installing.html for installation instructions.';
+  }
+}

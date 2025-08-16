@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { FileDown, FileText, Book, Package, Globe, Code, Loader2, FileType } from 'lucide-react'
+import { FileDown, FileText, Book, Package, Globe, Code, Loader2, FileType, AlertTriangle } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { EXPORT_FORMATS } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
@@ -98,6 +98,14 @@ function CompilerView() {
   const [title, setTitle] = useState('')
   const [author, setAuthor] = useState('')
   const [selectedNodes, setSelectedNodes] = useState<string[]>([])
+  const [dependencies, setDependencies] = useState<Array<{
+    name: string;
+    available: boolean;
+    version?: string;
+    installUrl?: string;
+    installInstructions?: string;
+  }>>([])
+  const [checkingDependencies, setCheckingDependencies] = useState(false)
   const [orderedNodes, setOrderedNodes] = useState<string[]>([])
   const [selectedFormat, setSelectedFormat] = useState<string>('markdown')
   const [selectedTemplate, setSelectedTemplate] = useState<string>('')
@@ -146,6 +154,26 @@ function CompilerView() {
       loadTemplates(selectedFormat)
     }
   }, [currentProject, selectedFormat])
+
+  // Check dependencies on mount (desktop only)
+  useEffect(() => {
+    const checkDependencies = async () => {
+      const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined;
+      if (isElectron) {
+        try {
+          setCheckingDependencies(true);
+          const deps = await (window as any).electronAPI.checkDependencies();
+          setDependencies(deps);
+        } catch (error) {
+          console.error('Failed to check dependencies:', error);
+        } finally {
+          setCheckingDependencies(false);
+        }
+      }
+    };
+    
+    checkDependencies();
+  }, []);
 
   const loadTemplates = async (format: string) => {
     if (!currentProject) return
@@ -632,6 +660,45 @@ function CompilerView() {
               Configure and export your project as a document
             </p>
           </div>
+
+          {/* Dependency Warning */}
+          {dependencies.some(dep => !dep.available) && (
+            <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-1">
+                    Missing Dependencies
+                  </h4>
+                  <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                    Some export formats require additional software to be installed on your system.
+                  </p>
+                  <div className="space-y-2">
+                    {dependencies.filter(dep => !dep.available).map((dep) => (
+                      <div key={dep.name} className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{dep.name}</span>
+                        {dep.installUrl && (
+                          <button
+                            onClick={() => {
+                              const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined;
+                              if (isElectron) {
+                                (window as any).electronAPI.openInstallUrl(dep.installUrl!);
+                              } else {
+                                window.open(dep.installUrl, '_blank');
+                              }
+                            }}
+                            className="text-xs text-amber-700 dark:text-amber-300 hover:underline"
+                          >
+                            Install
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Document Info */}
           <div className="space-y-4">
