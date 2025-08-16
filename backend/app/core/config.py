@@ -3,8 +3,7 @@ Configuration settings for Verbweaver backend
 """
 
 from typing import Optional, List, Any, Dict, Union
-from pydantic_settings import BaseSettings
-from pydantic import Field, field_validator
+from pydantic import BaseSettings, Field, validator
 import secrets
 import json
 import os
@@ -61,8 +60,7 @@ class Settings(BaseSettings):
         env="BACKEND_CORS_ORIGINS"
     )
     
-    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
-    @classmethod
+    @validator("BACKEND_CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
         if isinstance(v, str):
             # Handle empty string
@@ -126,11 +124,10 @@ class Settings(BaseSettings):
     DATA_DIR: str = Field(default="./app_data", env="DATA_DIR")
     GLOBAL_TEMPLATES_DIR: Optional[str] = Field(default=None, env="GLOBAL_TEMPLATES_DIR")
     
-    @field_validator("WEBAUTHN_EXPECTED_ORIGIN", mode="before")
-    @classmethod
-    def default_webauthn_expected_origin(cls, v, info):
+    @validator("WEBAUTHN_EXPECTED_ORIGIN", pre=True, always=True)
+    def default_webauthn_expected_origin(cls, v, values):
         if v is None:
-            return info.data.get("FRONTEND_URL")
+            return values.get("FRONTEND_URL")
         return v
 
     class Config:
