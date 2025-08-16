@@ -901,11 +901,16 @@ This repository is a normal Git repo. Use the Version view to stage, commit, and
 
       // If user's global templates are missing, copy from defaults (repo assets in dev; packaged in prod)
       try {
-        const userTemplatesRoot = join(userGlobalTemplatesBase, 'templates');
+        const userTemplatesRoot = userGlobalTemplatesBase;
         const packagedDefaults = await resolveTemplatesDefaultsRoot();
         const ensureExists = async (p: string) => { try { await fs.mkdir(p, { recursive: true }); } catch {} };
         const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
-        if (!(await exists(userTemplatesRoot)) && packagedDefaults && await exists(packagedDefaults)) {
+        // Seed if base doesn't exist or lacks compiler/nodes
+        const needsSeed = !(await exists(userTemplatesRoot))
+          || !(await exists(path.join(userTemplatesRoot, 'compiler')))
+          || !(await exists(path.join(userTemplatesRoot, 'nodes')))
+          || !(await exists(path.join(userTemplatesRoot, 'project')))
+        if (needsSeed && packagedDefaults && await exists(packagedDefaults)) {
           await ensureExists(userTemplatesRoot);
           await copyTree(packagedDefaults, userTemplatesRoot);
         }
@@ -915,7 +920,7 @@ This repository is a normal Git repo. Use the Version view to stage, commit, and
 
       // Choose source root and copy
       const srcChosen = await resolveTemplatesSource();
-      const srcTemplates = srcChosen ?? join(userGlobalTemplatesBase, 'templates');
+      const srcTemplates = srcChosen ?? userGlobalTemplatesBase;
 
       async function pathExists(p: string): Promise<boolean> {
         try { await fs.stat(p); return true } catch { return false }
@@ -957,8 +962,11 @@ This repository is a normal Git repo. Use the Version view to stage, commit, and
         }
       }
 
-      // Copy compiler templates subtree if present
-      const srcCompiler = join(srcTemplates, 'compiler');
+      // Copy compiler templates subtree if present (handle both rooted-at-base and nested under base/templates)
+      let srcCompiler = join(srcTemplates, 'compiler');
+      if (!(await pathExists(srcCompiler))) {
+        srcCompiler = join(srcTemplates, 'templates', 'compiler');
+      }
       if (await pathExists(srcCompiler)) {
         await copyTemplatesRecursive(srcCompiler, join(templatesDir, 'compiler'));
       }
@@ -1063,12 +1071,17 @@ Start your content here.
 
       // Helper to resolve a source root for templates (dev prefers repo assets)
       const resolveTemplatesSource = async (): Promise<string | null> => {
-        const userTemplatesRoot = join(userGlobalTemplatesBase, 'templates');
         const defaults = await resolveTemplatesDefaultsRoot();
         const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
-        if (await exists(userTemplatesRoot)) return userTemplatesRoot;
+        // Prefer base if it looks like a templates root (has compiler or nodes)
+        const baseHasTemplates = (await (async () => {
+          const c = path.join(userGlobalTemplatesBase, 'compiler');
+          const n = path.join(userGlobalTemplatesBase, 'nodes');
+          return (await exists(c)) || (await exists(n));
+        })());
+        if (baseHasTemplates) return userGlobalTemplatesBase;
         if (defaults) return defaults;
-        return null;
+        return userGlobalTemplatesBase; // fallback to base even if empty
       };
 
       // If user's global templates are missing, seed from defaults before reseed
@@ -1338,15 +1351,25 @@ Start your content here.
   ipcMain.handle('templates:seedGlobalDefaults', async (_evt, baseDir?: string) => {
     try {
       const base = baseDir || (store.get('globalTemplatesDir') as string) || join(app.getPath('userData'), 'templates')
-      const dstRoot = join(base, 'templates')
+      const dstRoot = base
       const defaults = await resolveTemplatesDefaultsRoot()
       if (!defaults) return { success: false, message: 'No defaults found' }
       try { await fs.mkdir(dstRoot, { recursive: true }) } catch {}
       // Always copy defaults (overwrite policy mirrors reseed/new project logic)
-      await copyTree(defaults, dstRoot)
+      // Copy compiler and nodes into base/templates/**
+      const srcCompiler = join(defaults, 'compiler')
+      const srcNodes = join(defaults, 'nodes')
+      const dstTemplates = join(dstRoot, 'templates')
+      try { await fs.mkdir(dstTemplates, { recursive: true }) } catch {}
+      if (await (async p => { try { await fs.stat(p); return true } catch { return false } })(srcCompiler)) {
+        await copyTree(srcCompiler, join(dstTemplates, 'compiler'))
+      }
+      if (await (async p => { try { await fs.stat(p); return true } catch { return false } })(srcNodes)) {
+        await copyTree(srcNodes, join(dstTemplates, 'nodes'))
+      }
       // Also seed project README
-      const projectsDefaults = join(path.dirname(defaults), 'projects')
-      const projectDst = join(base, 'project')
+      const projectsDefaults = join(defaults, 'projects')
+      const projectDst = join(dstRoot, 'project')
       try { await fs.mkdir(projectDst, { recursive: true }) } catch {}
       try {
         const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } }
