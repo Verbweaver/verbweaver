@@ -52,43 +52,40 @@ Verbweaver organizes ideas and tasks as Markdown files under the `nodes/` folder
             encoding='utf-8'
         )
 
-    # Node template: Empty.md. Prefer templates/nodes/Empty.md but also seed a
-    # flattened copy in templates/ for backward compatibility.
+    # Node template: copy from repository assets
     empty_nodes_dir = root / 'templates' / 'nodes'
     empty_nodes_dir.mkdir(parents=True, exist_ok=True)
     empty_nodes_path = empty_nodes_dir / 'Empty.md'
     empty_flat_dir = root / 'templates'
     empty_flat_dir.mkdir(parents=True, exist_ok=True)
     empty_flat_path = empty_flat_dir / 'Empty.md'
-    if not empty_nodes_path.exists() and not empty_flat_path.exists():
-        content = """---
-title: Empty
-type: node
-description: A blank starting point.
-tags: []
----
+    try:
+        # Repo assets path: <repo_root>/assets/templates/nodes
+        assets_base = Path(__file__).resolve().parents[5] / 'assets' / 'templates' / 'nodes'
+        src_empty = assets_base / 'Empty.md'
+        if src_empty.exists():
+            if not empty_nodes_path.exists():
+                empty_nodes_path.write_text(src_empty.read_text(encoding='utf-8'), encoding='utf-8')
+            if not empty_flat_path.exists():
+                empty_flat_path.write_text(src_empty.read_text(encoding='utf-8'), encoding='utf-8')
+    except Exception:
+        pass
 
-# $title$
-
-Start your content here.
-"""
-        empty_nodes_path.write_text(content, encoding='utf-8')
-        empty_flat_path.write_text(content, encoding='utf-8')
-
-    # Compiler templates (simple, academic, technical-report) per format
-    ts = TemplateService('.')
-    for fmt in ['markdown', 'html', 'pdf', 'docx', 'epub', 'odt']:
-        fmt_dir = root / 'templates' / 'compiler' / fmt
-        fmt_dir.mkdir(parents=True, exist_ok=True)
-        files = {
-            'simple.md': ts._get_simple_template(fmt),
-            'academic.md': ts._get_academic_template(fmt),
-            'technical-report.md': ts._get_technical_report_template(fmt),
-        }
-        for name, content in files.items():
-            path = fmt_dir / name
-            if not path.exists():
-                path.write_text(content, encoding='utf-8')
+    # Compiler templates: copy from repository assets (Markdown for all formats)
+    try:
+        # Repo assets path: <repo_root>/assets/templates/compiler
+        assets_compiler = Path(__file__).resolve().parents[5] / 'assets' / 'templates' / 'compiler'
+        for fmt in ['markdown', 'html', 'pdf', 'docx', 'epub', 'odt']:
+            fmt_dir = root / 'templates' / 'compiler' / fmt
+            fmt_dir.mkdir(parents=True, exist_ok=True)
+            src_fmt = assets_compiler / fmt
+            if src_fmt.exists() and src_fmt.is_dir():
+                for src_file in src_fmt.glob('*.md'):
+                    dst_file = fmt_dir / src_file.name
+                    if not dst_file.exists():
+                        dst_file.write_text(src_file.read_text(encoding='utf-8'), encoding='utf-8')
+    except Exception:
+        pass
 
 
 def _require_admin(user: User):

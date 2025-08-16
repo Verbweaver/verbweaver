@@ -23,11 +23,15 @@ export interface ElectronAPI {
   downloadFile: (filePath: string, originalName: string) => Promise<{ success: boolean; data: Buffer; filename: string; mimeType: string }>;
   moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean }>;
   readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
+  pathExists: (somePath: string) => Promise<boolean>;
   
   // Project operations
   createProject: (name: string, path: string) => Promise<string>;
   openProject: (path: string) => Promise<void>;
   getRecentProjects: () => Promise<string[]>;
+  pruneRecentProjects: () => Promise<string[]>;
+  reseedTemplates: (projectPath: string) => Promise<{ success: boolean }>;
+  seedGlobalTemplates: (baseDir?: string) => Promise<{ success: boolean; message?: string }>;
   
   // Git operations
   gitInit: (projectPath: string) => Promise<void>;
@@ -45,6 +49,7 @@ export interface ElectronAPI {
   getAppVersion: () => Promise<string>;
   openExternal: (url: string) => Promise<void>;
   showItemInFolder: (path: string) => Promise<void>;
+  openPath: (path: string) => Promise<void>;
   
   // Window operations
   minimizeWindow: () => void;
@@ -112,11 +117,16 @@ const electronAPI: ElectronAPI = {
   downloadFile: (filePath: string, originalName: string) => ipcRenderer.invoke('fs:downloadFile', filePath, originalName),
   moveFile: (oldPath: string, newPath: string) => ipcRenderer.invoke('fs:moveFile', oldPath, newPath),
   readProjectFiles: (projectPath: string) => ipcRenderer.invoke('fs:readProjectFiles', projectPath),
+  // Utils
+  pathExists: (somePath: string) => ipcRenderer.invoke('fs:pathExists', somePath),
   
   // Project operations
   createProject: (name: string, path: string): Promise<string> => ipcRenderer.invoke('project:create', name, path),
   openProject: (path: string): Promise<void> => ipcRenderer.invoke('project:open', path),
   getRecentProjects: () => ipcRenderer.invoke('project:getRecent'),
+  pruneRecentProjects: () => ipcRenderer.invoke('project:pruneRecent'),
+  reseedTemplates: (projectPath: string) => ipcRenderer.invoke('project:reseedTemplates', projectPath),
+  seedGlobalTemplates: (baseDir?: string) => ipcRenderer.invoke('templates:seedGlobalDefaults', baseDir),
   
   // Git operations
   gitInit: (projectPath: string) => ipcRenderer.invoke('git:init', projectPath),
@@ -134,6 +144,8 @@ const electronAPI: ElectronAPI = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   showItemInFolder: (path: string) => ipcRenderer.invoke('shell:showItemInFolder', path),
+  // Fallback to open arbitrary paths (folders/files)
+  openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path),
   
   // Window operations
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
