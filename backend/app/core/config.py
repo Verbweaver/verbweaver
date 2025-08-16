@@ -3,7 +3,8 @@ Configuration settings for Verbweaver backend
 """
 
 from typing import Optional, List, Any, Dict, Union
-from pydantic import BaseSettings, Field, validator
+from pydantic_settings import BaseSettings
+from pydantic import Field, field_validator, ConfigDict
 import secrets
 import json
 import os
@@ -17,35 +18,35 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     APP_NAME: str = "Verbweaver API"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = Field(default=False, env="DEBUG")
+    DEBUG: bool = Field(default=False, alias="DEBUG")
     
     # API
     API_V1_STR: str = "/api/v1"
-    FRONTEND_URL: str = Field(default="http://localhost:3000", env="FRONTEND_URL")
+    FRONTEND_URL: str = Field(default="http://localhost:3000", alias="FRONTEND_URL")
     
     # Server
-    HOST: str = Field(default="0.0.0.0", env="HOST")
-    PORT: int = Field(default=8000, env="PORT")
+    HOST: str = Field(default="0.0.0.0", alias="HOST")
+    PORT: int = Field(default=8000, alias="PORT")
     
     # Database
     DATABASE_URL: str = Field(
         default="sqlite+aiosqlite:///./verbweaver.db",
-        env="DATABASE_URL"
+        alias="DATABASE_URL"
     )
     
     # Security
     SECRET_KEY: str = Field(
         default_factory=lambda: secrets.token_urlsafe(32),
-        env="SECRET_KEY"
+        alias="SECRET_KEY"
     )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    RESET_TOKEN_EXPIRE_MINUTES: int = Field(default=30, env="RESET_TOKEN_EXPIRE_MINUTES")
+    RESET_TOKEN_EXPIRE_MINUTES: int = Field(default=30, alias="RESET_TOKEN_EXPIRE_MINUTES")
     
     # Account Lockout settings
-    MAX_LOGIN_ATTEMPTS: int = Field(default=5, env="MAX_LOGIN_ATTEMPTS")
-    LOCKOUT_DURATION_MINUTES: int = Field(default=30, env="LOCKOUT_DURATION_MINUTES")
+    MAX_LOGIN_ATTEMPTS: int = Field(default=5, alias="MAX_LOGIN_ATTEMPTS")
+    LOCKOUT_DURATION_MINUTES: int = Field(default=30, alias="LOCKOUT_DURATION_MINUTES")
     
     # Password Policy
     PASSWORD_MIN_LENGTH: int = 8
@@ -57,10 +58,11 @@ class Settings(BaseSettings):
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = Field(
         default=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"],
-        env="BACKEND_CORS_ORIGINS"
+        alias="BACKEND_CORS_ORIGINS"
     )
     
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
         if isinstance(v, str):
             # Handle empty string
@@ -76,7 +78,7 @@ class Settings(BaseSettings):
     # Git
     GIT_PROJECTS_ROOT: str = Field(
         default="./git-repos",
-        env="GIT_PROJECTS_ROOT"
+        alias="GIT_PROJECTS_ROOT"
     )
     
     # File storage
@@ -88,51 +90,53 @@ class Settings(BaseSettings):
     ]
     
     # Redis (optional, for caching and real-time features)
-    REDIS_URL: Optional[str] = Field(default=None, env="REDIS_URL")
+    REDIS_URL: Optional[str] = Field(default=None, alias="REDIS_URL")
     
     # Email (optional, for notifications)
-    SMTP_HOST: Optional[str] = Field(default=None, env="SMTP_HOST")
-    SMTP_PORT: Optional[int] = Field(default=None, env="SMTP_PORT")
-    SMTP_USER: Optional[str] = Field(default=None, env="SMTP_USER")
-    SMTP_PASSWORD: Optional[str] = Field(default=None, env="SMTP_PASSWORD")
+    SMTP_HOST: Optional[str] = Field(default=None, alias="SMTP_HOST")
+    SMTP_PORT: Optional[int] = Field(default=None, alias="SMTP_PORT")
+    SMTP_USER: Optional[str] = Field(default=None, alias="SMTP_USER")
+    SMTP_PASSWORD: Optional[str] = Field(default=None, alias="SMTP_PASSWORD")
     
     # OAuth providers
-    GOOGLE_CLIENT_ID: Optional[str] = Field(default=None, env="GOOGLE_CLIENT_ID")
-    GOOGLE_CLIENT_SECRET: Optional[str] = Field(default=None, env="GOOGLE_CLIENT_SECRET")
+    GOOGLE_CLIENT_ID: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_SECRET")
     
-    GITHUB_CLIENT_ID: Optional[str] = Field(default=None, env="GITHUB_CLIENT_ID")
-    GITHUB_CLIENT_SECRET: Optional[str] = Field(default=None, env="GITHUB_CLIENT_SECRET")
+    GITHUB_CLIENT_ID: Optional[str] = Field(default=None, alias="GITHUB_CLIENT_ID")
+    GITHUB_CLIENT_SECRET: Optional[str] = Field(default=None, alias="GITHUB_CLIENT_SECRET")
     
     # Passkey (WebAuthn) settings
-    WEBAUTHN_RP_ID: str = Field(default="localhost", env="WEBAUTHN_RP_ID") # Relying Party ID (your domain)
-    WEBAUTHN_RP_NAME: str = Field(default="Verbweaver", env="WEBAUTHN_RP_NAME") # Relying Party Name
+    WEBAUTHN_RP_ID: str = Field(default="localhost", alias="WEBAUTHN_RP_ID") # Relying Party ID (your domain)
+    WEBAUTHN_RP_NAME: str = Field(default="Verbweaver", alias="WEBAUTHN_RP_NAME") # Relying Party Name
     # WEBAUTHN_RP_ORIGIN is derived from FRONTEND_URL for consistency during requests if needed,
     # but rp_id is the primary one for WebAuthn library configuration usually.
     # The WebAuthn library will often expect an explicit origin for challenges.
     # It's often set to be the same as FRONTEND_URL.
-    WEBAUTHN_EXPECTED_ORIGIN: Optional[str] = Field(default=None, env="WEBAUTHN_EXPECTED_ORIGIN") # e.g., http://localhost:3000
-    WEBAUTHN_CHALLENGE_TIMEOUT_SECONDS: int = Field(default=120, env="WEBAUTHN_CHALLENGE_TIMEOUT_SECONDS")
+    WEBAUTHN_EXPECTED_ORIGIN: Optional[str] = Field(default=None, alias="WEBAUTHN_EXPECTED_ORIGIN") # e.g., http://localhost:3000
+    WEBAUTHN_CHALLENGE_TIMEOUT_SECONDS: int = Field(default=120, alias="WEBAUTHN_CHALLENGE_TIMEOUT_SECONDS")
     
     # Export settings
-    PANDOC_PATH: Optional[str] = Field(default=None, env="PANDOC_PATH")
+    PANDOC_PATH: Optional[str] = Field(default=None, alias="PANDOC_PATH")
     
     # Rate limiting
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
 
     # Global templates storage (for seeding new projects; editable via admin UI)
-    DATA_DIR: str = Field(default="./app_data", env="DATA_DIR")
-    GLOBAL_TEMPLATES_DIR: Optional[str] = Field(default=None, env="GLOBAL_TEMPLATES_DIR")
+    DATA_DIR: str = Field(default="./app_data", alias="DATA_DIR")
+    GLOBAL_TEMPLATES_DIR: Optional[str] = Field(default=None, alias="GLOBAL_TEMPLATES_DIR")
     
-    @validator("WEBAUTHN_EXPECTED_ORIGIN", pre=True, always=True)
-    def default_webauthn_expected_origin(cls, v, values):
+    @field_validator("WEBAUTHN_EXPECTED_ORIGIN", mode="before")
+    @classmethod
+    def default_webauthn_expected_origin(cls, v, info):
         if v is None:
-            return values.get("FRONTEND_URL")
+            return info.data.get("FRONTEND_URL")
         return v
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=True
+    )
 
 
 settings = Settings() 
