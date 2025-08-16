@@ -208,6 +208,10 @@ const electronAPI: ElectronAPI = {
   listDocs: () => ipcRenderer.invoke('docs:list'),
   readDocContent: (fileName: string) => ipcRenderer.invoke('docs:read', fileName),
   
+  // Dependency checker
+  checkDependencies: () => ipcRenderer.invoke('dependencies:check'),
+  openInstallUrl: (url: string) => ipcRenderer.invoke('dependencies:openInstallUrl', url),
+  
   // File watching
   watchProject: (callback: (event: any) => void) => {
     ipcRenderer.on('file:changed', callback);

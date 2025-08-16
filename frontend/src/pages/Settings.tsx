@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Save, Moon, Sun, Bell, GitBranch, Shield, LogOut, UserCircle, Palette, FolderOpen, FileCode } from 'lucide-react';
+import { Save, Moon, Sun, Bell, GitBranch, Shield, LogOut, UserCircle, Palette, FolderOpen, FileCode, AlertTriangle } from 'lucide-react';
 import { useAuthStore } from '../services/auth';
 import { cn } from '@/lib/utils';
 
@@ -13,6 +13,7 @@ const settingsTabs = [
   { name: 'Security', href: '/settings/security', icon: Shield, exact: false },
   { name: 'Project', href: '/settings/project', icon: FolderOpen, exact: false },
   { name: 'Templates', href: '/settings/templates', icon: FileCode, exact: false },
+  ...(isElectron ? [{ name: 'Dependencies', href: '/settings/dependencies', icon: AlertTriangle, exact: false }] : []),
 ];
 
 export default function Settings() {

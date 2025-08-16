@@ -18,6 +18,8 @@ import ProfileSettingsPage from './pages/UserSettings/ProfileSettingsPage'
 import AppearanceSettingsPage from './pages/UserSettings/AppearanceSettingsPage'
 import ProjectSettingsPage from './pages/UserSettings/ProjectSettingsPage'
 import TemplatesSettingsPage from './pages/UserSettings/TemplatesSettingsPage'
+import DependenciesSettingsPage from './pages/UserSettings/DependenciesSettingsPage'
+import DependencyChecker from './components/DependencyChecker'
 import { useProjectStore } from './store/projectStore'
 import { useThemeStore } from './store/themeStore'
 import { useAuthStore } from './services/auth'
@@ -109,41 +111,47 @@ function App() {
   }
 
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/request-password-reset" element={<RequestPasswordReset />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Layout />
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="editor" element={<Editor />} />
-        <Route path="editor/:filePath" element={<Editor />} />
-        <Route path="graph" element={<Graph />} />
-        <Route path="tasks" element={<Tasks />} />
-        <Route path="tasks/:taskPath" element={<Tasks />} />
-        {/* Backward compatibility redirects */}
-        <Route path="threads" element={<Navigate to="/tasks" replace />} />
-        <Route path="threads/:taskPath" element={<Navigate to="/tasks/:taskPath" replace />} />
-        <Route path="version" element={<Version />} />
-        <Route path="compiler" element={<Compiler />} />
-          <Route path="settings" element={<Settings />}>
-          <Route index element={<ProfileSettingsPage />} />
-          <Route path="appearance" element={<AppearanceSettingsPage />} />
-          <Route path="security" element={<SecuritySettingsPage />} />
-          <Route path="project" element={<ProjectSettingsPage />} />
+    <>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/request-password-reset" element={<RequestPasswordReset />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="editor" element={<Editor />} />
+          <Route path="editor/:filePath" element={<Editor />} />
+          <Route path="graph" element={<Graph />} />
+          <Route path="tasks" element={<Tasks />} />
+          <Route path="tasks/:taskPath" element={<Tasks />} />
+          {/* Backward compatibility redirects */}
+          <Route path="threads" element={<Navigate to="/tasks" replace />} />
+          <Route path="threads/:taskPath" element={<Navigate to="/tasks/:taskPath" replace />} />
+          <Route path="version" element={<Version />} />
+          <Route path="compiler" element={<Compiler />} />
+            <Route path="settings" element={<Settings />}>
+            <Route index element={<ProfileSettingsPage />} />
+            <Route path="appearance" element={<AppearanceSettingsPage />} />
+            <Route path="security" element={<SecuritySettingsPage />} />
+            <Route path="project" element={<ProjectSettingsPage />} />
             <Route path="templates" element={<TemplatesSettingsPage />} />
+            <Route path="dependencies" element={<DependenciesSettingsPage />} />
+          </Route>
+          <Route path="help" element={<Help />} />
         </Route>
-        <Route path="help" element={<Help />} />
-      </Route>
-      <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
+      </Routes>
+      
+      {/* Global dependency checker - only shows when there are missing dependencies */}
+      <DependencyChecker showOnStartup={true} />
+    </>
   )
 }
 
