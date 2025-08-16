@@ -539,7 +539,16 @@ function EditorView() {
       if (!filename.endsWith('.md')) return
              try {
          const source = hideMetadata ? content.replace(/^---\s*[\s\S]*?\n---\s*\n?/, '') : content
-         const html = await editorApi.previewMarkdown(source, currentProjectPath || undefined)
+         // Compute project-relative file path for resource resolution
+         let projectRel: string | undefined
+         if (isElectron && localFilePath && currentProjectPath) {
+           const normProject = currentProjectPath.replace(/\\/g,'/').replace(/\/$/, '')
+           const normFile = localFilePath.replace(/\\/g,'/')
+           projectRel = normFile.startsWith(normProject + '/') ? normFile.substring(normProject.length + 1) : undefined
+         } else if (!isElectron && currentFile) {
+           projectRel = (currentFile as any).path || currentFile.id
+         }
+         const html = await editorApi.previewMarkdown(source, currentProjectPath || undefined, projectRel)
          setPreviewHtml(html)
        } catch (e) {
          console.error('preview failed', e)

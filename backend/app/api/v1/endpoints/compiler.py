@@ -28,6 +28,7 @@ class CompileRequest(BaseModel):
     format: str
     template: Optional[str] = None
     custom_variables: Optional[Dict[str, Any]] = None
+    node_variables: Optional[Dict[str, Dict[str, Any]]] = None
     options: Dict[str, Any]
 
 class CompileResponse(BaseModel):
@@ -44,12 +45,13 @@ class ContentAggregator:
     
     def aggregate_content(self, node_paths: List[str], options: Dict[str, Any], 
                         template_path: Optional[str] = None, 
-                        custom_variables: Optional[Dict[str, Any]] = None) -> str:
+                        custom_variables: Optional[Dict[str, Any]] = None,
+                        node_variables: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
         """Aggregate content from multiple nodes into a single document"""
         
         # If template is specified, use template-based processing
         if template_path:
-            return self._process_with_template(node_paths, options, template_path, custom_variables)
+            return self._process_with_template(node_paths, options, template_path, custom_variables, node_variables)
         
         # Find default template for the format
         format_type = options.get('format', 'pdf')
@@ -58,10 +60,11 @@ class ContentAggregator:
         if not default_template_path:
             raise ValueError(f"No default template found for format: {format_type}. Please select a template or create one.")
         
-        return self._process_with_template(node_paths, options, default_template_path, custom_variables)
+        return self._process_with_template(node_paths, options, default_template_path, custom_variables, node_variables)
     
     def _process_with_template(self, node_paths: List[str], options: Dict[str, Any],
-                             template_path: str, custom_variables: Optional[Dict[str, Any]] = None) -> str:
+                             template_path: str, custom_variables: Optional[Dict[str, Any]] = None,
+                             node_variables: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
         """Process content using a template"""
         
         # Get template content
@@ -69,16 +72,164 @@ class ContentAggregator:
         if not template_content:
             raise ValueError(f"Template not found: {template_path}")
         
-        # Validate template
-        is_valid, custom_vars = self.template_service.validate_template(template_content)
+        # Validate template and get schema (variables + nodeVariables)
+        is_valid, custom_vars, schema, validation_messages = self.template_service.validate_template(template_content)
         if not is_valid:
             raise ValueError(f"Invalid template: {custom_vars}")
+
+        # --- Compute helpers (safe, minimal) ---
+        def resolve_path(root: Dict[str, Any], path: str):
+            try:
+                parts = path.split('.') if path else []
+                cur: Any = root
+                for p in parts:
+                    if isinstance(cur, dict):
+                        cur = cur.get(p)
+                    elif isinstance(cur, list) and p.endswith(']') and '[' in p:
+                        # Not supporting nested index here
+                        return None
+                    else:
+                        return None
+                return cur
+            except Exception:
+                return None
+
+        def expand_list_selector(root: Dict[str, Any], selector: str) -> List[Any]:
+            # Supports paths like nodes[*].vars.cvss
+            if selector.startswith('nodes[*].'):
+                key_path = selector[len('nodes[*].'):]
+                values: List[Any] = []
+                for n in root.get('nodes', []):
+                    values.append(resolve_path(n, key_path))
+                return values
+            # Fallback single value
+            v = resolve_path(root, selector)
+            return v if isinstance(v, list) else [v]
+
+        def cvss_base_score(vector: str) -> Optional[float]:
+            if not isinstance(vector, str) or '/' not in vector:
+                return None
+            try:
+                # Parse simple CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+                parts = {kv.split(':')[0]: kv.split(':')[1] for kv in vector.split('/') if ':' in kv}
+                ver = vector.split('/')[0]
+                scope = parts.get('S', 'U')
+                AV = {'N':0.85,'A':0.62,'L':0.55,'P':0.2}.get(parts.get('AV','N'),0.85)
+                AC = {'L':0.77,'H':0.44}.get(parts.get('AC','L'),0.77)
+                UI = {'N':0.85,'R':0.62}.get(parts.get('UI','N'),0.85)
+                # PR depends on scope
+                pr_map_u = {'N':0.85,'L':0.62,'H':0.27}
+                pr_map_c = {'N':0.85,'L':0.68,'H':0.5}
+                PR = (pr_map_c if parts.get('S','U')=='C' else pr_map_u).get(parts.get('PR','N'),0.85)
+                C = {'N':0.0,'L':0.22,'H':0.56}.get(parts.get('C','N'),0.0)
+                I = {'N':0.0,'L':0.22,'H':0.56}.get(parts.get('I','N'),0.0)
+                A = {'N':0.0,'L':0.22,'H':0.56}.get(parts.get('A','N'),0.0)
+                exploitability = 8.22 * AV * AC * PR * UI
+                impact_sub = 1 - (1-C)*(1-I)*(1-A)
+                if scope == 'U':
+                    impact_score = 6.42 * impact_sub
+                else:
+                    impact_score = 7.52*(impact_sub - 0.029) - 3.25*((impact_sub - 0.02)**15)
+                if impact_score <= 0:
+                    base = 0.0
+                else:
+                    base = min(impact_score + exploitability, 10.0)
+                    if scope == 'C':
+                        base = min(1.08 * (impact_score + exploitability), 10.0)
+                # round up to one decimal as per CVSS (round up, not half-even)
+                def round_up(x: float) -> float:
+                    return float(f"{((int(x*10 + (0 if x*10 == int(x*10) else 1))) / 10):.1f}") if x>0 else 0.0
+                # Simpler: use conventional rounding to one decimal
+                return round(base + 1e-7, 1)
+            except Exception:
+                return None
+
+        def compute_value(defn: Dict[str, Any], context: Dict[str, Any]) -> Any:
+            comp = (defn or {}).get('compute')
+            if not comp:
+                return None
+            # Support { fn: 'cvss.baseScore', args: ['${nodes.vars.cvssVector}'] }
+            fn = comp.get('fn') if isinstance(comp, dict) else None
+            args = comp.get('args', []) if isinstance(comp, dict) else []
+            def resolve_arg(a: Any) -> Any:
+                if isinstance(a, str) and a.startswith('${') and a.endswith('}'):
+                    sel = a[2:-1]
+                    if sel.startswith('nodes[*].'):
+                        return expand_list_selector(context, sel)
+                    return resolve_path(context, sel)
+                return a
+            rargs = [resolve_arg(a) for a in (args or [])]
+            if fn == 'cvss.baseScore':
+                return cvss_base_score(rargs[0] if rargs else None)
+            if fn == 'cvss.severity':
+                val = rargs[0] if rargs else None
+                score: Optional[float] = None
+                if isinstance(val, (int, float)):
+                    score = float(val)
+                elif isinstance(val, str):
+                    score = cvss_base_score(val)
+                if score is None:
+                    return None
+                if score >= 9.0:
+                    return 'Critical'
+                if score >= 7.0:
+                    return 'High'
+                if score >= 4.0:
+                    return 'Medium'
+                return 'Low'
+            if fn in ('math.mean','mean'):
+                arr = rargs[0] if rargs else []
+                vals = [float(x) for x in (arr or []) if isinstance(x,(int,float)) or (isinstance(x,str) and x.replace('.','',1).isdigit())]
+                return round(sum(vals)/len(vals), 3) if vals else None
+            if fn in ('math.sum','sum'):
+                arr = rargs[0] if rargs else []
+                vals = [float(x) for x in (arr or []) if isinstance(x,(int,float)) or (isinstance(x,str) and x.replace('.','',1).isdigit())]
+                return round(sum(vals), 3) if vals else None
+            if fn in ('math.min','min'):
+                arr = rargs[0] if rargs else []
+                vals = [float(x) for x in (arr or []) if isinstance(x,(int,float)) or (isinstance(x,str) and x.replace('.','',1).isdigit())]
+                return min(vals) if vals else None
+            if fn in ('math.max','max'):
+                arr = rargs[0] if rargs else []
+                vals = [float(x) for x in (arr or []) if isinstance(x,(int,float)) or (isinstance(x,str) and x.replace('.','',1).isdigit())]
+                return max(vals) if vals else None
+            if fn in ('count',):
+                arr = rargs[0] if rargs else []
+                return len(arr) if isinstance(arr, list) else (0 if arr is None else 1)
+            if fn == 'string.regexMatch':
+                try:
+                    import re
+                    pattern = str(rargs[1]) if len(rargs) > 1 else ''
+                    return bool(re.search(pattern, str(rargs[0] or '')))
+                except Exception:
+                    return None
+            if fn == 'date.now':
+                from datetime import datetime
+                return datetime.utcnow().isoformat()
+            if fn == 'date.today':
+                from datetime import date
+                return date.today().isoformat()
+            if fn in ('math.round','round'):
+                try:
+                    num = float(rargs[0]) if rargs else None
+                    decimals = int(rargs[1]) if len(rargs) > 1 else 0
+                    return round(num, decimals) if num is not None else None
+                except Exception:
+                    return None
+            if fn == 'string.upper':
+                return str(rargs[0]).upper() if rargs else None
+            if fn == 'string.lower':
+                return str(rargs[0]).lower() if rargs else None
+            return None
         
         # Prepare data for template
         data = {
             'title': options.get('title', 'Document'),
             'author': options.get('author', 'Unknown'),
             'date': options.get('date', ''),
+            # Support both includeTOC and includeToc from clients
+            'toc': bool(options.get('includeTOC') or options.get('includeToc')),
+            'includeMetadata': bool(options.get('includeMetadata', True)),
             'nodes': []
         }
         
@@ -115,6 +266,43 @@ class ContentAggregator:
                         'attachments': attachments,
                         'path': path
                     }
+
+                    # Resolve node-scoped variables: prefer compile-time overrides, fall back to metadata via schema path
+                    resolved_vars: Dict[str, Any] = {}
+                    try:
+                        node_schema = (schema or {}).get('nodeVariables', {})
+                        if isinstance(node_schema, dict):
+                            for var_name, var_def in node_schema.items():
+                                # override from request
+                                if node_variables and path in node_variables and var_name in (node_variables[path] or {}):
+                                    resolved_vars[var_name] = node_variables[path][var_name]
+                                    continue
+                                # fallback from metadata via dotted path
+                                path_expr = (var_def or {}).get('path')
+                                if path_expr and isinstance(metadata, dict):
+                                    cur = metadata
+                                    for part in str(path_expr).split('.'):
+                                        if isinstance(cur, dict) and part in cur:
+                                            cur = cur[part]
+                                        else:
+                                            cur = None
+                                            break
+                                    if cur is not None:
+                                        resolved_vars[var_name] = cur
+                    except Exception:
+                        pass
+
+                    # Apply computed nodeVariables if defined and not explicitly overridden
+                    node_schema = (schema or {}).get('nodeVariables', {}) if isinstance(schema, dict) else {}
+                    if isinstance(node_schema, dict):
+                        for var_name, var_def in node_schema.items():
+                            if (resolved_vars.get(var_name) in (None, '')) and var_def and isinstance(var_def, dict) and var_def.get('compute'):
+                                val = compute_value(var_def, { 'nodes': [], **node_data })
+                                if val is not None:
+                                    resolved_vars[var_name] = val
+
+                    if resolved_vars:
+                        node_data['vars'] = resolved_vars
                     
                     data['nodes'].append(node_data)
                     
@@ -128,6 +316,24 @@ class ContentAggregator:
                     'path': path
                 })
         
+        # Compute document-scope variables if schema defines them
+        try:
+            doc_vars = {}
+            vars_schema = (schema or {}).get('variables', {}) if isinstance(schema, dict) else {}
+            if isinstance(vars_schema, dict):
+                for var_name, var_def in vars_schema.items():
+                    if isinstance(var_def, dict) and var_def.get('compute'):
+                        # Do not override explicit user-provided values
+                        if var_name in data and data.get(var_name) not in (None, ''):
+                            continue
+                        val = compute_value(var_def, data)
+                        if val is not None:
+                            doc_vars[var_name] = val
+            if doc_vars:
+                data.update(doc_vars)
+        except Exception:
+            pass
+
         # Process template with data
         return self.template_service.process_template(template_content, data)
     
@@ -440,7 +646,7 @@ class PandocExporter:
         try:
             # Convert using Pandoc with proper working directory
             success, message = self.template_service.convert_with_pandoc(
-                content, output_format, output_file, self.project_path
+                content, output_format, output_file, self.project_path, options
             )
             
             print(f"PandocExporter: Conversion result - Success: {success}, Message: {message}")
@@ -529,7 +735,8 @@ async def compile_document(
             request.nodes, 
             request.options,
             request.template,
-            request.custom_variables
+            request.custom_variables,
+            request.node_variables
         )
         print(f"Content length: {len(content)} characters")
         
@@ -663,11 +870,13 @@ async def get_template_content(
     if not content:
         raise HTTPException(status_code=404, detail="Template not found")
     
-    # Validate template
-    is_valid, custom_variables = template_service.validate_template(content)
+    # Validate template and extract schema
+    is_valid, custom_variables, schema, validation_messages = template_service.validate_template(content)
     
     return {
         "content": content,
         "is_valid": is_valid,
-        "custom_variables": custom_variables
+        "custom_variables": custom_variables,
+        "schema": schema,
+        "messages": validation_messages
     } 
