@@ -43,39 +43,9 @@ export default function TemplatesSettingsPage() {
     return results
   }
 
-  const ensureDesktopDefaults = async (base: string) => {
-    const root = base.replace(/\\/g,'/')
-    const mk = (p: string) => (window as any).electronAPI.createDirectory(p)
-    const write = (p: string, t: string) => (window as any).electronAPI.writeFile(p, t)
-    const exists = async (p: string) => {
-      try { await (window as any).electronAPI.readFile(p); return true } catch { return false }
-    }
-    await mk(root)
-    await mk(`${root}/project`)
-    await mk(`${root}/templates`)
-    await mk(`${root}/templates/nodes`)
-    const fmts = ['markdown','html','pdf','docx','epub','odt']
-    for (const f of fmts) await mk(`${root}/templates/compiler/${f}`)
-    // README template
-    const readmePath = `${root}/project/README.md`
-    if (!(await exists(readmePath))) {
-      const readme = `# {{ PROJECT_NAME }}\n\nWelcome to your Verbweaver project.\n\n## Getting Started\n\nProject description: {{ PROJECT_DESCRIPTION }}\n\nVerbweaver organizes ideas and tasks as Markdown files under the \`nodes/\` folder. Each node can be a task; task fields live in YAML frontmatter.\n\n`
-      await write(readmePath, readme)
-    }
-    // Node templates defaults
-    const emptyNode = `---\ntitle: Empty\ntype: node\ndescription: A blank starting point.\n---\n\n# $title$\n\nStart your content here.\n`
-    if (!(await exists(`${root}/templates/nodes/Empty.md`))) await write(`${root}/templates/nodes/Empty.md`, emptyNode)
-
-    // Simple/Academic/Technical-report compiler templates (markdown version is enough for users to edit)
-    const simpleMd = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\n---\n\n# $title$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n\n$endfor$\n`
-    const academicMd = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\n---\n\n# $title$\n\n$if(toc)$\n## Table of Contents\n$toc$\n$endif$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n\n$endfor$\n`
-    const technicalMd = `---\ntitle: $title$\nauthor: $author$\ndate: $date$\nsummary: $summary$\nchangelog:\n  - { date: 2025-01-01, version: 0.1, author: $author$, note: Initial draft }\nstakeholders:\n  - { name: Alice, role: Sponsor, contact: alice@example.com }\nraci:\n  - { task: Kickoff, r: Bob, a: Alice, c: Team, i: Execs }\nappendices:\n  - { title: Appendix A, content: "Additional materials." }\n---\n\n# $title$\n\n$if(toc)$\n## Table of Contents\n$toc$\n$endif$\n\n## Executive Summary\n\n$summary$\n\n## Document Changelog\n\n| Date | Version | Author | Change |\n|------|---------|--------|--------|\n$for(changelog)$\n| $it.date$ | $it.version$ | $it.author$ | $it.note$ |\n$endfor$\n\n## Stakeholder Registry\n\n| Name | Role | Contact |\n|------|------|---------|\n$for(stakeholders)$\n| $it.name$ | $it.role$ | $it.contact$ |\n$endfor$\n\n## RACI Matrix\n\n| Task | R | A | C | I |\n|------|---|---|---|---|\n$for(raci)$\n| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |\n$endfor$\n\n$for(nodes)$\n## $nodes.title$\n\n$nodes.content$\n$endfor$\n\n$if(appendices)$\n## Appendices\n$for(appendices)$\n### $it.title$\n\n$it.content$\n$endfor$\n$endif$\n`
-    for (const f of fmts) {
-      const baseFmt = `${root}/templates/compiler/${f}`
-      if (!(await exists(`${baseFmt}/simple.md`))) await write(`${baseFmt}/simple.md`, simpleMd)
-      if (!(await exists(`${baseFmt}/academic.md`))) await write(`${baseFmt}/academic.md`, academicMd)
-      if (!(await exists(`${baseFmt}/technical-report.md`))) await write(`${baseFmt}/technical-report.md`, technicalMd)
-    }
+  const ensureDesktopDefaults = async (_base: string) => {
+    // No-op: seeding now handled in main process from assets or packaged defaults
+    await (window as any).electronAPI?.invoke?.('templates:seedGlobalDefaults')?.catch?.(() => {})
   }
 
   const loadList = async () => {
@@ -83,17 +53,29 @@ export default function TemplatesSettingsPage() {
     try {
       if (isElectron) {
         let base = await (window as any).electronAPI.getStoreValue('globalTemplatesDir')
-        if (!base) {
+        if (!base || base === '/templates' || base === 'templates') {
           // Default to userData/templates
-          const prefs = await (window as any).electronAPI.getPreferences()
           const userData = (await (window as any).electronAPI.getStoreValue('userDataPath')) || ''
-          base = `${userData || ''}/templates`
-          await (window as any).electronAPI.setStoreValue('globalTemplatesDir', base)
+          if (!userData) {
+            // As a last resort, do nothing to avoid showing "/templates"
+            console.warn('[Templates] Could not resolve userData path; skip default base')
+          } else {
+            base = `${String(userData).replace(/\\/g,'/')}/templates`
+            await (window as any).electronAPI.setStoreValue('globalTemplatesDir', base)
+          }
         }
-        setDesktopDir(base)
-        await ensureDesktopDefaults(base)
-    const files = await listDesktopTemplates(base)
-        setItems(files)
+        if (base) {
+          setDesktopDir(base)
+          // Seed from main using assets or packaged defaults
+          try { await (window as any).electronAPI.seedGlobalTemplates(base) } catch {}
+          // List both project and templates subtrees
+          const filesProject = await listDesktopTemplates(`${base}/project`)
+          const filesTemplates = await listDesktopTemplates(`${base}/templates`)
+          const files = [...filesProject.map(i => ({ path: `project/${i.path}`, name: i.name })), ...filesTemplates.map(i => ({ path: `templates/${i.path}`, name: i.name }))]
+          setItems(files)
+        } else {
+          setItems([])
+        }
       } else {
         const res = await apiClient.get('/templates/global')
         setItems(res.data.templates || [])
@@ -159,7 +141,67 @@ export default function TemplatesSettingsPage() {
   return (
     <div>
       <h2 className="text-xl font-semibold mb-2">Templates</h2>
-      <p className="text-sm text-muted-foreground mb-4">Global templates used when creating new projects. In the web app, only admins can edit.</p>
+      <p className="text-sm text-muted-foreground mb-2">Global templates used when creating new projects. In the web app, only admins can edit.</p>
+      {isElectron && (
+        <div className="text-xs bg-accent/40 border border-border rounded p-2 mb-3 flex items-center gap-2">
+          <span className="font-medium">Folder:</span>
+          <span className="truncate" title={desktopDir || 'Not set'}>{desktopDir || 'Not set'}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              className="px-2 py-0.5 border rounded"
+              title="Open folder"
+              disabled={!desktopDir}
+              onClick={async () => {
+                if (!desktopDir) return
+                const api = (window as any).electronAPI
+                try {
+                  if (api?.showItemInFolder) {
+                    await api.showItemInFolder(desktopDir)
+                    return
+                  }
+                } catch {}
+                try {
+                  if (api?.openExternal) {
+                    const url = `file://${desktopDir.replace(/\\/g,'/')}`
+                    await api.openExternal(url)
+                    return
+                  }
+                } catch {}
+                try {
+                  if (api?.openPath) {
+                    await api.openPath(desktopDir)
+                    return
+                  }
+                } catch {}
+                toast.error('Unable to open folder')
+              }}
+            >Open</button>
+            <button
+              className="px-2 py-0.5 border rounded"
+              title="Copy path"
+              disabled={!desktopDir}
+              onClick={async () => {
+                if (!desktopDir) return
+                if (navigator?.clipboard?.writeText) {
+                  await navigator.clipboard.writeText(desktopDir)
+                  toast.success('Path copied to clipboard')
+                } else {
+                  const ta = document.createElement('textarea')
+                  ta.value = desktopDir
+                  ta.style.position = 'fixed'
+                  ta.style.opacity = '0'
+                  document.body.appendChild(ta)
+                  ta.focus()
+                  ta.select()
+                  try { document.execCommand('copy') } catch {}
+                  document.body.removeChild(ta)
+                  toast.success('Path copied to clipboard')
+                }
+              }}
+            >Copy</button>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-12 gap-3">
         <div className="col-span-4 border rounded p-2 h-[60vh] overflow-auto">
           <div className="flex items-center justify-between mb-2">

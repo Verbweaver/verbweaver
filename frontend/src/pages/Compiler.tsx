@@ -7,6 +7,8 @@ import { api } from '../services/auth'
 import { compilerApi } from '../api/compilerApi'
 import NodeSelector from '../components/NodeSelector'
 import NodeOrderingPanel from '../components/NodeOrderingPanel'
+import { editorApi } from '../api/editorApi'
+import Tooltip from '../components/ui/Tooltip'
 
 interface ExportFormat {
   id: string
@@ -101,6 +103,13 @@ function CompilerView() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>('')
   const [availableTemplates, setAvailableTemplates] = useState<Template[]>([])
   const [customVariables, setCustomVariables] = useState<CustomVariable[]>([])
+  const [templateSchema, setTemplateSchema] = useState<any | null>(null)
+  const [nodeVariables, setNodeVariables] = useState<Record<string, Record<string, any>>>({})
+  const [advancedMode, setAdvancedMode] = useState<boolean>(false)
+  const [isPrefillingNodeVars, setIsPrefillingNodeVars] = useState<boolean>(false)
+  const [docVars, setDocVars] = useState<Record<string, any>>({})
+  const [docVarErrors, setDocVarErrors] = useState<Record<string, string>>({})
+  const [templateMessages, setTemplateMessages] = useState<string[]>([])
   const [isCompiling, setIsCompiling] = useState(false)
   const [compileProgress, setCompileProgress] = useState(0)
   const [options, setOptions] = useState<CompileOptions>({
@@ -160,21 +169,328 @@ function CompilerView() {
     
     if (templatePath && currentProject) {
       try {
-        const templateContent = await compilerApi.getTemplateContent(currentProject.id, templatePath)
+        const templateContent: any = await compilerApi.getTemplateContent(currentProject.id, templatePath)
+        const schema = (templateContent && (templateContent as any).schema) || null
+        setTemplateSchema(schema)
+        setTemplateMessages(Array.isArray((templateContent as any).messages) ? (templateContent as any).messages : [])
         if (templateContent.custom_variables.length > 0) {
           setCustomVariables(
-            templateContent.custom_variables.map(name => ({ name, value: '' }))
+            templateContent.custom_variables.map((name: string) => ({ name, value: '' }))
           )
         } else {
           setCustomVariables([])
         }
+        // Initialize docVars from schema.variables
+        if (schema && schema.variables) {
+          const initDocVars: Record<string, any> = {}
+          Object.keys(schema.variables).forEach((k) => {
+            const def = schema.variables[k] || {}
+            if (def.type === 'array') initDocVars[k] = Array.isArray(def.default) ? [...def.default] : []
+            else if (def.type === 'number') initDocVars[k] = typeof def.default === 'number' ? def.default : ''
+            else if (def.type === 'boolean') initDocVars[k] = typeof def.default === 'boolean' ? def.default : false
+            else initDocVars[k] = def.default ?? ''
+          })
+          setDocVars(initDocVars)
+        } else {
+          setDocVars({})
+        }
+        // Initialize nodeVariables grid from schema.nodeVariables if present
+        const nv = ((templateContent as any).schema && (templateContent as any).schema.nodeVariables) || {}
+        if (Object.keys(nv).length > 0 && orderedNodes.length > 0) {
+          const init: Record<string, Record<string, any>> = {}
+          for (const p of orderedNodes) init[p] = {}
+          setNodeVariables(init)
+        } else {
+          setNodeVariables({})
+        }
       } catch (error) {
         console.error('Failed to load template content:', error)
         setCustomVariables([])
+        setTemplateSchema(null)
       }
     } else {
       setCustomVariables([])
+      setTemplateSchema(null)
+      setTemplateMessages([])
+      setNodeVariables({})
+      setDocVars({})
     }
+  }
+
+  // Prefill nodeVariables from node frontmatter based on schema.nodeVariables.path
+  useEffect(() => {
+    const prefill = async () => {
+      if (!currentProject || !templateSchema || !templateSchema.nodeVariables) return
+      const nvDefs = templateSchema.nodeVariables as Record<string, any>
+      const varNames = Object.keys(nvDefs)
+      if (varNames.length === 0 || orderedNodes.length === 0) return
+      try {
+        setIsPrefillingNodeVars(true)
+        const updates: Record<string, Record<string, any>> = { ...(nodeVariables || {}) }
+
+        // Build a best-effort resolver over the nodes/ tree to handle minor path mismatches
+        const normalize = (s: string) => s.replace(/\\/g, '/');
+        const slugify = (name: string) => {
+          const idx = name.lastIndexOf('.')
+          const base = idx >= 0 ? name.slice(0, idx) : name
+          const ext = idx >= 0 ? name.slice(idx) : ''
+          const s = base.toLowerCase().replace(/[ _]+/g, '-').replace(/-+/g, '-')
+          return `${s}${ext.toLowerCase()}`
+        }
+        const flatten = (items: any[], prefix: string): string[] => {
+          const out: string[] = []
+          for (const it of items || []) {
+            const rel = prefix ? `${prefix}/${it.name}` : it.name
+            if (it.type === 'directory') out.push(...flatten(it.children || [], rel))
+            else if (it.type === 'file') out.push(rel)
+          }
+          return out
+        }
+        let indexBySlug: Record<string, string> = {}
+        try {
+          const tree = await editorApi.getFileTree(currentProject.id, 'nodes')
+          const all = flatten(tree, '').map(p => normalize(`nodes/${p}`))
+          indexBySlug = Object.fromEntries(all.map(p => [slugify(p.split('/').pop() || p), p]))
+        } catch {}
+
+        await Promise.all(orderedNodes.map(async (p) => {
+          const tryRead = async (pathAttempt: string) => {
+            const file = await editorApi.getFile(currentProject.id, pathAttempt)
+            const meta = file?.metadata || {}
+            updates[p] = updates[p] || {}
+            for (const k of varNames) {
+              if (updates[p][k] !== undefined && updates[p][k] !== '') continue
+              const pathExpr = nvDefs[k]?.path as string | undefined
+              if (!pathExpr) continue
+              const parts = pathExpr.split('.')
+              let cur: any = meta
+              for (const part of parts) { if (cur && typeof cur === 'object' && part in cur) cur = cur[part]; else { cur = undefined; break } }
+              if (cur !== undefined) updates[p][k] = cur
+            }
+          }
+          try {
+            await tryRead(normalize(p))
+          } catch {
+            // Fallback by slug
+            const name = (normalize(p).split('/').pop() || '').trim()
+            const candidate = indexBySlug[slugify(name)]
+            if (candidate) {
+              try { await tryRead(candidate) } catch {}
+            }
+          }
+        }))
+        setNodeVariables(updates)
+      } finally {
+        setIsPrefillingNodeVars(false)
+      }
+    }
+    prefill()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject, JSON.stringify(templateSchema?.nodeVariables || {}), JSON.stringify(orderedNodes)])
+
+  // CSV helpers for per-node grid
+  const exportNodeVarsCsv = () => {
+    if (!templateSchema || !templateSchema.nodeVariables) return
+    const headers = ['node', ...Object.keys(templateSchema.nodeVariables)]
+    const rows = orderedNodes.map(p => {
+      const rowVals = [p, ...Object.keys(templateSchema.nodeVariables).map(k => {
+        const v = nodeVariables[p]?.[k]
+        if (v === undefined || v === null) return ''
+        const s = String(v)
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g,'""') + '"' : s
+      })]
+      return rowVals.join(',')
+    })
+    const csv = headers.join(',') + '\n' + rows.join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'node-variables.csv'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const importNodeVarsCsv = async (file: File) => {
+    const text = await file.text()
+    const lines = text.split(/\r?\n/).filter(Boolean)
+    if (lines.length === 0) return
+    const header = parseCsvLine(lines[0])
+    const nodeIdx = header.indexOf('node')
+    if (nodeIdx === -1) return toast.error('CSV must include a "node" column')
+    const varHeaders = header.filter(h => h !== 'node')
+    const updates: Record<string, Record<string, any>> = { ...(nodeVariables || {}) }
+    for (let i=1;i<lines.length;i++) {
+      const cols = parseCsvLine(lines[i])
+      const nodePath = cols[nodeIdx]
+      if (!nodePath) continue
+      updates[nodePath] = updates[nodePath] || {}
+      varHeaders.forEach((vh) => {
+        const idx = header.indexOf(vh)
+        if (idx >= 0 && cols[idx] !== undefined) updates[nodePath][vh] = cols[idx]
+      })
+    }
+    setNodeVariables(updates)
+  }
+
+  function parseCsvLine(line: string): string[] {
+    const result: string[] = []
+    let current = ''
+    let inQuotes = false
+    for (let i=0;i<line.length;i++) {
+      const ch = line[i]
+      if (inQuotes) {
+        if (ch === '"') {
+          if (line[i+1] === '"') { current += '"'; i++ } else { inQuotes = false }
+        } else { current += ch }
+      } else {
+        if (ch === ',') { result.push(current); current = '' }
+        else if (ch === '"') { inQuotes = true }
+        else { current += ch }
+      }
+    }
+    result.push(current)
+    return result
+  }
+
+  // Validation for schema-driven document variables
+  function validateDocVars(schema: any, values: Record<string, any>): Record<string, string> {
+    const errors: Record<string, string> = {}
+    if (!schema || !schema.variables) return errors
+    Object.entries<any>(schema.variables).forEach(([key, def]) => {
+      const v = values[key]
+      if (def?.required && (v === undefined || v === '' || v === null || (Array.isArray(v) && v.length === 0))) {
+        errors[key] = 'This field is required.'
+        return
+      }
+      if (def?.type === 'number') {
+        if (v !== '' && v !== undefined) {
+          const n = Number(v)
+          if (Number.isNaN(n)) errors[key] = 'Must be a number.'
+          if (errors[key]) return
+          if (typeof def.min === 'number' && n < def.min) errors[key] = `Must be ≥ ${def.min}.`
+          if (typeof def.max === 'number' && n > def.max) errors[key] = `Must be ≤ ${def.max}.`
+        }
+      }
+      if (Array.isArray(def?.enum)) {
+        if (v !== '' && v !== undefined && !def.enum.includes(v)) {
+          errors[key] = 'Invalid value.'
+        }
+      }
+      if (def?.type === 'array' && def?.item?.type === 'object') {
+        const rows = Array.isArray(v) ? v : []
+        const fields = Object.keys(def.item.fields || {})
+        rows.forEach((row: any, idx: number) => {
+          fields.forEach((f) => {
+            const cell = row?.[f]
+            const req = def.item.fields[f]?.required
+            if (req && (cell === undefined || cell === '')) {
+              errors[key] = `Row ${idx + 1}: ${f} is required.`
+            }
+          })
+        })
+      }
+    })
+    return errors
+  }
+
+  useEffect(() => {
+    setDocVarErrors(validateDocVars(templateSchema, docVars))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(docVars), JSON.stringify(templateSchema?.variables || {})])
+
+  // Helpers for schema-driven document array (object) editors
+  function exportDocArrayCsv(varName: string) {
+    if (!templateSchema?.variables?.[varName]) return
+    const def = templateSchema.variables[varName]
+    if (!(def?.type === 'array' && def?.item?.type === 'object')) return
+    const fields: string[] = Object.keys(def.item.fields || {})
+    const headers = fields
+    const rows = Array.isArray(docVars[varName]) ? docVars[varName] : []
+    const dataRows = rows.map((row: any) => fields.map((f) => {
+      const v = row?.[f]
+      if (v === undefined || v === null) return ''
+      const s = String(v)
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g,'""') + '"' : s
+    }).join(','))
+    const csv = headers.join(',') + '\n' + dataRows.join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${varName}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  async function importDocArrayCsv(varName: string, file: File) {
+    if (!templateSchema?.variables?.[varName]) return
+    const def = templateSchema.variables[varName]
+    if (!(def?.type === 'array' && def?.item?.type === 'object')) return
+    const text = await file.text()
+    const lines = text.split(/\r?\n/).filter(Boolean)
+    if (lines.length === 0) return
+    const header = parseCsvLine(lines[0])
+    const fields: string[] = Object.keys(def.item.fields || {})
+    // Map header names to field keys; allow label match or key match
+    const mapIdx: number[] = fields.map((f) => {
+      const lbl = def.item.fields[f]?.label
+      let idx = header.indexOf(f)
+      if (idx === -1 && lbl) idx = header.indexOf(String(lbl))
+      return idx
+    })
+    const rows: any[] = []
+    for (let i=1;i<lines.length;i++) {
+      const cols = parseCsvLine(lines[i])
+      const obj: any = {}
+      fields.forEach((f, fi) => {
+        const idx = mapIdx[fi]
+        if (idx >= 0 && cols[idx] !== undefined) obj[f] = cols[idx]
+      })
+      rows.push(obj)
+    }
+    setDocVars(prev => ({ ...prev, [varName]: rows }))
+  }
+
+  function addDocArrayRow(varName: string) {
+    const def = templateSchema?.variables?.[varName]
+    const fields: string[] = Object.keys(def?.item?.fields || {})
+    const empty: any = {}
+    fields.forEach(f => empty[f] = '')
+    const current = Array.isArray(docVars[varName]) ? docVars[varName] : []
+    setDocVars(prev => ({ ...prev, [varName]: [...current, empty] }))
+  }
+
+  function removeDocArrayRow(varName: string, index: number) {
+    const current = Array.isArray(docVars[varName]) ? [...docVars[varName]] : []
+    current.splice(index, 1)
+    setDocVars(prev => ({ ...prev, [varName]: current }))
+  }
+
+  // Small badge renderer
+  function Badges({ def }: { def: any }) {
+    const badges: string[] = []
+    if (def?.compute) badges.push('computed')
+    if (def?.required) badges.push('required')
+    if (Array.isArray(def?.enum)) badges.push('enum')
+    return (
+      <span className="ml-2 space-x-1">
+        {badges.map((b) => {
+          const help = b === 'computed' ? 'Value is derived at compile time' : b === 'required' ? 'This field must be provided' : b === 'enum' ? 'Choose from predefined options' : ''
+          return (
+            <Tooltip key={b} content={help}>
+              <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-accent text-accent-foreground border border-border align-middle">
+                {b}
+              </span>
+            </Tooltip>
+          )
+        })}
+      </span>
+    )
   }
 
   const handleCustomVariableChange = (index: number, value: string) => {
@@ -206,11 +522,23 @@ function CompilerView() {
         })
       }, 500)
 
-      // Prepare custom variables
+      // Prepare custom variables (schema-driven docVars merged with legacy inputs)
       const customVars: Record<string, any> = {}
+      // 1) Schema variables: normalize by type
+      if (templateSchema && templateSchema.variables) {
+        Object.entries<any>(templateSchema.variables).forEach(([key, def]) => {
+          let v = docVars[key]
+          if (def?.type === 'number' && v !== '' && v !== undefined) {
+            const n = Number(v); if (!Number.isNaN(n)) v = n
+          }
+          if (v !== undefined && v !== '') customVars[key] = v
+        })
+      }
+      // 2) Legacy customVariables (fallback/extra), with optional JSON parsing
       customVariables.forEach(variable => {
-        if (variable.value.trim()) {
-          customVars[variable.name] = variable.value
+        if (variable.value && variable.value.trim()) {
+          const parsed = (() => { if (!advancedMode) return variable.value; try { return JSON.parse(variable.value) } catch { return variable.value } })()
+          customVars[variable.name] = parsed
         }
       })
 
@@ -219,6 +547,7 @@ function CompilerView() {
         format: selectedFormat,
         template: selectedTemplate || undefined,
         custom_variables: Object.keys(customVars).length > 0 ? customVars : undefined,
+        node_variables: Object.keys(nodeVariables).length > 0 ? nodeVariables : undefined,
         options: {
           title,
           author,
@@ -277,7 +606,7 @@ function CompilerView() {
   return (
     <div className="h-full flex bg-background">
       {/* Left Panel - File Selection */}
-      <div className="w-1/3 border-r border-border">
+          <div className="w-1/3 border-r border-border">
         <NodeSelector
           selectedNodes={selectedNodes}
           onSelectionChange={setSelectedNodes}
@@ -286,7 +615,7 @@ function CompilerView() {
       </div>
 
       {/* Middle Panel - File Ordering */}
-      <div className="w-1/3 border-r border-border">
+          <div className="w-1/3 border-r border-border">
         <NodeOrderingPanel
           selectedNodes={selectedNodes}
           onOrderChange={handleOrderChange}
@@ -375,28 +704,174 @@ function CompilerView() {
                     </option>
                   ))}
                 </select>
+
+                {/* Surface validation warnings from schema validation */}
+                {templateMessages.length > 0 && (
+                  <div className="text-xs text-amber-600 bg-amber-100/50 border border-amber-200 rounded p-2 space-y-1">
+                    <div className="font-medium">Template validation</div>
+                    <ul className="list-disc ml-5">
+                      {templateMessages.map((m, i) => (
+                        <li key={i}>{m}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Custom Variables */}
-              {customVariables.length > 0 && (
-                <div className="space-y-3">
-                  <h4 className="text-sm font-medium">Custom Variables</h4>
-                  {customVariables.map((variable, index) => (
-                    <div key={index}>
-                      <label className="block text-xs font-medium mb-1">
-                        {variable.name}
-                      </label>
-                      <input
-                        type="text"
-                        value={variable.value}
-                        onChange={(e) => handleCustomVariableChange(index, e.target.value)}
-                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm"
-                        placeholder={`Enter value for ${variable.name}`}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Custom Variables</h4>
+                {/* Schema-driven document variables */}
+                {templateSchema && templateSchema.variables && (
+                  <div className="space-y-2">
+                    {Object.entries<any>(templateSchema.variables).map(([key, def]) => (
+                      <div key={key} className="space-y-1">
+                        <div className="text-xs font-medium flex items-center">
+                          <span>{def?.label || key}</span><Badges def={def} />
+                        </div>
+                        {def?.type === 'number' ? (
+                          <div>
+                            <input type="number" className={`w-full px-2 py-1 border rounded bg-background text-sm ${docVarErrors[key] ? 'border-destructive' : 'border-input'}`} value={docVars[key] ?? ''} onChange={(e)=>setDocVars(prev=>({ ...prev, [key]: e.target.value }))} />
+                            {docVarErrors[key] && <div className="text-[10px] text-destructive mt-1">{docVarErrors[key]}</div>}
+                          </div>
+                        ) : def?.type === 'boolean' ? (
+                          <label className="flex items-center gap-2 text-xs"><input type="checkbox" className="rounded" checked={!!docVars[key]} onChange={(e)=>setDocVars(prev=>({ ...prev, [key]: e.target.checked }))} /> <span>{def?.description || ''}</span></label>
+                        ) : def?.type === 'array' && def?.item?.type === 'object' ? (
+                          <div className="border rounded">
+                            <div className="flex items-center gap-2 p-2 text-xs">
+                              <button className="px-2 py-1 border rounded" onClick={()=>addDocArrayRow(key)}>Add Row</button>
+                              <button className="px-2 py-1 border rounded" onClick={()=>exportDocArrayCsv(key)}>Export CSV</button>
+                              <label className="px-2 py-1 border rounded cursor-pointer">
+                                Import CSV
+                                <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e)=>{ const f=e.target.files?.[0]; if (f) importDocArrayCsv(key, f) }} />
+                              </label>
+                            </div>
+                            <div className="overflow-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-accent">
+                                    {Object.keys(def.item.fields || {}).map((f: string) => (
+                                      <th key={f} className="text-left px-2 py-1">{def.item.fields[f]?.label || f}</th>
+                                    ))}
+                                    <th className="px-2 py-1" />
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(Array.isArray(docVars[key]) ? docVars[key] : []).map((row: any, idx: number) => (
+                                    <tr key={idx} className="border-t">
+                                      {Object.keys(def.item.fields || {}).map((f: string) => (
+                                        <td key={f} className="px-2 py-1">
+                                          <input type="text" className="w-full px-1 py-1 border border-input rounded bg-background" value={row?.[f] ?? ''} onChange={(e)=>{
+                                            const next = Array.isArray(docVars[key]) ? [...docVars[key]] : []
+                                            const obj = { ...(next[idx] || {}) }
+                                            obj[f] = e.target.value
+                                            next[idx] = obj
+                                            setDocVars(prev=>({ ...prev, [key]: next }))
+                                          }} />
+                                        </td>
+                                      ))}
+                                      <td className="px-2 py-1 text-right">
+                                        <button className="px-2 py-1 border rounded" onClick={()=>removeDocArrayRow(key, idx)}>Remove</button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            {docVarErrors[key] && <div className="text-[10px] text-destructive mt-1 px-2">{docVarErrors[key]}</div>}
+                          </div>
+                        ) : (
+                          <div>
+                            {Array.isArray(def?.enum) ? (
+                              <select className={`w-full px-2 py-1 border rounded bg-background text-sm ${docVarErrors[key] ? 'border-destructive' : 'border-input'}`} value={docVars[key] ?? ''} onChange={(e)=>setDocVars(prev=>({ ...prev, [key]: e.target.value }))}>
+                                <option value="">(select)</option>
+                                {def.enum.map((opt: any) => (
+                                  <option key={String(opt)} value={String(opt)}>{String(opt)}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input type="text" className={`w-full px-2 py-1 border rounded bg-background text-sm ${docVarErrors[key] ? 'border-destructive' : 'border-input'}`} value={docVars[key] ?? ''} onChange={(e)=>setDocVars(prev=>({ ...prev, [key]: e.target.value }))} />
+                            )}
+                            {docVarErrors[key] && <div className="text-[10px] text-destructive mt-1">{docVarErrors[key]}</div>}
+                          </div>
+                        )}
+                        {def?.description && <div className="text-[10px] text-muted-foreground" title={def.description}>{def.description}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Legacy ad-hoc variables + Advanced JSON mode */}
+                {customVariables.length > 0 && (
+                  <div className="space-y-2 mt-2">
+                    <label className="flex items-center gap-2 text-xs">
+                      <input type="checkbox" className="rounded" checked={advancedMode} onChange={(e)=>setAdvancedMode(e.target.checked)} />
+                      Advanced (JSON allowed)
+                    </label>
+                    {customVariables.map((variable, index) => (
+                      <div key={index}>
+                        <label className="block text-xs font-medium mb-1">{variable.name}</label>
+                        <input type="text" value={variable.value} onChange={(e) => handleCustomVariableChange(index, e.target.value)} className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm" placeholder={`Enter value for ${variable.name}`} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Options */}
+          {/* Node Variables Grid (schema-driven minimal) */}
+          {templateSchema && templateSchema.nodeVariables && Object.keys(templateSchema.nodeVariables).length > 0 && (
+            <div className="space-y-3">
+              <h3 className="font-semibold">Per-Node Variables</h3>
+              <div className="flex gap-2 text-xs">
+                <button className="px-2 py-1 border rounded" onClick={exportNodeVarsCsv}>Export CSV</button>
+                <label className="px-2 py-1 border rounded cursor-pointer">
+                  Import CSV
+                  <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e)=>{ const f=e.target.files?.[0]; if (f) importNodeVarsCsv(f) }} />
+                </label>
+                {isPrefillingNodeVars && <span className="text-muted-foreground">Prefilling from frontmatter…</span>}
+              </div>
+              <div className="overflow-auto border rounded">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-accent">
+                      <th className="text-left px-2 py-1">Node</th>
+                      {Object.keys(templateSchema.nodeVariables).map((k) => (
+                      <th key={k} className="text-left px-2 py-1">
+                        <div className="flex items-center">
+                          <span>{templateSchema.nodeVariables[k]?.label || k}</span>
+                          <Badges def={templateSchema.nodeVariables[k]} />
+                        </div>
+                      </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orderedNodes.map((p) => (
+                      <tr key={p} className="border-t">
+                        <td className="px-2 py-1 align-top text-xs break-all">{p}</td>
+                        {Object.keys(templateSchema.nodeVariables).map((k) => (
+                          <td key={k} className="px-2 py-1">
+                            <input
+                              type="text"
+                              className="w-full px-2 py-1 border border-input rounded bg-background text-xs"
+                              value={nodeVariables[p]?.[k] ?? ''}
+                              onChange={(e) => setNodeVariables(prev => ({
+                                ...prev,
+                                [p]: { ...(prev[p]||{}), [k]: e.target.value }
+                              }))}
+                              placeholder={templateSchema.nodeVariables[k]?.path ? `from ${templateSchema.nodeVariables[k].path}` : ''}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-muted-foreground">Leave blank to use values from node frontmatter if defined by the template schema.</p>
             </div>
           )}
 
@@ -476,4 +951,4 @@ function CompilerView() {
   )
 }
 
-export default CompilerView 
+export default CompilerView

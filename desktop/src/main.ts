@@ -49,6 +49,31 @@ let backendPort: number | null = null;
 
 // Configuration
 const isDevelopment = process.env.NODE_ENV === 'development';
+// Resolve templates defaults root (repo assets in dev, packaged in prod)
+async function resolveTemplatesDefaultsRoot(): Promise<string | null> {
+  const devAssets = join(__dirname, '../../../assets/templates');
+  const packagedDefaults = join(process.resourcesPath, 'templates-defaults');
+  const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
+  if (isDevelopment && await exists(devAssets)) return devAssets;
+  if (await exists(packagedDefaults)) return packagedDefaults;
+  return null;
+}
+
+async function copyTree(src: string, dst: string) {
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const e of entries) {
+    const s = path.join(src, e.name);
+    const d = path.join(dst, e.name);
+    if (e.isDirectory()) {
+      await fs.mkdir(d, { recursive: true });
+      await copyTree(s, d);
+    } else {
+      await fs.mkdir(path.dirname(d), { recursive: true });
+      await fs.copyFile(s, d);
+    }
+  }
+}
+
 const BACKEND_STARTUP_TIMEOUT = 60000; // 60 seconds
 
 // Security: Set Content Security Policy
@@ -131,8 +156,10 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     const preferences = (store.get('preferences', {}) as any) || {};
     const defaultDbPath = join(userDataDir, 'verbweaver.db');
     const defaultGitRoot = join(userDataDir, 'git-repos');
+    const defaultGlobalTemplates = join(userDataDir, 'templates');
     const dbUrl = (preferences.databaseUrl as string) || process.env.DATABASE_URL || `sqlite+aiosqlite:///${defaultDbPath}`;
     const gitRoot = (preferences.gitProjectsRoot as string) || process.env.GIT_PROJECTS_ROOT || defaultGitRoot;
+    const globalTemplatesDir = (store.get('globalTemplatesDir') as string) || process.env.GLOBAL_TEMPLATES_DIR || defaultGlobalTemplates;
 
     if (useBundledBinary) {
       const platformDir = process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux');
@@ -149,6 +176,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
           PORT: port.toString(),
           DATABASE_URL: dbUrl,
           GIT_PROJECTS_ROOT: gitRoot,
+          GLOBAL_TEMPLATES_DIR: globalTemplatesDir,
           SECRET_KEY: store.get('secretKey', 'default-secret-key-change-in-production') as string,
           BACKEND_CORS_ORIGINS: JSON.stringify([
             'http://localhost:3000',
@@ -197,6 +225,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
           PYTHONUNBUFFERED: '1',
           DATABASE_URL: dbUrl,
           GIT_PROJECTS_ROOT: gitRoot,
+          GLOBAL_TEMPLATES_DIR: globalTemplatesDir,
           SECRET_KEY: store.get('secretKey', 'default-secret-key-change-in-production') as string,
           BACKEND_CORS_ORIGINS: JSON.stringify([
             'http://localhost:3000',
@@ -559,13 +588,10 @@ function setupIpcHandlers() {
   ipcMain.handle('fs:readDirectory', async (_event, dirPath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
-      if (!projectPath) {
-        throw new Error('No project is currently open. Please open or create a project first.');
-      }
-      
-      // If dirPath is already absolute, use it directly
-      // Otherwise, join it with the project path
-      const fullPath = path.isAbsolute(dirPath) ? dirPath : path.join(projectPath as string, dirPath);
+      // Allow absolute paths even if no project is open (for global templates folder)
+      const fullPath = path.isAbsolute(dirPath)
+        ? dirPath
+        : (projectPath ? path.join(projectPath as string, dirPath) : dirPath);
       const items = await fs.readdir(fullPath, { withFileTypes: true });
       
       return items.map(item => ({
@@ -600,11 +626,9 @@ function setupIpcHandlers() {
   ipcMain.handle('fs:readFile', async (_, filePath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
-      if (!projectPath) {
-        throw new Error('No project is currently open. Please open or create a project first.');
-      }
-      
-      const fullPath = path.isAbsolute(filePath) ? filePath : path.join(projectPath as string, filePath);
+      const fullPath = path.isAbsolute(filePath)
+        ? filePath
+        : (projectPath ? path.join(projectPath as string, filePath) : filePath);
       const content = await readFile(fullPath, 'utf-8');
       return content;
     } catch (error) {
@@ -615,11 +639,9 @@ function setupIpcHandlers() {
   ipcMain.handle('fs:readFileBinary', async (_, filePath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
-      if (!projectPath) {
-        throw new Error('No project is currently open. Please open or create a project first.');
-      }
-      
-      const fullPath = path.isAbsolute(filePath) ? filePath : path.join(projectPath as string, filePath);
+      const fullPath = path.isAbsolute(filePath)
+        ? filePath
+        : (projectPath ? path.join(projectPath as string, filePath) : filePath);
       const content = await readFile(fullPath);
       return content;
     } catch (error) {
@@ -629,15 +651,18 @@ function setupIpcHandlers() {
 
   ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
     try {
+      // Allow absolute paths; if relative and a project exists, resolve relative to it
+      const projectPath = store.get('currentProjectPath') as string | undefined
+      const fullPath = path.isAbsolute(filePath) ? filePath : (projectPath ? path.join(projectPath, filePath) : filePath)
       // Ensure parent directory exists
       const { dirname } = require('path');
-      const dir = dirname(filePath);
+      const dir = dirname(fullPath);
       
       if (!existsSync(dir)) {
         await mkdir(dir, { recursive: true });
       }
       
-      await writeFile(filePath, content, 'utf-8');
+      await writeFile(fullPath, content, 'utf-8');
     } catch (error) {
       throw new Error(`Failed to write file: ${error}`);
     }
@@ -658,10 +683,8 @@ function setupIpcHandlers() {
 
   ipcMain.handle('fs:createDirectory', async (_event, dirPath: string) => {
     try {
-      const projectPath = store.get('currentProjectPath');
-      if (!projectPath) throw new Error('No project path set');
-      
-      const fullPath = path.isAbsolute(dirPath) ? dirPath : path.join(projectPath as string, dirPath);
+      const projectPath = store.get('currentProjectPath') as string | undefined;
+      const fullPath = path.isAbsolute(dirPath) ? dirPath : (projectPath ? path.join(projectPath, dirPath) : dirPath);
       await mkdir(fullPath, { recursive: true });
       return { success: true };
     } catch (error) {
@@ -735,6 +758,17 @@ function setupIpcHandlers() {
     } catch (error) {
       console.error('Failed to move file:', error);
       throw error;
+    }
+  });
+
+  // Utility: path exists check (absolute or project-relative)
+  ipcMain.handle('fs:pathExists', async (_event, somePath: string) => {
+    try {
+      const projectPath = store.get('currentProjectPath') as string | undefined
+      const fullPath = path.isAbsolute(somePath) ? somePath : (projectPath ? path.join(projectPath, somePath) : somePath)
+      return existsSync(fullPath)
+    } catch {
+      return false
     }
   });
 
@@ -850,30 +884,109 @@ This repository is a normal Git repo. Use the Version view to stage, commit, and
 `
       }
       await writeFile(join(projectPath, 'README.md'), readmeContent, 'utf-8');
-      
-      // Create Empty.md template
-      const emptyTemplateContent = `---
-id: ''
-title: Empty
-type: file
-created: '${new Date().toISOString()}'
-modified: '${new Date().toISOString()}'
-description: ''
-tags: []
-links: []
-task:
-  status: todo
-  priority: medium
-  assignee: null
-  dueDate: null
-  completedDate: null
-  description: ''
----
-# {title}
 
-{description}
+      // Seed templates from the global templates directory if configured
+      const userGlobalTemplatesBase = (store.get('globalTemplatesDir') as string) 
+        || join(app.getPath('userData'), 'templates');
+
+      // Helper to resolve a source root for templates (dev prefers repo assets)
+      const resolveTemplatesSource = async (): Promise<string | null> => {
+        const userTemplatesRoot = join(userGlobalTemplatesBase, 'templates');
+        const defaults = await resolveTemplatesDefaultsRoot();
+        const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
+        if (await exists(userTemplatesRoot)) return userTemplatesRoot;
+        if (defaults) return defaults;
+        return null;
+      };
+
+      // If user's global templates are missing, copy from defaults (repo assets in dev; packaged in prod)
+      try {
+        const userTemplatesRoot = userGlobalTemplatesBase;
+        const packagedDefaults = await resolveTemplatesDefaultsRoot();
+        const ensureExists = async (p: string) => { try { await fs.mkdir(p, { recursive: true }); } catch {} };
+        const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
+        // Seed if base doesn't exist or lacks compiler/nodes
+        const needsSeed = !(await exists(userTemplatesRoot))
+          || !(await exists(path.join(userTemplatesRoot, 'compiler')))
+          || !(await exists(path.join(userTemplatesRoot, 'nodes')))
+          || !(await exists(path.join(userTemplatesRoot, 'project')))
+        if (needsSeed && packagedDefaults && await exists(packagedDefaults)) {
+          await ensureExists(userTemplatesRoot);
+          await copyTree(packagedDefaults, userTemplatesRoot);
+        }
+      } catch (e) {
+        console.warn('Failed to seed user global templates from packaged defaults:', e);
+      }
+
+      // Choose source root and copy
+      const srcChosen = await resolveTemplatesSource();
+      const srcTemplates = srcChosen ?? userGlobalTemplatesBase;
+
+      async function pathExists(p: string): Promise<boolean> {
+        try { await fs.stat(p); return true } catch { return false }
+      }
+
+      async function ensureDir(p: string) {
+        await fs.mkdir(p, { recursive: true });
+      }
+
+      async function copyFileOverwrite(src: string, dst: string) {
+        await ensureDir(path.dirname(dst));
+        await fs.copyFile(src, dst);
+      }
+
+      async function copyTemplatesRecursive(srcRoot: string, dstRoot: string) {
+        const entries = await fs.readdir(srcRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          const srcPath = path.join(srcRoot, entry.name);
+          if (entry.isDirectory()) {
+            await copyTemplatesRecursive(srcPath, path.join(dstRoot, entry.name));
+          } else {
+            await copyFileOverwrite(srcPath, path.join(dstRoot, entry.name));
+          }
+        }
+      }
+
+      // Copy only node templates into project/templates/nodes and compiler templates as-is
+      const srcNodes = join(srcTemplates, 'nodes');
+      if (await pathExists(srcNodes)) {
+        await copyTemplatesRecursive(srcNodes, join(templatesDir, 'nodes'));
+      } else if (await pathExists(srcTemplates)) {
+        // Legacy: if user kept templates/*.md directly, migrate them into templates/nodes/
+        const entries = await fs.readdir(srcTemplates, { withFileTypes: true });
+        for (const entry of entries) {
+          const srcPath = path.join(srcTemplates, entry.name);
+          if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+            await copyFileOverwrite(srcPath, join(templatesDir, 'nodes', entry.name));
+          }
+        }
+      }
+
+      // Copy compiler templates subtree if present (handle both rooted-at-base and nested under base/templates)
+      let srcCompiler = join(srcTemplates, 'compiler');
+      if (!(await pathExists(srcCompiler))) {
+        srcCompiler = join(srcTemplates, 'templates', 'compiler');
+      }
+      if (await pathExists(srcCompiler)) {
+        await copyTemplatesRecursive(srcCompiler, join(templatesDir, 'compiler'));
+      }
+
+      // If no template was copied, ensure at least a minimal Empty.md exists
+      const defaultEmptyPath = join(templatesDir, 'nodes', 'Empty.md');
+      if (!existsSync(defaultEmptyPath)) {
+        const emptyTemplateContent = `---
+title: Empty
+type: node
+description: A blank starting point.
+tags: [empty, basic]
+---
+
+# Empty Node
+
+Start your content here.
 `;
-      await writeFile(join(templatesDir, 'Empty.md'), emptyTemplateContent, 'utf-8');
+        await writeFile(defaultEmptyPath, emptyTemplateContent, 'utf-8');
+      }
       
       // Initialize Git repository
       const { spawn } = require('child_process');
@@ -927,6 +1040,8 @@ task:
       
       // Set current project path in electron-store for the main process
       store.set('currentProjectPath', projectPath);
+      // Cache userData path for renderer convenience
+      try { store.set('userDataPath', app.getPath('userData')); } catch {}
       
       // Add to recent projects (also in electron-store)
       const recentProjects = store.get('recentProjects', []) as string[];
@@ -940,6 +1055,335 @@ task:
     }
   });
 
+  // Re-seed templates for an existing desktop project from the global templates directory
+  ipcMain.handle('project:reseedTemplates', async (_evt, projectPath: string) => {
+    try {
+      // Validate the target path to prevent misuse: must match current project path
+      const current = store.get('currentProjectPath') as string | undefined
+      if (!current || !projectPath || (require('path').resolve(projectPath) !== require('path').resolve(current))) {
+        throw new Error('Invalid project path')
+      }
+      const templatesDir = join(projectPath, 'templates');
+      await fs.mkdir(templatesDir, { recursive: true });
+
+      const userGlobalTemplatesBase = (store.get('globalTemplatesDir') as string)
+        || join(app.getPath('userData'), 'templates');
+
+      // Helper to resolve a source root for templates (dev prefers repo assets)
+      const resolveTemplatesSource = async (): Promise<string | null> => {
+        const defaults = await resolveTemplatesDefaultsRoot();
+        const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
+        // Prefer base if it looks like a templates root (has compiler or nodes)
+        const baseHasTemplates = (await (async () => {
+          const c = path.join(userGlobalTemplatesBase, 'compiler');
+          const n = path.join(userGlobalTemplatesBase, 'nodes');
+          return (await exists(c)) || (await exists(n));
+        })());
+        if (baseHasTemplates) return userGlobalTemplatesBase;
+        if (defaults) return defaults;
+        return userGlobalTemplatesBase; // fallback to base even if empty
+      };
+
+      // If user's global templates are missing, seed from defaults before reseed
+      try {
+        const userTemplatesRoot = join(userGlobalTemplatesBase, 'templates');
+        const packagedDefaults = await resolveTemplatesDefaultsRoot();
+        const ensureExists = async (p: string) => { try { await fs.mkdir(p, { recursive: true }); } catch {} };
+        const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } };
+        if (!(await exists(userTemplatesRoot)) && packagedDefaults && await exists(packagedDefaults)) {
+          await ensureExists(userTemplatesRoot);
+          await copyTree(packagedDefaults, userTemplatesRoot);
+        }
+      } catch (e) {
+        console.warn('Failed to seed user global templates from packaged defaults:', e);
+      }
+
+      const srcChosen = await resolveTemplatesSource();
+      const srcTemplates = srcChosen ?? join(userGlobalTemplatesBase, 'templates');
+
+      async function pathExists(p: string): Promise<boolean> {
+        try { await fs.stat(p); return true } catch { return false }
+      }
+      async function ensureDir(p: string) { await fs.mkdir(p, { recursive: true }); }
+      async function copyFileOverwrite(src: string, dst: string) {
+        await ensureDir(path.dirname(dst));
+        await fs.copyFile(src, dst);
+      }
+      async function copyRecursive(srcRoot: string, dstRoot: string) {
+        const entries = await fs.readdir(srcRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          const srcPath = path.join(srcRoot, entry.name);
+          if (entry.isDirectory()) {
+            await copyRecursive(srcPath, path.join(dstRoot, entry.name));
+          } else {
+            await copyFileOverwrite(srcPath, path.join(dstRoot, entry.name));
+          }
+        }
+      }
+
+      // Copy node templates
+      const srcNodes = join(srcTemplates, 'nodes');
+      if (await pathExists(srcNodes)) {
+        await copyRecursive(srcNodes, join(templatesDir, 'nodes'));
+      }
+
+      // Copy compiler templates (ensure default ones exist if missing)
+      const srcCompiler = join(srcTemplates, 'compiler');
+      const dstCompiler = join(templatesDir, 'compiler');
+      if (await pathExists(srcCompiler)) {
+        await copyRecursive(srcCompiler, dstCompiler);
+      }
+      // If compiler folder is still empty/missing, seed minimal defaults for markdown/pdf/docx/html/epub/odt
+      try {
+        await fs.mkdir(dstCompiler, { recursive: true });
+        const fmts = ['markdown','html','pdf','docx','epub','odt'];
+        for (const fmt of fmts) {
+          const base = join(dstCompiler, fmt);
+          await fs.mkdir(base, { recursive: true });
+          // minimal simple.md (now schema-driven to match backend defaults)
+          const simplePath = join(base, 'simple.md');
+          if (!existsSync(simplePath)) {
+            const simpleContent = `---\n` +
+`title: $title$\n` +
+`author: $author$\n` +
+`date: $date$\n` +
+`variables:\n` +
+`  toc:\n` +
+`    type: boolean\n` +
+`    description: Include a generated table of contents at the top.\n` +
+`nodeVariables:\n` +
+`  cvss:\n` +
+`    type: number\n` +
+`    description: Optional CVSS base score if present on a node's metadata.\n` +
+`    path: metadata.cvss\n` +
+`---\n\n` +
+`# $title$\n\n` +
+`$if(toc)$\n` +
+`## Table of Contents\n` +
+`$toc$\n` +
+`$endif$\n\n` +
+`$for(nodes)$\n` +
+`## $nodes.title$\n\n` +
+`$nodes.content$\n\n` +
+`$if(nodes.vars)$\n` +
+`### Variables\n` +
+`$for(nodes.vars)$\n` +
+`- $it.key$: $it.value$\n` +
+`$endfor$\n` +
+`$endif$\n\n` +
+`$endfor$\n`;
+            await fs.writeFile(simplePath, simpleContent, 'utf-8');
+          }
+          const academicPath = join(base, 'academic.md');
+          if (!existsSync(academicPath)) {
+            const academicContent = `---\n` +
+`title: $title$\n` +
+`author: $author$\n` +
+`date: $date$\n` +
+`variables:\n` +
+`  toc:\n` +
+`    type: boolean\n` +
+`    description: Include a generated table of contents.\n` +
+`  includeMetadata:\n` +
+`    type: boolean\n` +
+`    description: Show each node's metadata under its content.\n` +
+`nodeVariables:\n` +
+`  cvss_vector:\n` +
+`    type: string\n` +
+`    description: Optional CVSS v3 vector from node metadata.\n` +
+`    path: metadata.cvss_vector\n` +
+`  cvss:\n` +
+`    type: number\n` +
+`    description: Optional CVSS base score from node metadata.\n` +
+`    path: metadata.cvss\n` +
+`---\n\n` +
+`# $title$\n\n` +
+`$if(toc)$\n` +
+`## Table of Contents\n` +
+`$toc$\n` +
+`$endif$\n\n` +
+`$for(nodes)$\n` +
+`## $nodes.title$\n\n` +
+`$nodes.content$\n\n` +
+`$if(nodes.vars)$\n` +
+`### Variables\n` +
+`$for(nodes.vars)$\n` +
+`- **$it.key$:** $it.value$\n` +
+`$endfor$\n` +
+`$endif$\n\n` +
+`$if(includeMetadata)$\n` +
+`$if(nodes.metadata)$\n` +
+`### Metadata\n` +
+`$for(nodes.metadata)$\n` +
+`- **$it.key$:** $it.value$\n` +
+`$endfor$\n` +
+`$endif$\n` +
+`$endif$\n\n` +
+`$if(nodes.attachments)$\n` +
+`### Attachments\n` +
+`$for(nodes.attachments)$\n` +
+`- $it.name$ ($it.size$)\n` +
+`$endfor$\n` +
+`$endif$\n\n` +
+`$endfor$\n`;
+            await fs.writeFile(academicPath, academicContent, 'utf-8');
+          }
+          const techPath = join(base, 'technical-report.md');
+          if (!existsSync(techPath)) {
+            const techContent = `---\n` +
+`title: $title$\n` +
+`author: $author$\n` +
+`date: $date$\n` +
+`summary: $summary$\n` +
+`variables:\n` +
+`  toc:\n` +
+`    type: boolean\n` +
+`    description: Include a generated table of contents.\n` +
+`  summary:\n` +
+`    type: string\n` +
+`    description: Executive summary paragraph.\n` +
+`  changelog:\n` +
+`    type: array\n` +
+`    item:\n` +
+`      type: object\n` +
+`      fields:\n` +
+`        date: { type: string }\n` +
+`        version: { type: string }\n` +
+`        author: { type: string }\n` +
+`        note: { type: string }\n` +
+`  stakeholders:\n` +
+`    type: array\n` +
+`    item:\n` +
+`      type: object\n` +
+`      fields:\n` +
+`        name: { type: string }\n` +
+`        role: { type: string }\n` +
+`        contact: { type: string }\n` +
+`  raci:\n` +
+`    type: array\n` +
+`    item:\n` +
+`      type: object\n` +
+`      fields:\n` +
+`        task: { type: string }\n` +
+`        r: { type: string }\n` +
+`        a: { type: string }\n` +
+`        c: { type: string }\n` +
+`        i: { type: string }\n` +
+`nodeVariables:\n` +
+`  appendix:\n` +
+`    type: boolean\n` +
+`    label: Appendix\n` +
+`    description: Treat this node as an appendix section\n` +
+`    path: metadata.appendix\n` +
+`    default: false\n` +
+`nodeVariables:\n` +
+`  cvss_vector:\n` +
+`    type: string\n` +
+`    description: Optional CVSS v3 vector string from node metadata.\n` +
+`    path: metadata.cvss_vector\n` +
+`  cvss:\n` +
+`    type: number\n` +
+`    description: Optional CVSS base score from node metadata.\n` +
+`    path: metadata.cvss\n` +
+`---\n\n` +
+`# $title$\n\n` +
+`## Executive Summary\n\n` +
+`$summary$\n\n` +
+`$if(toc)$\n` +
+`## Table of Contents\n` +
+`$toc$\n` +
+`$endif$\n\n` +
+`## Document Changelog\n\n` +
+`| Date | Version | Author | Change |\n` +
+`|------|---------|--------|--------|\n` +
+`$for(changelog)$\n` +
+`| $it.date$ | $it.version$ | $it.author$ | $it.note$ |\n` +
+`$endfor$\n\n` +
+`## Stakeholder Registry\n\n` +
+`| Name | Role | Contact |\n` +
+`|------|------|---------|\n` +
+`$for(stakeholders)$\n` +
+`| $it.name$ | $it.role$ | $it.contact$ |\n` +
+`$endfor$\n\n` +
+`## RACI Matrix\n\n` +
+`| Task | R | A | C | I |\n` +
+`|------|---|---|---|---|\n` +
+`$for(raci)$\n` +
+`| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |\n` +
+`$endfor$\n\n` +
+`$for(nodes)$\n` +
+`$ifnot(nodes.vars.appendix)$\n` +
+`## $nodes.title$\n\n` +
+`$nodes.content$\n` +
+`$endif$\n` +
+`$endfor$\n\n` +
+`$if(nodes)$\n` +
+`## Appendices\n` +
+`$for(nodes)$\n` +
+`$if(nodes.vars.appendix)$\n` +
+`### $nodes.title$\n\n` +
+`$nodes.content$\n` +
+`$endif$\n` +
+`$endfor$\n` +
+`$endif$\n`;
+            await fs.writeFile(techPath, techContent, 'utf-8');
+          }
+        }
+      } catch {}
+
+      // Remove legacy flat Empty.md if nodes version exists
+      try {
+        const flat = join(templatesDir, 'Empty.md');
+        const nodes = join(templatesDir, 'nodes', 'Empty.md');
+        if (existsSync(flat) && existsSync(nodes)) {
+          await fs.unlink(flat);
+        }
+      } catch {}
+
+      return { success: true };
+    } catch (e) {
+      console.error('Failed to reseed templates for desktop project:', e);
+      throw e;
+    }
+  });
+
+  // Seed global templates directory from defaults (repo assets in dev; packaged in prod)
+  ipcMain.handle('templates:seedGlobalDefaults', async (_evt, baseDir?: string) => {
+    try {
+      const base = baseDir || (store.get('globalTemplatesDir') as string) || join(app.getPath('userData'), 'templates')
+      const dstRoot = base
+      const defaults = await resolveTemplatesDefaultsRoot()
+      if (!defaults) return { success: false, message: 'No defaults found' }
+      try { await fs.mkdir(dstRoot, { recursive: true }) } catch {}
+      // Always copy defaults (overwrite policy mirrors reseed/new project logic)
+      // Copy compiler and nodes into base/templates/**
+      const srcCompiler = join(defaults, 'compiler')
+      const srcNodes = join(defaults, 'nodes')
+      const dstTemplates = join(dstRoot, 'templates')
+      try { await fs.mkdir(dstTemplates, { recursive: true }) } catch {}
+      if (await (async p => { try { await fs.stat(p); return true } catch { return false } })(srcCompiler)) {
+        await copyTree(srcCompiler, join(dstTemplates, 'compiler'))
+      }
+      if (await (async p => { try { await fs.stat(p); return true } catch { return false } })(srcNodes)) {
+        await copyTree(srcNodes, join(dstTemplates, 'nodes'))
+      }
+      // Also seed project README
+      const projectsDefaults = join(defaults, 'projects')
+      const projectDst = join(dstRoot, 'project')
+      try { await fs.mkdir(projectDst, { recursive: true }) } catch {}
+      try {
+        const exists = async (p: string) => { try { await fs.stat(p); return true } catch { return false } }
+        if (await exists(projectsDefaults)) {
+          await copyTree(projectsDefaults, projectDst)
+        }
+      } catch {}
+      return { success: true }
+    } catch (e) {
+      console.warn('templates:seedGlobalDefaults failed:', e)
+      return { success: false, message: String(e) }
+    }
+  })
+
   ipcMain.handle('project:open', async (_, projectPath: string) => {
     try {
       if (!existsSync(projectPath)) {
@@ -948,6 +1392,8 @@ task:
       
       // Set current project path in electron-store for the main process
       store.set('currentProjectPath', projectPath);
+      // Cache userData path in case it wasn't already
+      try { store.set('userDataPath', app.getPath('userData')); } catch {}
 
       // Add to recent projects
       const recentProjects = store.get('recentProjects', []) as string[];
@@ -965,6 +1411,15 @@ task:
 
   ipcMain.handle('project:getRecent', async () => {
     return store.get('recentProjects', []) as string[];
+  });
+
+  ipcMain.handle('project:pruneRecent', async () => {
+    const recent = (store.get('recentProjects', []) as string[]).filter(p => typeof p === 'string')
+    const kept = recent.filter(p => existsSync(p))
+    if (kept.length !== recent.length) {
+      store.set('recentProjects', kept)
+    }
+    return kept
   });
 
   // Graph operations (new)
@@ -1201,8 +1656,25 @@ task:
     }
 
     // 1. Read the template file
-    const absoluteTemplatePath = path.join(projectPath, templateRelativePath);
-    if (!existsSync(absoluteTemplatePath)) {
+    // Accept multiple relative forms: "templates/nodes/X.md", "templates/X.md" (flattened), or just "X.md"
+    const candidates: string[] = [];
+    const rel = templateRelativePath.replace(/\\/g, '/');
+    if (path.isAbsolute(rel)) {
+      candidates.push(rel);
+    } else {
+      candidates.push(path.join(projectPath, rel));
+      // If UI sent flattened path under templates/ (without nodes/), try templates/nodes/
+      if (rel.startsWith('templates/') && !rel.startsWith('templates/nodes/')) {
+        const rest = rel.substring('templates/'.length);
+        candidates.push(path.join(projectPath, 'templates', 'nodes', rest));
+      }
+      // If UI sent just filename, look under templates/nodes/
+      if (!rel.includes('/') && rel.toLowerCase().endsWith('.md')) {
+        candidates.push(path.join(projectPath, 'templates', 'nodes', rel));
+      }
+    }
+    let absoluteTemplatePath = candidates.find(p => existsSync(p));
+    if (!absoluteTemplatePath) {
       throw new Error(`Template file not found: ${templateRelativePath}`);
     }
     const templateFileContent = await fs.readFile(absoluteTemplatePath, 'utf8');
@@ -1831,7 +2303,12 @@ task:
   });
 
   ipcMain.handle('shell:showItemInFolder', async (_, itemPath: string) => {
-    shell.showItemInFolder(itemPath);
+    try { shell.showItemInFolder(itemPath); } catch (e) { console.warn('showItemInFolder failed:', e); }
+  });
+
+  ipcMain.handle('shell:openPath', async (_, anyPath: string) => {
+    // Open a folder or file path via shell.openPath
+    try { await shell.openPath(anyPath); } catch (e) { console.warn('openPath failed:', e); }
   });
 
   // Window operations
@@ -1895,6 +2372,7 @@ task:
   ipcMain.handle('set-store-value', async (_, key: string, value: any) => {
     store.set(key, value);
   });
+
 
   ipcMain.handle('get-app-version', async () => {
     return app.getVersion();
@@ -2027,6 +2505,15 @@ app.whenReady().then(async () => {
   createWindow();
   createMenu();
   setupIpcHandlers();
+  // Persist userData path early so renderer can derive defaults
+  try { store.set('userDataPath', app.getPath('userData')); } catch {}
+  // Initialize default global templates base if not set
+  try {
+    const existing = store.get('globalTemplatesDir') as string | undefined
+    if (!existing || existing === '/templates' || existing === 'templates') {
+      store.set('globalTemplatesDir', join(app.getPath('userData'), 'templates'))
+    }
+  } catch {}
 });
 
 app.on('window-all-closed', () => {

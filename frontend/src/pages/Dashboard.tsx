@@ -27,6 +27,8 @@ export default function Dashboard() {
     if (!isElectron || !window.electronAPI) return;
     
     try {
+      // Prune invalid entries first
+      await window.electronAPI.pruneRecentProjects?.();
       const recent = await window.electronAPI.getRecentProjects?.();
       setRecentProjects(recent || []);
     } catch (error) {
@@ -40,6 +42,14 @@ export default function Dashboard() {
     try {
       if (projectPath) {
         // Open specific project from recent projects
+        // Validate existence
+        const exists = await window.electronAPI.pathExists?.(projectPath);
+        if (!exists) {
+          // Remove stale and refresh list
+          await window.electronAPI.pruneRecentProjects?.();
+          await loadRecentProjects();
+          throw new Error('Selected recent project no longer exists on disk.');
+        }
         await window.electronAPI.openProject?.(projectPath);
         setCurrentProjectPath(projectPath);
         navigate('/dashboard');
@@ -48,6 +58,8 @@ export default function Dashboard() {
         const result = await window.electronAPI.openDirectory?.();
         if (result && !result.canceled && result.filePaths.length > 0) {
           const selectedPath = result.filePaths[0];
+          const exists = await window.electronAPI.pathExists?.(selectedPath);
+          if (!exists) throw new Error('Selected folder does not exist.');
           await window.electronAPI.openProject?.(selectedPath);
           setCurrentProjectPath(selectedPath);
           navigate('/dashboard');
