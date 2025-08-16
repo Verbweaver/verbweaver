@@ -37,7 +37,7 @@ export default function DependencyChecker({ onComplete, showOnStartup = false }:
       const deps = await (window as any).electronAPI.checkDependencies();
       setDependencies(deps);
       
-      const missing = deps.some(dep => !dep.available);
+             const missing = deps.some((dep: Dependency) => !dep.available);
       setHasMissingDependencies(missing);
       
       // Show dialog if there are missing dependencies and we should show on startup
