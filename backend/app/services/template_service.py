@@ -62,8 +62,11 @@ class TemplateService:
         custom_variables = []
         
         try:
-            # Check for basic Pandoc template syntax
-            if not re.search(r'\$[a-zA-Z_][a-zA-Z0-9_]*\$', template_content):
+            # Check for basic Pandoc template syntax or Liquid/Jinja2 include syntax
+            has_pandoc_vars = re.search(r'\$[a-zA-Z_][a-zA-Z0-9_]*\$', template_content)
+            has_include_syntax = re.search(r'{%\s*include_relative\s+', template_content)
+            
+            if not has_pandoc_vars and not has_include_syntax:
                 errors.append("Template must contain at least one variable")
             
             # Extract custom variables (excluding standard ones and control variables)
@@ -193,7 +196,45 @@ class TemplateService:
         
         return len(errors) == 0, custom_variables, (schema or {'variables': {}, 'nodeVariables': {}}), errors
     
-    def process_template(self, template_content: str, data: Dict[str, Any]) -> str:
+    def process_includes_only(self, template_content: str, template_path: str = None) -> str:
+        """Process only the include statements in a template, without processing variables or other template logic.
+        This is used to resolve includes before schema extraction."""
+        # Normalize newlines for consistent regex behavior
+        processed_content = template_content.replace('\r\n', '\n').replace('\r', '\n')
+        
+        # Process includes - replace {% include_relative path %} with the content of the included template
+        include_pattern = re.compile(r'{%\s*include_relative\s+([^}]+)\s*%}')
+        
+        def replace_include(match):
+            include_path = match.group(1).strip()
+            
+            # Resolve relative path from the template file's directory
+            if template_path:
+                # Get the directory of the template file
+                template_file_path = Path(self.project_path) / template_path
+                template_dir = template_file_path.parent
+                full_include_path = (template_dir / include_path).resolve()
+            else:
+                # Fallback to templates/compiler directory (for backward compatibility)
+                full_include_path = (self.templates_dir / include_path).resolve()
+            
+            try:
+                if full_include_path.exists():
+                    included_content = full_include_path.read_text(encoding='utf-8')
+                    # Recursively process includes in the included template
+                    # Pass the included template's path for correct relative path resolution
+                    included_template_path = str(full_include_path.relative_to(self.project_path))
+                    return self.process_includes_only(included_content, included_template_path)
+                else:
+                    logger.error(f"Included template not found: {full_include_path}")
+                    return f"<!-- ERROR: Included template not found: {include_path} -->"
+            except Exception as e:
+                logger.error(f"Error processing included template {include_path}: {e}")
+                return f"<!-- ERROR: Failed to process included template {include_path}: {e} -->"
+        
+        return include_pattern.sub(replace_include, processed_content)
+    
+    def process_template(self, template_content: str, data: Dict[str, Any], template_path: str = None) -> str:
         """Process template with provided data.
         Supports a subset of Pandoc-like template syntax inside Markdown content:
         - $var$
@@ -201,9 +242,42 @@ class TemplateService:
         - $for(nodes)$ ... $endfor$
         - $if(nodes.metadata)$, $for(nodes.metadata)$ and the $it.key$/$it.value$ placeholders
         - $if(nodes.attachments)$, $for(nodes.attachments)$ and $it.name$/$it.size$
+        - {% include_relative %} for including other templates
         """
         # Normalize newlines for consistent regex behavior
         processed_content = template_content.replace('\r\n', '\n').replace('\r', '\n')
+        
+        # Process includes first - replace {% include_relative path %} with the content of the included template
+        include_pattern = re.compile(r'{%\s*include_relative\s+([^}]+)\s*%}')
+        
+        def replace_include(match):
+            include_path = match.group(1).strip()
+            
+            # Resolve relative path from the template file's directory
+            if template_path:
+                # Get the directory of the template file
+                template_file_path = Path(self.project_path) / template_path
+                template_dir = template_file_path.parent
+                full_include_path = (template_dir / include_path).resolve()
+            else:
+                # Fallback to templates/compiler directory (for backward compatibility)
+                full_include_path = (self.templates_dir / include_path).resolve()
+            
+            try:
+                if full_include_path.exists():
+                    included_content = full_include_path.read_text(encoding='utf-8')
+                    # Recursively process the included template
+                    # Pass the included template's path for correct relative path resolution
+                    included_template_path = str(full_include_path.relative_to(self.project_path))
+                    return self.process_template(included_content, data, included_template_path)
+                else:
+                    logger.error(f"Included template not found: {full_include_path}")
+                    return f"<!-- ERROR: Included template not found: {include_path} -->"
+            except Exception as e:
+                logger.error(f"Error processing included template {include_path}: {e}")
+                return f"<!-- ERROR: Failed to process included template {include_path}: {e} -->"
+        
+        processed_content = include_pattern.sub(replace_include, processed_content)
 
         # Replace simple variables first
         for key, value in data.items():
@@ -327,147 +401,148 @@ class TemplateService:
             for node in nodes:
                 node_block = loop_content
 
-            # Helper: resolve dotted expression like nodes.vars.appendix against current node
-            def resolve_node_expr(expr: str, node_obj: Dict[str, Any]) -> Any:
-                try:
-                    path_expr = expr.strip()
-                    if path_expr.startswith('nodes.'):
-                        path_expr = path_expr[len('nodes.'):]
-                    cur: Any = node_obj
-                    for part in str(path_expr).split('.') if path_expr else []:
-                        if isinstance(cur, dict) and part in cur:
-                            cur = cur[part]
-                        else:
-                            return None
-                    return cur
-                except Exception:
-                    return None
+                # Helper: resolve dotted expression like nodes.vars.appendix against current node
+                def resolve_node_expr(expr: str, node_obj: Dict[str, Any]) -> Any:
+                    try:
+                        path_expr = expr.strip()
+                        if path_expr.startswith('nodes.'):
+                            path_expr = path_expr[len('nodes.'):]
+                        cur: Any = node_obj
+                        for part in str(path_expr).split('.') if path_expr else []:
+                            if isinstance(cur, dict) and part in cur:
+                                cur = cur[part]
+                            else:
+                                return None
+                        return cur
+                    except Exception:
+                        return None
 
-            # Helper: recursively replace $nodes.<path>$ for nested dicts
-            def replace_nested(prefix: str, obj: Any, text: str) -> str:
-                if isinstance(obj, dict):
-                    for k, v in obj.items():
-                        text = replace_nested(f"{prefix}.{k}", v, text)
-                elif isinstance(obj, list):
-                    # No direct single placeholder replacement for lists; handled via loops if needed
-                    pass
-                else:
-                    text = text.replace(f'$nodes.{prefix}$', str(obj))
-                return text
+                # Helper: recursively replace $nodes.<path>$ for nested dicts
+                def replace_nested(prefix: str, obj: Any, text: str) -> str:
+                    if isinstance(obj, dict):
+                        for k, v in obj.items():
+                            text = replace_nested(f"{prefix}.{k}", v, text)
+                    elif isinstance(obj, list):
+                        # No direct single placeholder replacement for lists; handled via loops if needed
+                        pass
+                    else:
+                        text = text.replace(f'$nodes.{prefix}$', str(obj))
+                    return text
 
-            # Replace scalar node fields, e.g., $nodes.title$, $nodes.content$ and nested dicts like metadata.*, vars.*
-            for key, value in node.items():
-                if isinstance(value, (str, int, float)):
-                    node_block = node_block.replace(f'$nodes.{key}$', str(value))
-                elif isinstance(value, dict):
-                    node_block = replace_nested(key, value, node_block)
+                # Replace scalar node fields, e.g., $nodes.title$, $nodes.content$ and nested dicts like metadata.*, vars.*
+                for key, value in node.items():
+                    if isinstance(value, (str, int, float)):
+                        node_block = node_block.replace(f'$nodes.{key}$', str(value))
+                    elif isinstance(value, dict):
+                        node_block = replace_nested(key, value, node_block)
 
-            # Node-scoped conditionals: support $if(nodes.<path>)$ ... $endif$ and $ifnot(nodes.<path>)$ ... $endif$
-            def apply_node_conditionals(text: str) -> str:
-                # $if(expr)$ ... $endif$
-                if_pat = re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
-                # $ifnot(expr)$ ... $endif$
-                ifnot_pat = re.compile(r"\$ifnot\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
+                # Node-scoped conditionals: support $if(nodes.<path>)$ ... $endif$ and $ifnot(nodes.<path>)$ ... $endif$
+                def apply_node_conditionals(text: str) -> str:
+                    # $if(expr)$ ... $endif$
+                    if_pat = re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
+                    # $ifnot(expr)$ ... $endif$
+                    ifnot_pat = re.compile(r"\$ifnot\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
 
-                # Single-pass evaluation to avoid nesting issues
-                def if_repl(m):
-                    expr = m.group(1).strip()
-                    if expr.startswith('nodes.'):
-                        val = resolve_node_expr(expr, node)
-                        return m.group(2) if bool(val) else ''
-                    return m.group(0)
+                    # Single-pass evaluation to avoid nesting issues
+                    def if_repl(m):
+                        expr = m.group(1).strip()
+                        if expr.startswith('nodes.'):
+                            val = resolve_node_expr(expr, node)
+                            return m.group(2) if bool(val) else ''
+                        return m.group(0)
 
-                def ifnot_repl(m):
-                    expr = m.group(1).strip()
-                    if expr.startswith('nodes.'):
-                        val = resolve_node_expr(expr, node)
-                        return m.group(2) if (not bool(val)) else ''
-                    return m.group(0)
+                    def ifnot_repl(m):
+                        expr = m.group(1).strip()
+                        if expr.startswith('nodes.'):
+                            val = resolve_node_expr(expr, node)
+                            return m.group(2) if (not bool(val)) else ''
+                        return m.group(0)
 
-                text = if_pat.sub(if_repl, text)
-                text = ifnot_pat.sub(ifnot_repl, text)
-                return text
+                    text = if_pat.sub(if_repl, text)
+                    text = ifnot_pat.sub(ifnot_repl, text)
+                    return text
 
-            # Also support legacy convenience checks for metadata/vars/attachments presence
-            has_meta = isinstance(node.get('metadata'), dict) and len(node.get('metadata')) > 0
-            if has_meta:
-                node_block = re.sub(r"\$if\(nodes\.metadata\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
-            else:
-                node_block = re.sub(r"\$if\(nodes\.metadata\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
-
-            has_vars = isinstance(node.get('vars'), dict) and len(node.get('vars')) > 0
-            if has_vars:
-                node_block = re.sub(r"\$if\(nodes\.vars\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
-            else:
-                node_block = re.sub(r"\$if\(nodes\.vars\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
-
-            has_atts = isinstance(node.get('attachments'), list) and len(node.get('attachments')) > 0
-            if has_atts:
-                node_block = re.sub(r"\$if\(nodes\.attachments\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
-            else:
-                node_block = re.sub(r"\$if\(nodes\.attachments\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
-
-            # Apply generic node conditionals ($if(nodes.path)$ and $ifnot(nodes.path)$)
-            node_block = apply_node_conditionals(node_block)
-
-            # Expand metadata loop $for(nodes.metadata)$ ... $endfor$ (all occurrences)
-            while True:
-                meta_loop = re.search(r'\$for\(nodes\.metadata\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
-                if not meta_loop:
-                    break
-                inner = meta_loop.group(1)
-                items: List[str] = []
+                # Also support legacy convenience checks for metadata/vars/attachments presence
+                has_meta = isinstance(node.get('metadata'), dict) and len(node.get('metadata')) > 0
                 if has_meta:
-                    for mk, mv in node.get('metadata', {}).items():
-                        item = inner
-                        item = item.replace('$it.key$', str(mk))
-                        item = item.replace('$it.value$', str(mv))
-                        items.append(item)
-                node_block = node_block.replace(meta_loop.group(0), '\n'.join(items))
+                    node_block = re.sub(r"\$if\(nodes\.metadata\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
+                else:
+                    node_block = re.sub(r"\$if\(nodes\.metadata\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
 
-            # Expand vars loop $for(nodes.vars)$ ... $endfor$ (all occurrences)
-            while True:
-                vars_loop = re.search(r'\$for\(nodes\.vars\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
-                if not vars_loop:
-                    break
-                inner = vars_loop.group(1)
-                items: List[str] = []
+                has_vars = isinstance(node.get('vars'), dict) and len(node.get('vars')) > 0
                 if has_vars:
-                    for mk, mv in node.get('vars', {}).items():
-                        item = inner
-                        item = item.replace('$it.key$', str(mk))
-                        item = item.replace('$it.value$', str(mv))
-                        items.append(item)
-                node_block = node_block.replace(vars_loop.group(0), '\n'.join(items))
+                    node_block = re.sub(r"\$if\(nodes\.vars\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
+                else:
+                    node_block = re.sub(r"\$if\(nodes\.vars\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
 
-            # Expand attachments loop $for(nodes.attachments)$ ... $endfor$ (all occurrences)
-            while True:
-                att_loop = re.search(r'\$for\(nodes\.attachments\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
-                if not att_loop:
-                    break
-                inner = att_loop.group(1)
-                items: List[str] = []
+                has_atts = isinstance(node.get('attachments'), list) and len(node.get('attachments')) > 0
                 if has_atts:
-                    for att in node.get('attachments', []):
-                        if isinstance(att, dict):
-                            item = inner
-                            for k, v in att.items():
-                                item = item.replace(f'$it.{k}$', str(v))
-                            items.append(item)
-                node_block = node_block.replace(att_loop.group(0), '\n'.join(items))
+                    node_block = re.sub(r"\$if\(nodes\.attachments\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
+                else:
+                    node_block = re.sub(r"\$if\(nodes\.attachments\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
 
-            # Basic $nodes.attachments$ single placeholder support
-            if '$nodes.attachments$' in node_block and has_atts:
-                bullet_lines = []
-                for att in node['attachments']:
-                    if isinstance(att, dict):
-                        name = att.get('name', 'Unknown')
-                        size = att.get('size', '')
-                        bullet = f"- {name} ({size})" if size else f"- {name}"
-                        bullet_lines.append(bullet)
-                node_block = node_block.replace('$nodes.attachments$', '\n'.join(bullet_lines))
-            # Always append the processed node block
-            rendered_nodes.append(node_block)
+                # Apply generic node conditionals ($if(nodes.path)$ and $ifnot(nodes.path)$)
+                node_block = apply_node_conditionals(node_block)
+
+                # Expand metadata loop $for(nodes.metadata)$ ... $endfor$ (all occurrences)
+                while True:
+                    meta_loop = re.search(r'\$for\(nodes\.metadata\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
+                    if not meta_loop:
+                        break
+                    inner = meta_loop.group(1)
+                    items: List[str] = []
+                    if has_meta:
+                        for mk, mv in node.get('metadata', {}).items():
+                            item = inner
+                            item = item.replace('$it.key$', str(mk))
+                            item = item.replace('$it.value$', str(mv))
+                            items.append(item)
+                    node_block = node_block.replace(meta_loop.group(0), '\n'.join(items))
+
+                # Expand vars loop $for(nodes.vars)$ ... $endfor$ (all occurrences)
+                while True:
+                    vars_loop = re.search(r'\$for\(nodes\.vars\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
+                    if not vars_loop:
+                        break
+                    inner = vars_loop.group(1)
+                    items: List[str] = []
+                    if has_vars:
+                        for mk, mv in node.get('vars', {}).items():
+                            item = inner
+                            item = item.replace('$it.key$', str(mk))
+                            item = item.replace('$it.value$', str(mv))
+                            items.append(item)
+                    node_block = node_block.replace(vars_loop.group(0), '\n'.join(items))
+
+                # Expand attachments loop $for(nodes.attachments)$ ... $endfor$ (all occurrences)
+                while True:
+                    att_loop = re.search(r'\$for\(nodes\.attachments\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
+                    if not att_loop:
+                        break
+                    inner = att_loop.group(1)
+                    items: List[str] = []
+                    if has_atts:
+                        for att in node.get('attachments', []):
+                            if isinstance(att, dict):
+                                item = inner
+                                for k, v in att.items():
+                                    item = item.replace(f'$it.{k}$', str(v))
+                                items.append(item)
+                    node_block = node_block.replace(att_loop.group(0), '\n'.join(items))
+
+                # Basic $nodes.attachments$ single placeholder support
+                if '$nodes.attachments$' in node_block and has_atts:
+                    bullet_lines = []
+                    for att in node['attachments']:
+                        if isinstance(att, dict):
+                            name = att.get('name', 'Unknown')
+                            size = att.get('size', '')
+                            bullet = f"- {name} ({size})" if size else f"- {name}"
+                            bullet_lines.append(bullet)
+                    node_block = node_block.replace('$nodes.attachments$', '\n'.join(bullet_lines))
+                
+                # Always append the processed node block
+                rendered_nodes.append(node_block)
 
             out_parts.append('\n\n'.join(rendered_nodes))
             idx = m.end()

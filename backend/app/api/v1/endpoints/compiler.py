@@ -72,8 +72,12 @@ class ContentAggregator:
         if not template_content:
             raise ValueError(f"Template not found: {template_path}")
         
-        # Validate template and get schema (variables + nodeVariables)
-        is_valid, custom_vars, schema, validation_messages = self.template_service.validate_template(template_content)
+        # First, process includes to get the final template content
+        # This ensures we extract schema from the actual template that will be used
+        final_template_content = self.template_service.process_includes_only(template_content, template_path)
+        
+        # Validate template and get schema (variables + nodeVariables) from the final template
+        is_valid, custom_vars, schema, validation_messages = self.template_service.validate_template(final_template_content)
         if not is_valid:
             raise ValueError(f"Invalid template: {custom_vars}")
 
@@ -334,8 +338,9 @@ class ContentAggregator:
         except Exception:
             pass
 
-        # Process template with data
-        return self.template_service.process_template(template_content, data)
+        # Process template with data (use original template_content, not final_template_content)
+        # The includes will be processed again during the full template processing
+        return self.template_service.process_template(template_content, data, template_path)
     
     def _find_default_template(self, format_type: str) -> Optional[str]:
         """Find the default template for a format type"""
