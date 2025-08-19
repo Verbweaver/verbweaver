@@ -55,3 +55,4 @@ def test_backend_functionality():
     assert hasattr(app, 'routes')
     assert hasattr(settings, 'APP_NAME')
     assert settings.APP_NAME == "Verbweaver API"
+
