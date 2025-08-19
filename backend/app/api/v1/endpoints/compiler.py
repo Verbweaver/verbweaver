@@ -875,8 +875,12 @@ async def get_template_content(
     if not content:
         raise HTTPException(status_code=404, detail="Template not found")
     
-    # Validate template and extract schema
-    is_valid, custom_variables, schema, validation_messages = template_service.validate_template(content)
+    # Process includes to get the final template content for schema extraction
+    # This ensures custom variables are extracted from the actual template that will be used
+    final_content = template_service.process_includes_only(content, template_path)
+    
+    # Validate template and extract schema from the fully resolved template
+    is_valid, custom_variables, schema, validation_messages = template_service.validate_template(final_content)
     
     return {
         "content": content,
