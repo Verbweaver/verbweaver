@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { FileDown, FileText, Book, Package, Globe, Code, Loader2 } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
+import { useTabStore } from '../store/tabStore'
 import { EXPORT_FORMATS } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
@@ -98,11 +99,75 @@ function CompilerView() {
     lineSpacing: '1.5'
   })
 
+  // Tab store for persistence
+  const { getActiveTab, updateTab } = useTabStore()
+  
+  // Flag to track if we've restored state from tab metadata
+  const [hasRestoredState, setHasRestoredState] = useState(false)
+  // Flag to prevent saving state during restoration
+  const [isRestoring, setIsRestoring] = useState(false)
+  // Flag to track if we've attempted restoration
+  const [hasAttemptedRestoration, setHasAttemptedRestoration] = useState(false)
+
   useEffect(() => {
-    if (currentProject) {
+    if (currentProject && !hasRestoredState) {
       setTitle(currentProject.name)
     }
-  }, [currentProject])
+  }, [currentProject, hasRestoredState])
+
+  // Restore compiler state from tab metadata when switching back to compiler tab
+  useEffect(() => {
+    const restoreState = () => {
+      const tab = getActiveTab()
+      if (tab?.type === 'compiler' && tab.metadata?.compilerState) {
+        const state = tab.metadata.compilerState
+        
+        setIsRestoring(true)
+        if (state.title !== undefined) setTitle(state.title)
+        if (state.author !== undefined) setAuthor(state.author)
+        if (state.selectedNodes) setSelectedNodes(state.selectedNodes)
+        if (state.selectedFormat) setSelectedFormat(state.selectedFormat)
+        if (state.options) setOptions(prev => ({ ...prev, ...state.options }))
+        setHasRestoredState(true)
+        
+        // Small delay to ensure all state updates are processed before allowing saves
+        setTimeout(() => setIsRestoring(false), 100)
+      }
+    }
+    
+    // Small delay to ensure component is fully mounted
+    const timeoutId = setTimeout(restoreState, 0)
+    return () => clearTimeout(timeoutId)
+  }, [])
+
+  // Save compiler state to tab metadata whenever state changes
+  useEffect(() => {
+    if (isRestoring) {
+      return
+    }
+    
+    const tab = getActiveTab()
+    if (tab?.type === 'compiler') {
+      updateTab(tab.id, {
+        metadata: {
+          ...tab.metadata,
+          compilerState: {
+            title,
+            author,
+            selectedNodes,
+            selectedFormat,
+            options
+          }
+        }
+      })
+    }
+  }, [title, author, selectedNodes, selectedFormat, options, isRestoring])
+
+  // Reset restoration flag when project changes
+  useEffect(() => {
+    setHasRestoredState(false)
+    setIsRestoring(false)
+  }, [currentProject?.id])
 
   const handleCompile = async () => {
     if (!currentProject) return
