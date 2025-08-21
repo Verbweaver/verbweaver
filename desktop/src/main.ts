@@ -588,24 +588,33 @@ function setupIpcHandlers() {
   ipcMain.handle('fs:readDirectory', async (_event, dirPath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
+      console.log(`[main] fs:readDirectory called with dirPath: "${dirPath}", projectPath: "${projectPath}"`);
+      
       // Allow absolute paths even if no project is open (for global templates folder)
       const fullPath = path.isAbsolute(dirPath)
         ? dirPath
         : (projectPath ? path.join(projectPath as string, dirPath) : dirPath);
-      const items = await fs.readdir(fullPath, { withFileTypes: true });
       
-      return items
+      console.log(`[main] fs:readDirectory resolved fullPath: "${fullPath}"`);
+      
+      const items = await fs.readdir(fullPath, { withFileTypes: true });
+      console.log(`[main] fs:readDirectory found ${items.length} items in "${fullPath}":`, items.map(i => i.name));
+      
+      const result = items
         .filter(item => item.name !== '.gitkeep') // Exclude .gitkeep files as they are not actual nodes
         .map(item => ({
           name: item.name,
-          // Return relative path from the project root
+          // Return relative path from the project root, or just the filename for absolute paths with no project
           path: path.isAbsolute(dirPath) 
-            ? path.relative(projectPath as string, path.join(dirPath, item.name))
+            ? (projectPath ? path.relative(projectPath as string, path.join(dirPath, item.name)) : item.name)
             : path.join(dirPath, item.name),
           type: item.isDirectory() ? 'directory' : 'file'
         }));
+      
+      console.log(`[main] fs:readDirectory returning ${result.length} items:`, result.map(i => ({ name: i.name, path: i.path, type: i.type })));
+      return result;
     } catch (error) {
-      console.error('Failed to read directory:', error);
+      console.error('[main] fs:readDirectory failed:', error);
       throw error;
     }
   });
