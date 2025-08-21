@@ -16,6 +16,7 @@ import clsx from 'clsx'
 import { useProjectStore } from '../store/projectStore'
 import { useAuthStore } from '../services/auth'
 import { useTabStore } from '../store/tabStore'
+import { useEffect, useState } from 'react'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
@@ -30,9 +31,23 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
   const { currentProject } = useProjectStore()
   const { user } = useAuthStore()
   const { tabs, addTab, setActiveTab } = useTabStore()
+  const [faviconPath, setFaviconPath] = useState('/favicon.svg')
 
-  // Use relative path for favicon in Electron, absolute path for web
-  const faviconPath = isElectron ? './favicon.svg' : '/favicon.svg'
+  // Get the favicon path dynamically
+  useEffect(() => {
+    if (isElectron) {
+      // In Electron, try to get the favicon from the document head
+      const faviconLink = document.querySelector('link[rel="icon"]') as HTMLLinkElement
+      if (faviconLink && faviconLink.href) {
+        // Extract the relative path
+        const url = new URL(faviconLink.href, window.location.href)
+        setFaviconPath(url.pathname)
+      } else {
+        // Fallback to the known hashed path
+        setFaviconPath('./assets/favicon-CBf4nkjE.svg')
+      }
+    }
+  }, [isElectron])
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, type: 'dashboard' as const },
