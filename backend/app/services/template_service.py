@@ -383,7 +383,7 @@ class TemplateService:
     
     def _process_nodes_array(self, template: str, nodes: List[Dict[str, Any]]) -> str:
         """Process all $for(nodes)$ ... $endfor$ loops in the template (zero or more occurrences)."""
-        pattern = re.compile(r'\$for\(nodes\)\$(.*?)\$endfor\$', re.DOTALL)
+        pattern = re.compile(r'\$for\(nodes\)\$(.*)\$endfor\$', re.DOTALL)
         out_parts: List[str] = []
         idx = 0
         while True:
