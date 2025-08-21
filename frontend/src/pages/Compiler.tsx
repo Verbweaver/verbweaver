@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { FileDown, FileText, Book, Package, Globe, Code, Loader2, FileType, AlertTriangle } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
+import { useTabStore } from '../store/tabStore'
 import { EXPORT_FORMATS } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
@@ -132,6 +133,18 @@ function CompilerView() {
     lineSpacing: '1.5'
   })
 
+  // Tab store for persistence
+  const { getActiveTab, updateTab } = useTabStore()
+  
+  // Flag to track if we've restored state from tab metadata
+  const [hasRestoredState, setHasRestoredState] = useState(false)
+  // Flag to prevent saving state during restoration
+  const [isRestoring, setIsRestoring] = useState(false)
+  // Flag to track if we've attempted restoration
+  const [hasAttemptedRestoration, setHasAttemptedRestoration] = useState(false)
+  // Flag to prevent initial save when component first mounts
+  const [hasInitialized, setHasInitialized] = useState(false)
+
   // Stable callbacks to avoid re-running child effects on every render
   const handleOrderChange = useCallback((paths: string[]) => {
     setOrderedNodes(paths)
@@ -143,10 +156,104 @@ function CompilerView() {
   }, [])
 
   useEffect(() => {
-    if (currentProject) {
+    if (currentProject && !hasRestoredState) {
+      console.log('[Compiler] Setting title from project name:', currentProject.name)
       setTitle(currentProject.name)
+    } else if (currentProject && hasRestoredState) {
+      console.log('[Compiler] Skipping project name title set because state was restored')
     }
-  }, [currentProject])
+  }, [currentProject, hasRestoredState])
+
+  // Restore compiler state from tab metadata when switching back to compiler tab
+  useEffect(() => {
+    console.log('[Compiler] Attempting to restore state from tab metadata')
+    const restoreState = () => {
+      const tab = getActiveTab()
+      console.log('[Compiler] Checking for saved state in tab:', tab?.type, tab?.metadata?.compilerState ? 'found' : 'not found')
+      if (tab?.type === 'compiler' && tab.metadata?.compilerState) {
+        const state = tab.metadata.compilerState
+        console.log('[Compiler] Restoring state from tab:', {
+          title: state.title,
+          author: state.author,
+          selectedNodes: state.selectedNodes?.length,
+          orderedNodes: state.orderedNodes?.length,
+          selectedFormat: state.selectedFormat,
+          selectedTemplate: state.selectedTemplate
+        })
+        
+        setIsRestoring(true)
+        // Set all state in a batch to prevent interference
+        if (state.title !== undefined) setTitle(state.title)
+        if (state.author !== undefined) setAuthor(state.author)
+        if (state.selectedNodes) setSelectedNodes(state.selectedNodes)
+        if (state.orderedNodes) setOrderedNodes(state.orderedNodes)
+        if (state.selectedFormat) setSelectedFormat(state.selectedFormat)
+        if (state.selectedTemplate) setSelectedTemplate(state.selectedTemplate)
+        if (state.customVariables) setCustomVariables(state.customVariables)
+        if (state.nodeVariables) setNodeVariables(state.nodeVariables)
+        if (state.docVars) setDocVars(state.docVars)
+        if (state.options) setOptions(prev => ({ ...prev, ...state.options }))
+        setHasRestoredState(true)
+        console.log('[Compiler] State restored, setting hasRestoredState to true')
+        
+        // Small delay to ensure all state updates are processed before allowing saves
+        setTimeout(() => {
+          setIsRestoring(false)
+          setHasInitialized(true)
+          console.log('[Compiler] Restoration complete, saving enabled')
+        }, 100)
+      } else if (tab?.type === 'compiler' && !hasRestoredState) {
+        // If we're on a compiler tab but no saved state, mark as restored to prevent project name override
+        console.log('[Compiler] No saved state found, marking as restored to prevent project name override')
+        setHasRestoredState(true)
+        setHasInitialized(true)
+      }
+    }
+    
+    // Small delay to ensure component is fully mounted
+    const timeoutId = setTimeout(restoreState, 0)
+    return () => clearTimeout(timeoutId)
+  }, [getActiveTab]) // Run when active tab changes only
+
+  // Save compiler state to tab metadata whenever state changes
+  useEffect(() => {
+    if (isRestoring || !hasInitialized) {
+      console.log('[Compiler] Skipping save during restoration or initialization')
+      return
+    }
+    
+    const tab = getActiveTab()
+    if (tab?.type === 'compiler') {
+      console.log('[Compiler] Saving state to tab:', {
+        title,
+        author,
+        selectedNodes: selectedNodes.length,
+        orderedNodes: orderedNodes.length,
+        selectedFormat,
+        selectedTemplate
+      })
+      updateTab(tab.id, {
+        metadata: {
+          ...tab.metadata,
+          compilerState: {
+            title,
+            author,
+            selectedNodes,
+            orderedNodes,
+            selectedFormat,
+            selectedTemplate,
+            customVariables,
+            nodeVariables,
+            docVars,
+            options
+          }
+        }
+      })
+    }
+  }, [
+    title, author, selectedNodes, orderedNodes, selectedFormat, selectedTemplate,
+    customVariables, nodeVariables, docVars, options, isRestoring, hasInitialized
+  ])
 
   // Load templates when format changes
   useEffect(() => {
@@ -174,6 +281,20 @@ function CompilerView() {
     
     checkDependencies();
   }, []);
+
+  // Track the last project ID to detect actual project changes
+  const [lastProjectId, setLastProjectId] = useState<string | null>(null)
+  
+  // Reset restoration flag only when project actually changes
+  useEffect(() => {
+    if (currentProject?.id !== lastProjectId) {
+      console.log('[Compiler] Project actually changed from', lastProjectId, 'to', currentProject?.id)
+      setLastProjectId(currentProject?.id || null)
+      setHasRestoredState(false)
+      setIsRestoring(false)
+      setHasInitialized(false)
+    }
+  }, [currentProject?.id, lastProjectId])
 
   const loadTemplates = async (format: string) => {
     if (!currentProject) return
