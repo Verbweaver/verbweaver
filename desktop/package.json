@@ -18,7 +18,11 @@
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:full": "cd ../frontend && npm run build && cd ../desktop && npm run build && electron-builder",
+    "dist:full:win": "cd ../frontend && npm run build && cd ../desktop && npm run build && electron-builder --win",
+    "dist:full:mac": "cd ../frontend && npm run build && cd ../desktop && npm run build && electron-builder --mac",
+    "dist:full:linux": "cd ../frontend && npm run build && cd ../desktop && npm run build && electron-builder --linux"
   },
   "dependencies": {
     "@verbweaver/shared": "file:../shared",
