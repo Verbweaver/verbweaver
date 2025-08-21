@@ -594,14 +594,16 @@ function setupIpcHandlers() {
         : (projectPath ? path.join(projectPath as string, dirPath) : dirPath);
       const items = await fs.readdir(fullPath, { withFileTypes: true });
       
-      return items.map(item => ({
-        name: item.name,
-        // Return relative path from the project root
-        path: path.isAbsolute(dirPath) 
-          ? path.relative(projectPath as string, path.join(dirPath, item.name))
-          : path.join(dirPath, item.name),
-        type: item.isDirectory() ? 'directory' : 'file'
-      }));
+      return items
+        .filter(item => item.name !== '.gitkeep') // Exclude .gitkeep files as they are not actual nodes
+        .map(item => ({
+          name: item.name,
+          // Return relative path from the project root
+          path: path.isAbsolute(dirPath) 
+            ? path.relative(projectPath as string, path.join(dirPath, item.name))
+            : path.join(dirPath, item.name),
+          type: item.isDirectory() ? 'directory' : 'file'
+        }));
     } catch (error) {
       console.error('Failed to read directory:', error);
       throw error;

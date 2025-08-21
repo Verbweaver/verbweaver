@@ -96,8 +96,11 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
     const tree: FileNode[] = []
     const nodeMap = new Map<string, FileNode>()
 
-    // Create nodes
+    // Create nodes, excluding .gitkeep files
     files.forEach(file => {
+      // Skip .gitkeep files as they are not actual nodes
+      if (file.name === '.gitkeep') return
+      
       const node: FileNode = {
         id: file.path,
         name: file.name,

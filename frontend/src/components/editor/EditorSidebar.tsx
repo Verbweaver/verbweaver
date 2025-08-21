@@ -66,6 +66,9 @@ function EditorSidebar() {
         // Convert to FileNode format and filter for relevant directories/files
         const tree: FileNode[] = rootItems
           .filter(item => {
+            // Skip .gitkeep files as they are not actual nodes
+            if (item.name === '.gitkeep') return false
+            
             // Show specific directories (including uploads) and markdown files at the root of the project
             if (item.type === 'directory') {
               return ['nodes', 'docs', 'templates', 'uploads'].includes(item.name)
@@ -126,6 +129,9 @@ function EditorSidebar() {
       // Convert to FileNode format
         const children: FileNode[] = items
           .filter(item => {
+            // Skip .gitkeep files as they are not actual nodes
+            if (item.name === '.gitkeep') return false
+            
             // Show all directories and markdown files and also non-markdown under uploads
             if (item.type === 'directory') return true
             if (node.path.startsWith('uploads')) return true
