@@ -22,24 +22,32 @@ export default function TemplatesSettingsPage() {
   const listDesktopTemplates = async (root: string): Promise<TemplateItem[]> => {
     // Recursively list *.md under root
     const results: TemplateItem[] = []
+    console.log(`[TemplatesSettingsPage] listDesktopTemplates called with root: "${root}"`)
+    
     const walk = async (sub: string) => {
       const dir = `${root.replace(/\\/g,'/')}/${sub}`.replace(/\/+$/,'')
+      console.log(`[TemplatesSettingsPage] Walking directory: "${dir}"`)
       try {
         const entries = await (window as any).electronAPI.readDirectory(dir)
+        console.log(`[TemplatesSettingsPage] Found ${entries?.length || 0} entries in "${dir}":`, entries?.map((e: any) => e.name) || [])
         for (const ent of entries || []) {
           if (ent.name.startsWith('.')) continue
           const rel = sub ? `${sub}/${ent.name}` : ent.name
           if (ent.type === 'directory') {
             await walk(rel)
           } else if (ent.type === 'file' && ent.name.toLowerCase().endsWith('.md')) {
+            console.log(`[TemplatesSettingsPage] Found template file: "${rel}"`)
             results.push({ path: rel.replace(/\\/g,'/'), name: ent.name })
           }
         }
-      } catch {}
+      } catch (error) {
+        console.error(`[TemplatesSettingsPage] Error reading directory "${dir}":`, error)
+      }
     }
     await walk('')
     // Stable sort
     results.sort((a,b) => a.path.localeCompare(b.path))
+    console.log(`[TemplatesSettingsPage] Final results for "${root}":`, results)
     return results
   }
 
@@ -53,27 +61,47 @@ export default function TemplatesSettingsPage() {
     try {
       if (isElectron) {
         let base = await (window as any).electronAPI.getStoreValue('globalTemplatesDir')
+        console.log(`[TemplatesSettingsPage] Initial globalTemplatesDir: "${base}"`)
+        
         if (!base || base === '/templates' || base === 'templates') {
           // Default to userData/templates
           const userData = (await (window as any).electronAPI.getStoreValue('userDataPath')) || ''
+          console.log(`[TemplatesSettingsPage] userDataPath: "${userData}"`)
+          
           if (!userData) {
             // As a last resort, do nothing to avoid showing "/templates"
             console.warn('[Templates] Could not resolve userData path; skip default base')
           } else {
             base = `${String(userData).replace(/\\/g,'/')}/templates`
+            console.log(`[TemplatesSettingsPage] Setting base to: "${base}"`)
             await (window as any).electronAPI.setStoreValue('globalTemplatesDir', base)
           }
         }
+        
         if (base) {
           setDesktopDir(base)
+          console.log(`[TemplatesSettingsPage] Using base directory: "${base}"`)
+          
           // Seed from main using assets or packaged defaults
-          try { await (window as any).electronAPI.seedGlobalTemplates(base) } catch {}
+          try { 
+            console.log(`[TemplatesSettingsPage] Attempting to seed global templates...`)
+            await (window as any).electronAPI.seedGlobalTemplates(base) 
+            console.log(`[TemplatesSettingsPage] Seeding completed successfully`)
+          } catch (error) {
+            console.error(`[TemplatesSettingsPage] Seeding failed:`, error)
+          }
+          
           // List both project and templates subtrees
+          console.log(`[TemplatesSettingsPage] Listing project templates from: "${base}/project"`)
           const filesProject = await listDesktopTemplates(`${base}/project`)
+          console.log(`[TemplatesSettingsPage] Listing templates from: "${base}/templates"`)
           const filesTemplates = await listDesktopTemplates(`${base}/templates`)
+          
           const files = [...filesProject.map(i => ({ path: `project/${i.path}`, name: i.name })), ...filesTemplates.map(i => ({ path: `templates/${i.path}`, name: i.name }))]
+          console.log(`[TemplatesSettingsPage] Final combined files:`, files)
           setItems(files)
         } else {
+          console.warn(`[TemplatesSettingsPage] No base directory available, setting empty items`)
           setItems([])
         }
       } else {
@@ -81,6 +109,7 @@ export default function TemplatesSettingsPage() {
         setItems(res.data.templates || [])
       }
     } catch (e) {
+      console.error(`[TemplatesSettingsPage] Error in loadList:`, e)
       toast.error('Failed to load templates (admin only)')
     } finally {
       setLoading(false)
