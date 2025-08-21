@@ -86,15 +86,18 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
         <div className="flex-1 min-w-0">
           {!isCollapsed && (
             <>
-              <h1 className="text-xl font-bold leading-tight">Verbweaver</h1>
+              <div className="flex items-center gap-2">
+                <img src="/favicon.svg" alt="Verbweaver" className="w-6 h-6" />
+                <h1 className="text-xl font-bold leading-tight">Verbweaver</h1>
+              </div>
               {currentProject && (
                 <p className="text-sm text-muted-foreground mt-1 truncate" title={currentProject.name}>{currentProject.name}</p>
               )}
             </>
           )}
           {isCollapsed && (
-            <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center">
-              <span className="text-primary-foreground font-bold">V</span>
+            <div className="w-8 h-8 flex items-center justify-center">
+              <img src="/favicon.svg" alt="Verbweaver" className="w-6 h-6" />
             </div>
           )}
         </div>
