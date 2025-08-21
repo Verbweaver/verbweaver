@@ -99,6 +99,7 @@ function CompilerView() {
   const [title, setTitle] = useState('')
   const [author, setAuthor] = useState('')
   const [selectedNodes, setSelectedNodes] = useState<string[]>([])
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
   const [dependencies, setDependencies] = useState<Array<{
     name: string;
     available: boolean;
@@ -178,8 +179,10 @@ function CompilerView() {
           selectedNodes: state.selectedNodes?.length,
           orderedNodes: state.orderedNodes?.length,
           selectedFormat: state.selectedFormat,
-          selectedTemplate: state.selectedTemplate
+          selectedTemplate: state.selectedTemplate,
+          expandedDirs: (state as any).expandedDirs
         })
+        console.log('[Compiler] Raw expandedDirs from state:', (state as any).expandedDirs)
         
         setIsRestoring(true)
         // Set all state in a batch to prevent interference
@@ -193,6 +196,7 @@ function CompilerView() {
         if (state.nodeVariables) setNodeVariables(state.nodeVariables)
         if (state.docVars) setDocVars(state.docVars)
         if (state.options) setOptions(prev => ({ ...prev, ...state.options }))
+        if (state.expandedDirs) setExpandedDirs(new Set(state.expandedDirs))
         setHasRestoredState(true)
         console.log('[Compiler] State restored, setting hasRestoredState to true')
         
@@ -222,37 +226,41 @@ function CompilerView() {
       return
     }
     
+
+    
     const tab = getActiveTab()
     if (tab?.type === 'compiler') {
-      console.log('[Compiler] Saving state to tab:', {
-        title,
-        author,
-        selectedNodes: selectedNodes.length,
-        orderedNodes: orderedNodes.length,
-        selectedFormat,
-        selectedTemplate
-      })
-      updateTab(tab.id, {
-        metadata: {
-          ...tab.metadata,
-          compilerState: {
-            title,
-            author,
-            selectedNodes,
-            orderedNodes,
-            selectedFormat,
-            selectedTemplate,
-            customVariables,
-            nodeVariables,
-            docVars,
-            options
-          }
-        }
-      })
+             console.log('[Compiler] Saving state to tab:', {
+         title,
+         author,
+         selectedNodes: selectedNodes.length,
+         orderedNodes: orderedNodes.length,
+         selectedFormat,
+         selectedTemplate,
+         expandedDirs: Array.from(expandedDirs)
+       })
+       updateTab(tab.id, {
+         metadata: {
+           ...tab.metadata,
+           compilerState: {
+             title,
+             author,
+             selectedNodes,
+             orderedNodes,
+             selectedFormat,
+             selectedTemplate,
+             customVariables,
+             nodeVariables,
+             docVars,
+             options,
+             expandedDirs: Array.from(expandedDirs)
+           }
+         }
+       })
     }
   }, [
     title, author, selectedNodes, orderedNodes, selectedFormat, selectedTemplate,
-    customVariables, nodeVariables, docVars, options, isRestoring, hasInitialized
+    customVariables, nodeVariables, docVars, options, expandedDirs, isRestoring, hasInitialized
   ])
 
   // Load templates when format changes
@@ -760,6 +768,8 @@ function CompilerView() {
           selectedNodes={selectedNodes}
           onSelectionChange={setSelectedNodes}
           showFolders={false}
+          expandedDirs={expandedDirs}
+          onExpandedDirsChange={setExpandedDirs}
         />
       </div>
 

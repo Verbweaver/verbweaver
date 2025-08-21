@@ -21,6 +21,7 @@ export interface Tab {
       customVariables?: Array<{ name: string; value: string }>
       nodeVariables?: Record<string, Record<string, any>>
       docVars?: Record<string, any>
+      expandedDirs?: string[]
       options?: {
         includeMetadata?: boolean
         includeToc?: boolean
