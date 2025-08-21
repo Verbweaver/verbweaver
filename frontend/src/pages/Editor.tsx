@@ -227,11 +227,26 @@ function EditorView() {
         // For Electron, load file directly from filesystem
         try {
           const decodedPath = decodeURIComponent(filePath)
-          const fileContent = await window.electronAPI.readFile(decodedPath)
-          setContent(fileContent)
-          setLocalFilePath(decodedPath)
-          setLocalFileName(decodedPath.split(/[/\\]/).pop() || 'Unknown')
-          setIsModified(false)
+          
+          // Check if we have unsaved content for this file
+          const tab = findEditorTab(decodedPath)
+          const hasUnsavedContent = tab?.metadata?.isModified && tab?.metadata?.unsavedContent
+          
+          if (hasUnsavedContent && tab.metadata?.unsavedContent) {
+            // Restore unsaved content
+            setContent(tab.metadata.unsavedContent)
+            setLocalFilePath(decodedPath)
+            setLocalFileName(decodedPath.split(/[/\\]/).pop() || 'Unknown')
+            setIsModified(true)
+          } else {
+            // Load from file
+            const fileContent = await window.electronAPI.readFile(decodedPath)
+            setContent(fileContent)
+            setLocalFilePath(decodedPath)
+            setLocalFileName(decodedPath.split(/[/\\]/).pop() || 'Unknown')
+            setIsModified(false)
+          }
+          
           try { console.debug('[Editor] loaded content (electron), scheduling decoration refresh') } catch {}
           // Ensure decorations after content set
           setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
@@ -243,23 +258,35 @@ function EditorView() {
       } else if (!isElectron && filePath && currentProject) {
         // For web version, use the API with path from route
         const decoded = decodeURIComponent(filePath)
-        loadFile(currentProject.id, decoded)
-          .then((file) => {
-            setContent(file.content)
-            setIsModified(false)
-            try { console.debug('[Editor] loaded content (web), scheduling decoration refresh') } catch {}
-            setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
-            setTimeout(() => updateLinkDecorationsRef.current?.(), 50)
-          })
-          .catch(() => {
-            toast.error('Failed to load file')
-            navigate('/editor')
-          })
+        
+        // Check if we have unsaved content for this file
+        const tab = findEditorTab(decoded)
+        const hasUnsavedContent = tab?.metadata?.isModified && tab?.metadata?.unsavedContent
+        
+        if (hasUnsavedContent && tab.metadata?.unsavedContent) {
+          // Restore unsaved content
+          setContent(tab.metadata.unsavedContent)
+          setIsModified(true)
+        } else {
+          // Load from API
+          loadFile(currentProject.id, decoded)
+            .then((file) => {
+              setContent(file.content)
+              setIsModified(false)
+              try { console.debug('[Editor] loaded content (web), scheduling decoration refresh') } catch {}
+              setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
+              setTimeout(() => updateLinkDecorationsRef.current?.(), 50)
+            })
+            .catch(() => {
+              toast.error('Failed to load file')
+              navigate('/editor')
+            })
+        }
       }
     }
     
     loadContent()
-  }, [filePath, currentProject, loadFile, navigate])
+  }, [filePath, currentProject, loadFile, navigate, findEditorTab])
 
   // Default open: if no file specified, try to open README.md in project root
   useEffect(() => {
@@ -296,17 +323,21 @@ function EditorView() {
     tryOpenReadme()
   }, [currentProject, currentProjectPath, filePath, currentFile, localFilePath, navigate])
 
-  // Update tab modified state
+  // Update tab modified state and save unsaved content
   useEffect(() => {
     if (localFilePath) {
       const tab = findEditorTab(localFilePath)
       if (tab) {
         updateTab(tab.id, {
-          metadata: { ...tab.metadata, isModified }
+          metadata: { 
+            ...tab.metadata, 
+            isModified,
+            unsavedContent: isModified ? content : undefined
+          }
         })
       }
     }
-  }, [isModified, localFilePath, findEditorTab, updateTab])
+  }, [isModified, content, localFilePath, findEditorTab, updateTab])
 
   // Handle content changes
   const handleEditorChange = useCallback((value: string | undefined) => {
@@ -366,18 +397,40 @@ function EditorView() {
           // For Electron, save directly to filesystem
           await window.electronAPI.writeFile(localFilePath, content)
           setIsModified(false)
+          // Clear unsaved content from tab metadata
+          const tab = findEditorTab(localFilePath)
+          if (tab) {
+            updateTab(tab.id, {
+              metadata: { 
+                ...tab.metadata, 
+                isModified: false,
+                unsavedContent: undefined
+              }
+            })
+          }
           toast.success('File saved')
         } else if (currentFile && currentProject) {
           // For web version, use the API
           await saveFile(currentProject.id, currentFile.id, content)
           setIsModified(false)
+          // Clear unsaved content from tab metadata
+          const tab = findEditorTab(currentFile.id)
+          if (tab) {
+            updateTab(tab.id, {
+              metadata: { 
+                ...tab.metadata, 
+                isModified: false,
+                unsavedContent: undefined
+              }
+            })
+          }
           toast.success('File saved')
         }
       } catch (error) {
         toast.error('Failed to save file')
       }
     }
-  }, [currentFile, currentProject, content, isModified, saveFile, localFilePath])
+  }, [currentFile, currentProject, content, isModified, saveFile, localFilePath, findEditorTab, updateTab])
 
   const handleDuplicate = useCallback(async () => {
     try {
