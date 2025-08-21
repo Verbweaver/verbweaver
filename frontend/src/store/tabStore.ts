@@ -9,6 +9,7 @@ export interface Tab {
   metadata?: {
     filePath?: string // For editor tabs
     isModified?: boolean // Track if file has unsaved changes
+    unsavedContent?: string // Store unsaved content for editor tabs
   }
 }
 
