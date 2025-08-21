@@ -97,7 +97,15 @@ export default function TemplatesSettingsPage() {
           console.log(`[TemplatesSettingsPage] Listing templates from: "${base}/templates"`)
           const filesTemplates = await listDesktopTemplates(`${base}/templates`)
           
-          const files = [...filesProject.map(i => ({ path: `project/${i.path}`, name: i.name })), ...filesTemplates.map(i => ({ path: `templates/${i.path}`, name: i.name }))]
+          // Also list the root level templates (compiler, nodes, etc.)
+          console.log(`[TemplatesSettingsPage] Listing root templates from: "${base}"`)
+          const filesRoot = await listDesktopTemplates(base)
+          
+          const files = [
+            ...filesProject.map(i => ({ path: `project/${i.path}`, name: i.name })), 
+            ...filesTemplates.map(i => ({ path: `templates/${i.path}`, name: i.name })),
+            ...filesRoot.map(i => ({ path: i.path, name: i.name }))
+          ]
           console.log(`[TemplatesSettingsPage] Final combined files:`, files)
           setItems(files)
         } else {
