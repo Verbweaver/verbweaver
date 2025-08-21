@@ -17,6 +17,9 @@ import { useProjectStore } from '../store/projectStore'
 import { useAuthStore } from '../services/auth'
 import { useTabStore } from '../store/tabStore'
 
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+
 interface SidebarProps {
   isCollapsed: boolean
   onToggleCollapse?: () => void
@@ -27,6 +30,9 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
   const { currentProject } = useProjectStore()
   const { user } = useAuthStore()
   const { tabs, addTab, setActiveTab } = useTabStore()
+
+  // Use relative path for favicon in Electron, absolute path for web
+  const faviconPath = isElectron ? './favicon.svg' : '/favicon.svg'
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, type: 'dashboard' as const },
@@ -87,7 +93,7 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
           {!isCollapsed && (
             <>
               <div className="flex items-center gap-2">
-                <img src="/favicon.svg" alt="Verbweaver" className="w-6 h-6" />
+                <img src={faviconPath} alt="Verbweaver" className="w-6 h-6" />
                 <h1 className="text-xl font-bold leading-tight">Verbweaver</h1>
               </div>
               {currentProject && (
@@ -97,7 +103,7 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
           )}
           {isCollapsed && (
             <div className="w-8 h-8 flex items-center justify-center">
-              <img src="/favicon.svg" alt="Verbweaver" className="w-6 h-6" />
+              <img src={faviconPath} alt="Verbweaver" className="w-6 h-6" />
             </div>
           )}
         </div>
