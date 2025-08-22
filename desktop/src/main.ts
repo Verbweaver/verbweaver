@@ -1502,7 +1502,18 @@ Start your content here.
             const fileContent = await fs.readFile(fullEntryPath, 'utf8');
             const { data: frontmatter, content: mdContent } = matter(fileContent);
             
-            const nodeName = frontmatter.title || entry.name.replace(/\.md$/, '');
+            // Use frontmatter title if available, otherwise try to derive a better display name from the filename
+            let nodeName = frontmatter.title;
+            if (!nodeName) {
+              // If no title in frontmatter, try to derive a better name from the filename
+              // Remove .md extension and try to convert from slug format back to readable format
+              const filenameWithoutExt = entry.name.replace(/\.md$/, '');
+              // Convert slug format (e.g., "my-node-name") back to readable format (e.g., "My Node Name")
+              nodeName = filenameWithoutExt
+                .split('-')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+            }
             const nodeType = frontmatter.type || 'document';
             const nodePosition = frontmatter.position || undefined;
 
