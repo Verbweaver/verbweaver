@@ -129,16 +129,9 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
   let content: string | null = null;
   
   try {
-    // Resolve absolute paths for file operations
-    // If normalizedPath is already absolute (starts with /), use it directly
-    // Otherwise, join it with currentProjectPath
-    const absolutePath = normalizedPath.startsWith('/') 
-      ? normalizedPath 
-      : joinPaths(currentProjectPath, normalizedPath);
-    
-    const absoluteMetadataPath = metadataPath.startsWith('/')
-      ? metadataPath
-      : joinPaths(currentProjectPath, metadataPath);
+    // readProjectFiles returns relative paths, so always join with currentProjectPath
+    const absolutePath = joinPaths(currentProjectPath, normalizedPath);
+    const absoluteMetadataPath = joinPaths(currentProjectPath, metadataPath);
 
     if (isMarkdown && !isDirectory) {
       // Read Markdown file with front matter
@@ -178,9 +171,7 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
   
   if (isDirectory) {
     try {
-      const absoluteDirPath = normalizedPath.startsWith('/')
-        ? normalizedPath
-        : joinPaths(currentProjectPath, normalizedPath);
+      const absoluteDirPath = joinPaths(currentProjectPath, normalizedPath);
       const dirContents = await window.electronAPI.readDirectory(absoluteDirPath);
       children = dirContents.map(item => joinPaths(normalizedPath, item.name).replace(/\\/g, '/'));
     } catch (error) {
