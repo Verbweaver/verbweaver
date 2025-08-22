@@ -109,9 +109,11 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "allowElevation": true,
-      "perMachine": false,
       "deleteAppDataOnUninstall": false,
-      "include": "build/installer.nsh"
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "installerHeaderIcon": "resources/icon.ico",
+      "artifactName": "Verbweaver-Setup-${version}.${ext}"
     },
     "dmg": {
       "contents": [
