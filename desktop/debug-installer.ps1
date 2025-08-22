@@ -81,6 +81,17 @@ if (-not $InstallerPath) {
     } else {
         Write-Host "   No installer found in current directory" -ForegroundColor Red
         Write-Host "   Please provide the installer path as a parameter" -ForegroundColor Yellow
+        Write-Host "   Example: .\debug-installer.ps1 -InstallerPath 'C:\path\to\installer.exe'" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "=== Summary ===" -ForegroundColor Green
+        Write-Host "Existing installations: $($foundInstallations.Count)"
+        Write-Host "Registry entries: $($verbweaverRegEntries.Count)"
+        Write-Host "Installer path: Not found"
+        Write-Host ""
+        Write-Host "=== Troubleshooting Steps ===" -ForegroundColor Yellow
+        Write-Host "1. Provide the installer path as a parameter" -ForegroundColor White
+        Write-Host "2. Check if the installer file exists" -ForegroundColor White
+        Write-Host "3. Run from the directory containing the installer" -ForegroundColor White
         exit 1
     }
 }
@@ -116,6 +127,17 @@ if (Test-Path $InstallerPath) {
     }
 } else {
     Write-Host "   Installer not found: $InstallerPath" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "=== Summary ===" -ForegroundColor Green
+    Write-Host "Existing installations: $($foundInstallations.Count)"
+    Write-Host "Registry entries: $($verbweaverRegEntries.Count)"
+    Write-Host "Installer path: Not found"
+    Write-Host ""
+    Write-Host "=== Troubleshooting Steps ===" -ForegroundColor Yellow
+    Write-Host "1. Check if the installer file exists at the specified path" -ForegroundColor White
+    Write-Host "2. Verify the file path is correct" -ForegroundColor White
+    Write-Host "3. Run from the directory containing the installer" -ForegroundColor White
+    exit 1
 }
 
 Write-Host ""
