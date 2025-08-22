@@ -130,11 +130,13 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
   
   try {
     // Resolve absolute paths for file operations
-    const absolutePath = normalizedPath.startsWith(currentProjectPath) 
+    // If normalizedPath is already absolute (starts with /), use it directly
+    // Otherwise, join it with currentProjectPath
+    const absolutePath = normalizedPath.startsWith('/') 
       ? normalizedPath 
       : joinPaths(currentProjectPath, normalizedPath);
     
-    const absoluteMetadataPath = metadataPath.startsWith(currentProjectPath)
+    const absoluteMetadataPath = metadataPath.startsWith('/')
       ? metadataPath
       : joinPaths(currentProjectPath, metadataPath);
 
@@ -176,7 +178,7 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
   
   if (isDirectory) {
     try {
-      const absoluteDirPath = normalizedPath.startsWith(currentProjectPath)
+      const absoluteDirPath = normalizedPath.startsWith('/')
         ? normalizedPath
         : joinPaths(currentProjectPath, normalizedPath);
       const dirContents = await window.electronAPI.readDirectory(absoluteDirPath);
