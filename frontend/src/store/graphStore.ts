@@ -38,11 +38,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       if (isElectron && window.electronAPI?.loadGraphData) {
         const result = await window.electronAPI.loadGraphData();
         loadedNodes = result.nodes.map((n: any) => {
+          // The main process already provides the correct label from frontmatter.title
+          // Use n.label directly, with fallback to filename only if label is missing
           const nodeTitle = n.label || n.id.replace(/\.md$/, '').split('/').pop() || 'Untitled Node';
           return {
             id: n.id, 
-            label: nodeTitle, // label is often used for display in graph libraries
-            title: nodeTitle, // Explicitly map to title property
+            label: n.label || nodeTitle, // Use the label from main process (preserves case)
+            title: n.label || nodeTitle, // Use the label from main process (preserves case)
             type: n.type || 'document',
             position: n.position,
             data: n.data || {}, // This is the raw frontmatter + content from main.ts

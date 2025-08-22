@@ -1504,6 +1504,9 @@ Start your content here.
             
             // Use frontmatter title if available, otherwise try to derive a better display name from the filename
             let nodeName = frontmatter.title;
+            console.log(`[graph:loadData] Processing file: ${entry.name}`);
+            console.log(`[graph:loadData] Frontmatter title: "${frontmatter.title}"`);
+            console.log(`[graph:loadData] Frontmatter keys:`, Object.keys(frontmatter));
             if (!nodeName) {
               // If no title in frontmatter, try to derive a better name from the filename
               // Remove .md extension and try to convert from slug format back to readable format
@@ -1513,6 +1516,9 @@ Start your content here.
                 .split('-')
                 .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                 .join(' ');
+              console.log(`[graph:loadData] Derived nodeName from filename: "${nodeName}"`);
+            } else {
+              console.log(`[graph:loadData] Using frontmatter title: "${nodeName}"`);
             }
             const nodeType = frontmatter.type || 'document';
             const nodePosition = frontmatter.position || undefined;
@@ -1621,6 +1627,10 @@ Start your content here.
       ...(initialNodeData?.data || {}), // Merge other initial data/metadata
       ...(initialNodeData?.metadata || {}), // Accommodate if metadata is passed separately
     };
+    
+    console.log(`[graph:createNodeFile] Creating node with desiredLabel: "${desiredLabel}"`);
+    console.log(`[graph:createNodeFile] Frontmatter title: "${frontmatter.title}"`);
+    console.log(`[graph:createNodeFile] Filename: "${filename}"`);
 
     // If position is provided, add it to frontmatter
     if (initialNodeData?.position) {
