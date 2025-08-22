@@ -22,13 +22,19 @@ echo.
 REM Get the directory where this batch file is located
 set "SCRIPT_DIR=%~dp0"
 
-REM Check if there are any installer files in the current directory
+REM Check if there are any installer files in the current directory or parent directory
 set "FOUND_INSTALLER="
 for %%f in (*Verbweaver*.exe) do set "FOUND_INSTALLER=%%f"
 for %%f in (*verbweaver*.exe) do set "FOUND_INSTALLER=%%f"
 
+REM If not found in current directory, check parent directory
 if "%FOUND_INSTALLER%"=="" (
-    echo WARNING: No Verbweaver installer found in the current directory.
+    for %%f in (..\*Verbweaver*.exe) do set "FOUND_INSTALLER=%%f"
+    for %%f in (..\*verbweaver*.exe) do set "FOUND_INSTALLER=%%f"
+)
+
+if "%FOUND_INSTALLER%"=="" (
+    echo WARNING: No Verbweaver installer found in the current directory or parent directory.
     echo.
     echo You can still run the debug tools, but you'll need to provide the installer path.
     echo.

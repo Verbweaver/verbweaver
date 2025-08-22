@@ -9,6 +9,21 @@ After installing Verbweaver, you can find these scripts in the installation dire
 - **macOS**: `/Applications/Verbweaver.app/Contents/Resources/`
 - **Linux**: `/opt/Verbweaver/` or `/usr/local/bin/verbweaver/`
 
+## Directory Structure
+
+When you download the Verbweaver installer, the files are typically organized like this:
+```
+desktop-windows-latest/
+├── Verbweaver-Setup-1.0.0.exe          # The installer
+├── win-unpacked/                       # Unpacked application
+│   ├── Verbweaver.exe                  # Main application
+│   └── resources/                      # Application resources
+│       ├── debug-installer.bat         # Debug helper (this file)
+│       ├── debug-installer.ps1         # Main debug script
+│       ├── test-installer.ps1          # Quick test script
+│       └── installer-debug-readme.md   # This documentation
+```
+
 ## Available Scripts
 
 ### 1. `test-installer.ps1` (Windows only)
@@ -16,10 +31,10 @@ A quick diagnostic script that checks for common installer issues.
 
 **Usage:**
 ```powershell
-# Navigate to the Verbweaver installation directory
-cd "C:\Users\[YourUsername]\AppData\Local\Programs\verbweaver\"
+# Navigate to the resources directory
+cd "C:\Users\[YourUsername]\AppData\Local\Programs\verbweaver\resources\"
 
-# Run the test script
+# Run the test script (it will automatically find the installer in the parent directory)
 .\test-installer.ps1
 ```
 
@@ -50,6 +65,25 @@ A comprehensive debugging script with detailed analysis.
 - File properties and digital signatures
 - Windows SmartScreen settings
 - Process execution with detailed logging
+
+### 3. `debug-installer.bat` (Windows only)
+A user-friendly batch file that launches the PowerShell debugging scripts.
+
+**Usage:**
+```cmd
+# Simply double-click or run from command line
+debug-installer.bat
+```
+
+This will present a menu with options to run the different debug tools.
+
+## Automatic Installer Detection
+
+The scripts automatically look for the installer in:
+1. **Current directory** (where the scripts are located)
+2. **Parent directory** (where the installer typically is)
+
+So if you're in the `resources` folder, the scripts will automatically find the installer in the parent directory.
 
 ## Common Issues and Solutions
 
@@ -110,3 +144,4 @@ If you're still experiencing issues after running these scripts:
 - They require PowerShell to run
 - Some checks may require administrator privileges
 - The scripts are safe to run and won't modify your system
+- The scripts automatically detect the installer location

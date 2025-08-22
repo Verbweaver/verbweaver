@@ -70,16 +70,27 @@ Write-Host ""
 
 # Check if installer path was provided
 if (-not $InstallerPath) {
-    Write-Host "3. Looking for installer in current directory..." -ForegroundColor Yellow
+    Write-Host "3. Looking for installer in current directory and parent directory..." -ForegroundColor Yellow
+    
+    # First check current directory
     $installers = Get-ChildItem -Path "." -Filter "*.exe" | Where-Object { 
         $_.Name -like "*Verbweaver*" -or $_.Name -like "*verbweaver*" 
+    }
+    
+    # If not found, check parent directory (where installer typically is)
+    if ($installers.Count -eq 0) {
+        $parentDir = Split-Path (Get-Location) -Parent
+        Write-Host "   Checking parent directory: $parentDir" -ForegroundColor White
+        $installers = Get-ChildItem -Path $parentDir -Filter "*.exe" | Where-Object { 
+            $_.Name -like "*Verbweaver*" -or $_.Name -like "*verbweaver*" 
+        }
     }
     
     if ($installers.Count -gt 0) {
         $InstallerPath = $installers[0].FullName
         Write-Host "   Found installer: $InstallerPath" -ForegroundColor Green
     } else {
-        Write-Host "   No installer found in current directory" -ForegroundColor Red
+        Write-Host "   No installer found in current directory or parent directory" -ForegroundColor Red
         Write-Host "   Please provide the installer path as a parameter" -ForegroundColor Yellow
         Write-Host "   Example: .\debug-installer.ps1 -InstallerPath 'C:\path\to\installer.exe'" -ForegroundColor Yellow
         Write-Host ""
