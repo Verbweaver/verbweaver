@@ -72,6 +72,22 @@
       {
         "from": "../frontend/dist",
         "to": "renderer"
+      },
+      {
+        "from": "debug-installer.ps1",
+        "to": "debug-installer.ps1"
+      },
+      {
+        "from": "test-installer.ps1",
+        "to": "test-installer.ps1"
+      },
+      {
+        "from": "installer-debug-readme.md",
+        "to": "installer-debug-readme.md"
+      },
+      {
+        "from": "debug-installer.bat",
+        "to": "debug-installer.bat"
       }
     ],
     "mac": {

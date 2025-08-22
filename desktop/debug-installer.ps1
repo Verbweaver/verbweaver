@@ -3,7 +3,8 @@
 
 param(
     [string]$InstallerPath = "",
-    [switch]$CheckOnly
+    [switch]$CheckOnly,
+    [switch]$Verbose
 )
 
 Write-Host "=== Verbweaver Installer Debug Script ===" -ForegroundColor Green
@@ -84,35 +85,159 @@ if (-not $InstallerPath) {
     }
 }
 
+# Check installer properties
+Write-Host "4. Analyzing installer properties..." -ForegroundColor Yellow
+
+if (Test-Path $InstallerPath) {
+    $fileInfo = Get-Item $InstallerPath
+    Write-Host "   File size: $($fileInfo.Length) bytes" -ForegroundColor White
+    Write-Host "   Created: $($fileInfo.CreationTime)" -ForegroundColor White
+    Write-Host "   Modified: $($fileInfo.LastWriteTime)" -ForegroundColor White
+    
+    # Check if file is blocked
+    $zone = Get-ItemProperty -Path $InstallerPath -Name Zone.Identifier -ErrorAction SilentlyContinue
+    if ($zone) {
+        Write-Host "   ⚠️  File is blocked (Zone.Identifier present)" -ForegroundColor Red
+        Write-Host "   This can cause silent installation. Try: Unblock-File '$InstallerPath'" -ForegroundColor Yellow
+    } else {
+        Write-Host "   ✓ File is not blocked" -ForegroundColor Green
+    }
+    
+    # Check digital signature
+    try {
+        $signature = Get-AuthenticodeSignature $InstallerPath
+        if ($signature.Status -eq "Valid") {
+            Write-Host "   ✓ Digitally signed and valid" -ForegroundColor Green
+        } else {
+            Write-Host "   ⚠️  Digital signature status: $($signature.Status)" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "   ⚠️  Could not verify digital signature" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "   Installer not found: $InstallerPath" -ForegroundColor Red
+}
+
+Write-Host ""
+
+# Check for silent installation triggers
+Write-Host "5. Checking for silent installation triggers..." -ForegroundColor Yellow
+
+# Check if there are any command line arguments that might be passed automatically
+$silentTriggers = @(
+    "SILENT",
+    "VERYSILENT", 
+    "SP-",
+    "SUPPRESSMSGBOXES",
+    "NORESTART",
+    "CLOSEAPPLICATIONS",
+    "FORCECLOSEAPPLICATIONS"
+)
+
+Write-Host "   Common silent triggers to check for:" -ForegroundColor White
+foreach ($trigger in $silentTriggers) {
+    Write-Host "     - $trigger" -ForegroundColor White
+}
+
+Write-Host ""
+
+# Check Windows SmartScreen and antivirus
+Write-Host "6. Checking Windows SmartScreen and security..." -ForegroundColor Yellow
+
+# Check SmartScreen settings
+try {
+    $smartScreen = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Security" -Name "SmartScreenEnabled" -ErrorAction SilentlyContinue
+    if ($smartScreen) {
+        Write-Host "   SmartScreen enabled: $($smartScreen.SmartScreenEnabled)" -ForegroundColor White
+    } else {
+        Write-Host "   SmartScreen setting not found" -ForegroundColor White
+    }
+} catch {
+    Write-Host "   Could not check SmartScreen settings" -ForegroundColor Yellow
+}
+
+Write-Host ""
+
 if ($CheckOnly) {
-    Write-Host ""
     Write-Host "=== Summary ===" -ForegroundColor Green
     Write-Host "Existing installations: $($foundInstallations.Count)"
     Write-Host "Registry entries: $($verbweaverRegEntries.Count)"
     Write-Host "Installer path: $InstallerPath"
+    Write-Host ""
+    Write-Host "=== Troubleshooting Steps ===" -ForegroundColor Yellow
+    Write-Host "1. Try unblocking the file: Unblock-File '$InstallerPath'" -ForegroundColor White
+    Write-Host "2. Run as administrator: Right-click installer → Run as administrator" -ForegroundColor White
+    Write-Host "3. Check Windows Defender/Antivirus logs" -ForegroundColor White
+    Write-Host "4. Try running from a different location" -ForegroundColor White
+    Write-Host "5. Check Event Viewer for application errors" -ForegroundColor White
     exit 0
 }
 
 # Test running the installer
-Write-Host "4. Testing installer execution..." -ForegroundColor Yellow
+Write-Host "7. Testing installer execution..." -ForegroundColor Yellow
 
 if (Test-Path $InstallerPath) {
     Write-Host "   Running installer with verbose output..." -ForegroundColor Green
     Write-Host "   Installer: $InstallerPath"
     Write-Host ""
     
-    # Run the installer with verbose output
+    # First, try to unblock the file if it's blocked
     try {
-        $process = Start-Process -FilePath $InstallerPath -ArgumentList "/VERBOSE", "/LOG=$env:TEMP\verbweaver-installer-debug.log" -Wait -PassThru
-        Write-Host "   Installer process completed with exit code: $($process.ExitCode)" -ForegroundColor Green
+        Unblock-File $InstallerPath -ErrorAction SilentlyContinue
+        Write-Host "   Attempted to unblock file..." -ForegroundColor Green
+    } catch {
+        Write-Host "   Could not unblock file (may not be blocked)" -ForegroundColor Yellow
+    }
+    
+    # Run the installer with verbose output and capture more details
+    try {
+        $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $processInfo.FileName = $InstallerPath
+        $processInfo.Arguments = "/VERBOSE", "/LOG=$env:TEMP\verbweaver-installer-debug.log"
+        $processInfo.UseShellExecute = $false
+        $processInfo.RedirectStandardOutput = $true
+        $processInfo.RedirectStandardError = $true
+        $processInfo.WorkingDirectory = Split-Path $InstallerPath -Parent
+        
+        Write-Host "   Working directory: $($processInfo.WorkingDirectory)" -ForegroundColor White
+        Write-Host "   Arguments: $($processInfo.Arguments)" -ForegroundColor White
+        Write-Host ""
+        
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $processInfo
+        $process.Start() | Out-Null
+        
+        # Wait a bit and check if process is still running
+        Start-Sleep -Seconds 3
+        if ($process.HasExited) {
+            Write-Host "   Process exited with code: $($process.ExitCode)" -ForegroundColor Green
+            $output = $process.StandardOutput.ReadToEnd()
+            $error = $process.StandardError.ReadToEnd()
+            
+            if ($output) {
+                Write-Host "   Output: $output" -ForegroundColor White
+            }
+            if ($error) {
+                Write-Host "   Error: $error" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "   Process is still running (this is good!)" -ForegroundColor Green
+            Write-Host "   Process ID: $($process.Id)" -ForegroundColor White
+            $process.Kill()
+        }
         
         # Check if log file was created
         $logFile = "$env:TEMP\verbweaver-installer-debug.log"
         if (Test-Path $logFile) {
             Write-Host "   Log file created: $logFile" -ForegroundColor Green
-            Write-Host "   Log contents:" -ForegroundColor Yellow
-            Get-Content $logFile | Select-Object -First 20
+            if ($Verbose) {
+                Write-Host "   Log contents:" -ForegroundColor Yellow
+                Get-Content $logFile | Select-Object -First 20
+            }
+        } else {
+            Write-Host "   No log file created" -ForegroundColor Yellow
         }
+        
     } catch {
         Write-Host "   Error running installer: $($_.Exception.Message)" -ForegroundColor Red
     }
@@ -122,8 +247,10 @@ if (Test-Path $InstallerPath) {
 
 Write-Host ""
 Write-Host "=== Debug Complete ===" -ForegroundColor Green
-Write-Host "If the installer still doesn't show, check:" -ForegroundColor Yellow
-Write-Host "1. Antivirus software blocking the installer" -ForegroundColor White
-Write-Host "2. Windows SmartScreen blocking the installer" -ForegroundColor White
-Write-Host "3. User Account Control (UAC) settings" -ForegroundColor White
-Write-Host "4. The log file at: $env:TEMP\verbweaver-installer-debug.log" -ForegroundColor White
+Write-Host "If the installer still doesn't show, try these steps:" -ForegroundColor Yellow
+Write-Host "1. Unblock-File '$InstallerPath'" -ForegroundColor White
+Write-Host "2. Right-click → Run as administrator" -ForegroundColor White
+Write-Host "3. Check Windows Defender/Antivirus exclusions" -ForegroundColor White
+Write-Host "4. Try running from a different directory" -ForegroundColor White
+Write-Host "5. Check Event Viewer → Windows Logs → Application" -ForegroundColor White
+Write-Host "6. The log file at: $env:TEMP\verbweaver-installer-debug.log" -ForegroundColor White
