@@ -129,7 +129,9 @@
       "installerIcon": "resources/icon.ico",
       "uninstallerIcon": "resources/icon.ico",
       "installerHeaderIcon": "resources/icon.ico",
-      "artifactName": "Verbweaver-Setup-${version}.${ext}"
+      "artifactName": "Verbweaver-Setup-${version}.${ext}",
+      "runAfterFinish": false,
+      "displayLanguageSelector": false
     },
     "dmg": {
       "contents": [
