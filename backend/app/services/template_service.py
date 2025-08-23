@@ -76,13 +76,22 @@ class TemplateService:
         errors = []
         custom_variables = []
         
+        # Add debugging information
+        logger.debug(f"Validating template content (length: {len(template_content)})")
+        logger.debug(f"Template content preview: {template_content[:200]}...")
+        
         try:
             # Check for basic Pandoc template syntax or Liquid/Jinja2 include syntax
-            has_pandoc_vars = re.search(r'\$[a-zA-Z_][a-zA-Z0-9_]*\$', template_content)
+            # Updated regex to handle variables with dots, parentheses, and spaces
+            has_pandoc_vars = re.search(r'\$[a-zA-Z_][a-zA-Z0-9_.()\s]*\$', template_content)
             has_include_syntax = re.search(r'{%\s*include_relative\s+', template_content)
+            
+            logger.debug(f"Has pandoc vars: {has_pandoc_vars}")
+            logger.debug(f"Has include syntax: {has_include_syntax}")
             
             if not has_pandoc_vars and not has_include_syntax:
                 errors.append("Template must contain at least one variable")
+                logger.error("Template validation failed: no variables or includes found")
             
             # Extract custom variables (excluding standard ones and control variables)
             standard_vars = {'title', 'author', 'date', 'toc', 'nodes', 'nodes.title', 
@@ -90,11 +99,18 @@ class TemplateService:
             control_vars = {'if', 'endif', 'for', 'endfor', 'it', 'it.key', 'it.value', 
                            'it.name', 'it.size'}
             
-            variables = re.findall(r'\$([a-zA-Z_][a-zA-Z0-9_.]*)\$', template_content)
+            # Updated regex to extract variable names more accurately
+            variables = re.findall(r'\$([a-zA-Z_][a-zA-Z0-9_.()\s]*)\$', template_content)
+            logger.debug(f"Found variables: {variables}")
+            
             for var in variables:
-                if (var not in standard_vars and var not in control_vars and 
-                    var not in custom_variables):
-                    custom_variables.append(var)
+                # Clean up the variable name by removing parentheses and extra spaces
+                clean_var = re.sub(r'[()]', '', var).strip()
+                if (clean_var not in standard_vars and clean_var not in control_vars and 
+                    clean_var not in custom_variables):
+                    custom_variables.append(clean_var)
+            
+            logger.debug(f"Custom variables: {custom_variables}")
             
             # Check for balanced delimiters
             if template_content.count('$') % 2 != 0:
@@ -217,11 +233,15 @@ class TemplateService:
         # Normalize newlines for consistent regex behavior
         processed_content = template_content.replace('\r\n', '\n').replace('\r', '\n')
         
+        logger.debug(f"Processing includes for template: {template_path}")
+        logger.debug(f"Original content length: {len(template_content)}")
+        
         # Process includes - replace {% include_relative path %} with the content of the included template
         include_pattern = re.compile(r'{%\s*include_relative\s+([^}]+)\s*%}')
         
         def replace_include(match):
             include_path = match.group(1).strip()
+            logger.debug(f"Processing include: {include_path}")
             
             # Resolve relative path from the template file's directory
             if template_path:
@@ -230,18 +250,25 @@ class TemplateService:
                 template_file_path = os.path.normpath(os.path.join(self.templates_dir, template_path))
                 template_dir = os.path.dirname(template_file_path)
                 full_include_path = os.path.normpath(os.path.join(template_dir, include_path))
+                logger.debug(f"Template file path: {template_file_path}")
+                logger.debug(f"Template directory: {template_dir}")
+                logger.debug(f"Full include path: {full_include_path}")
             else:
                 # Fallback to templates/compiler directory (for backward compatibility)
                 full_include_path = os.path.normpath(os.path.join(self.templates_dir, include_path))
+                logger.debug(f"Fallback include path: {full_include_path}")
             
             try:
                 if os.path.exists(full_include_path):
+                    logger.debug(f"Include file found: {full_include_path}")
                     with open(full_include_path, 'r', encoding='utf-8') as f:
                         included_content = f.read()
+                    logger.debug(f"Included content length: {len(included_content)}")
                     # Recursively process includes in the included template
                     # Pass the included template's path for correct relative path resolution
                     # The included template path should be relative to templates_dir
                     included_template_path = os.path.relpath(full_include_path, self.templates_dir)
+                    logger.debug(f"Included template path: {included_template_path}")
                     return self.process_includes_only(included_content, included_template_path)
                 else:
                     logger.error(f"Included template not found: {full_include_path}")
@@ -250,7 +277,9 @@ class TemplateService:
                 logger.error(f"Error processing included template {include_path}: {e}")
                 return f"<!-- ERROR: Failed to process included template {include_path}: {e} -->"
         
-        return include_pattern.sub(replace_include, processed_content)
+        result = include_pattern.sub(replace_include, processed_content)
+        logger.debug(f"Processed content length: {len(result)}")
+        return result
     
     def process_template(self, template_content: str, data: Dict[str, Any], template_path: str = None) -> str:
         """Process template with provided data.
