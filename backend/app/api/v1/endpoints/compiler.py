@@ -830,18 +830,25 @@ async def get_templates(
     if not project_path:
         raise HTTPException(status_code=404, detail="Project path not configured")
     
+    # Ensure project path is absolute and normalized for cross-platform compatibility
+    project_path = os.path.abspath(os.path.normpath(project_path))
+    print(f"Getting templates for project: {project_path}")
+    
     # Create template service
     template_service = TemplateService(project_path)
     
     if format_type:
         # Get templates for specific format
+        print(f"Getting templates for format: {format_type}")
         templates = template_service.get_available_templates(format_type)
     else:
         # Get templates for all formats
+        print("Getting templates for all formats")
         templates = []
         for fmt in template_service.supported_formats:
             templates.extend(template_service.get_available_templates(fmt))
     
+    print(f"Found {len(templates)} templates")
     return {"templates": templates}
 
 @router.get("/{project_id}/templates/{template_path:path}")
@@ -873,13 +880,21 @@ async def get_template_content(
     if not project_path:
         raise HTTPException(status_code=404, detail="Project path not configured")
     
+    # Ensure project path is absolute and normalized for cross-platform compatibility
+    project_path = os.path.abspath(os.path.normpath(project_path))
+    print(f"Getting template content for project: {project_path}")
+    print(f"Template path: {template_path}")
+    
     # Create template service
     template_service = TemplateService(project_path)
     
     # Get template content
     content = template_service.get_template_content(template_path)
     if not content:
+        print(f"Template not found: {template_path}")
         raise HTTPException(status_code=404, detail="Template not found")
+    
+    print(f"Successfully loaded template: {template_path}")
     
     # Process includes to get the final template content for schema extraction
     # This ensures custom variables are extracted from the actual template that will be used

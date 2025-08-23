@@ -24,10 +24,14 @@ class TemplateService:
     def get_available_templates(self, format_type: str) -> List[Dict[str, str]]:
         """Get available templates for a specific format"""
         if format_type not in self.supported_formats:
+            logger.warning(f"Unsupported format type: {format_type}")
             return []
         
         format_dir = os.path.join(self.templates_dir, format_type)
+        logger.debug(f"Looking for templates in: {format_dir}")
+        
         if not os.path.exists(format_dir):
+            logger.warning(f"Template directory does not exist: {format_dir}")
             return []
         
         templates = []
@@ -40,22 +44,28 @@ class TemplateService:
                         'path': template_path,
                         'format': format_type
                     })
+                    logger.debug(f"Found template: {template_path}")
         except Exception as e:
             logger.error(f"Failed to list templates in {format_dir}: {e}")
         
+        logger.debug(f"Found {len(templates)} templates for format {format_type}")
         return templates
     
     def get_template_content(self, template_path: str) -> Optional[str]:
         """Get the content of a template file"""
-        full_path = os.path.normpath(os.path.join(self.project_path, template_path))
+        # Construct the full path to the template file
+        # template_path is expected to be in format like "pdf/simple.md"
+        # We need to construct: {project_path}/templates/compiler/{template_path}
+        full_path = os.path.normpath(os.path.join(self.templates_dir, template_path))
         if not os.path.exists(full_path):
+            logger.error(f"Template file not found: {full_path}")
             return None
         
         try:
             with open(full_path, 'r', encoding='utf-8') as f:
                 return f.read()
         except Exception as e:
-            logger.error(f"Failed to read template {template_path}: {e}")
+            logger.error(f"Failed to read template {template_path} from {full_path}: {e}")
             return None
     
     def validate_template(self, template_content: str) -> Tuple[bool, List[str], Dict[str, Any], List[str]]:
