@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios'
-import { getApiUrl } from '@verbweaver/shared'
+import { getApiUrl, configManager } from '@verbweaver/shared'
 import { useAuthStore } from '../services/auth'
 
 // Check if we're in Electron
@@ -16,16 +16,28 @@ export const apiClient: AxiosInstance = axios.create({
 
 // Update base URL dynamically (for Electron)
 if (typeof window !== 'undefined') {
-  // Initialize immediately for Electron
+  // For Electron, wait for ConfigManager to initialize and then update the base URL
   if (isElectron && window.electronAPI) {
-    // Force use of 127.0.0.1 for Electron
-    apiClient.defaults.baseURL = 'http://127.0.0.1:8000/api/v1'
+    // Initialize ConfigManager and update base URL
+    configManager.initializeForElectron().then(() => {
+      const electronApiUrl = configManager.getApiBaseUrl();
+      if (electronApiUrl && electronApiUrl !== apiClient.defaults.baseURL) {
+        console.log('[API Client] Updating base URL for Electron:', electronApiUrl);
+        apiClient.defaults.baseURL = electronApiUrl;
+      }
+    }).catch(error => {
+      console.error('[API Client] Failed to initialize Electron backend URL:', error);
+      // Fallback to default URL
+      apiClient.defaults.baseURL = 'http://127.0.0.1:8000/api/v1';
+    });
   }
   
   // Check periodically if we're in Electron and the URL has changed
   setInterval(() => {
     const currentUrl = getApiUrl();
-    if (apiClient.defaults.baseURL !== currentUrl) {
+    // Only update if the URL is actually different and not a file:// URL (which indicates an error)
+    if (apiClient.defaults.baseURL !== currentUrl && !currentUrl.startsWith('file://')) {
+      console.log('[API Client] Updating base URL:', currentUrl);
       apiClient.defaults.baseURL = currentUrl;
     }
   }, 1000);
