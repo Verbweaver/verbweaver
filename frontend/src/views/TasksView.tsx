@@ -19,8 +19,6 @@ import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin, { Draggable } from '@fullcalendar/interaction'
 import { formatISO, startOfWeek } from 'date-fns'
-// Load FullCalendar CSS locally via Vite alias (see vite.config.ts)
-// FullCalendar CSS is linked globally from index.html (copied to /vendor via postinstall)
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
 import ConfirmDialog from '../components/ConfirmDialog'
