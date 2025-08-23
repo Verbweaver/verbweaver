@@ -57,13 +57,18 @@ class TemplateService:
         # template_path is expected to be in format like "pdf/simple.md"
         # We need to construct: {project_path}/templates/compiler/{template_path}
         full_path = os.path.normpath(os.path.join(self.templates_dir, template_path))
+        logger.debug(f"Getting template content from: {full_path}")
+        
         if not os.path.exists(full_path):
             logger.error(f"Template file not found: {full_path}")
             return None
         
         try:
             with open(full_path, 'r', encoding='utf-8') as f:
-                return f.read()
+                content = f.read()
+                logger.debug(f"Successfully read template file, length: {len(content)}")
+                logger.debug(f"Template content starts with: {content[:100]}...")
+                return content
         except Exception as e:
             logger.error(f"Failed to read template {template_path} from {full_path}: {e}")
             return None
@@ -78,11 +83,22 @@ class TemplateService:
         
         # Add debugging information
         logger.debug(f"Validating template content (length: {len(template_content)})")
-        logger.debug(f"Template content preview: {template_content[:200]}...")
+        
+        # Check for any non-printable characters that might cause issues
+        non_printable_chars = [i for i, char in enumerate(template_content) if not char.isprintable() and char not in ['\n', '\r', '\t']]
+        if non_printable_chars:
+            logger.warning(f"Found non-printable characters at positions: {non_printable_chars[:10]}")
+        
+        # Check for encoding issues
+        try:
+            template_content.encode('utf-8')
+        except UnicodeEncodeError as e:
+            logger.error(f"Unicode encoding error: {e}")
+            errors.append(f"Template contains invalid Unicode characters: {e}")
         
         try:
             # Check for basic Pandoc template syntax or Liquid/Jinja2 include syntax
-            # Updated regex to handle variables with dots, parentheses, and spaces
+            # First, check for ANY template syntax (including control structures)
             has_pandoc_vars = re.search(r'\$[a-zA-Z_][a-zA-Z0-9_.()\s]*\$', template_content)
             has_include_syntax = re.search(r'{%\s*include_relative\s+', template_content)
             
@@ -99,15 +115,32 @@ class TemplateService:
             control_vars = {'if', 'endif', 'for', 'endfor', 'it', 'it.key', 'it.value', 
                            'it.name', 'it.size'}
             
-            # Updated regex to extract variable names more accurately
-            variables = re.findall(r'\$([a-zA-Z_][a-zA-Z0-9_.()\s]*)\$', template_content)
-            logger.debug(f"Found variables: {variables}")
+            # Extract ALL variables first, then filter
+            all_variables = re.findall(r'\$([a-zA-Z_][a-zA-Z0-9_.()\s]*)\$', template_content)
+            logger.debug(f"All variables found: {all_variables}")
             
-            for var in variables:
+            for var in all_variables:
                 # Clean up the variable name by removing parentheses and extra spaces
                 clean_var = re.sub(r'[()]', '', var).strip()
-                if (clean_var not in standard_vars and clean_var not in control_vars and 
-                    clean_var not in custom_variables):
+                
+                # Skip if it's a standard variable
+                if clean_var in standard_vars:
+                    continue
+                
+                # Skip if it's a control variable
+                if clean_var in control_vars:
+                    continue
+                
+                # Skip if it starts with control keywords (handles cases like 'fornodes', 'ifnodes.vars')
+                if clean_var.startswith(('for', 'if', 'endif', 'endfor')):
+                    continue
+                
+                # Skip if it contains control keywords (additional safety)
+                if any(keyword in clean_var for keyword in ['for', 'if', 'endif', 'endfor']):
+                    continue
+                
+                # Add to custom variables if not already present
+                if clean_var not in custom_variables:
                     custom_variables.append(clean_var)
             
             logger.debug(f"Custom variables: {custom_variables}")
@@ -279,6 +312,12 @@ class TemplateService:
         
         result = include_pattern.sub(replace_include, processed_content)
         logger.debug(f"Processed content length: {len(result)}")
+        
+        # Check if the processed content still contains include statements
+        remaining_includes = include_pattern.findall(result)
+        if remaining_includes:
+            logger.warning(f"Remaining include statements after processing: {remaining_includes}")
+        
         return result
     
     def process_template(self, template_content: str, data: Dict[str, Any], template_path: str = None) -> str:
