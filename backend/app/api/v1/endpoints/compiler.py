@@ -244,7 +244,7 @@ class ContentAggregator:
         # Process each node
         for path in node_paths:
             try:
-                full_path = os.path.join(self.project_path, path)
+                full_path = os.path.normpath(os.path.join(self.project_path, path))
                 if os.path.exists(full_path):
                     with open(full_path, 'r', encoding='utf-8') as f:
                         content = f.read()
@@ -374,7 +374,7 @@ class ContentAggregator:
         """Get the project's default template for a format type"""
         try:
             # Read project settings from the git repository
-            settings_file = os.path.join(self.project_path, 'verbweaver-settings.yaml')
+            settings_file = os.path.normpath(os.path.join(self.project_path, 'verbweaver-settings.yaml'))
             if os.path.exists(settings_file):
                 import yaml
                 with open(settings_file, 'r', encoding='utf-8') as f:
@@ -576,10 +576,9 @@ class ContentAggregator:
     def _process_image_embeddings(self, content: str, node_path: str, attachments: List[Dict[str, Any]]) -> str:
         """Process image embeddings in content and add image references for attachments"""
         import os
-        from pathlib import Path
         
         # Get the directory of the current node for relative path resolution
-        node_dir = os.path.dirname(os.path.join(self.project_path, node_path))
+        node_dir = os.path.dirname(os.path.normpath(os.path.join(self.project_path, node_path)))
         
         # Process existing image references to ensure they're relative to project root
         def fix_image_paths(match):
@@ -592,7 +591,7 @@ class ContentAggregator:
                 return match.group(0)
             
             # Make path relative to project root
-            full_img_path = os.path.join(node_dir, img_path)
+            full_img_path = os.path.normpath(os.path.join(node_dir, img_path))
             if os.path.exists(full_img_path):
                 # Convert to relative path from project root
                 rel_path = os.path.relpath(full_img_path, self.project_path)
@@ -646,6 +645,8 @@ class PandocExporter:
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{output_format}') as temp_output:
             output_file = temp_output.name
         
+        # Ensure output file path is absolute for cross-platform compatibility
+        output_file = os.path.abspath(output_file)
         print(f"PandocExporter: Output file: {output_file}")
         
         try:
@@ -667,8 +668,11 @@ class PandocExporter:
                 
         finally:
             # Clean up temporary file
-            if os.path.exists(output_file):
-                os.unlink(output_file)
+            try:
+                if os.path.exists(output_file):
+                    os.unlink(output_file)
+            except Exception as e:
+                print(f"PandocExporter: Failed to clean up output file {output_file}: {e}")
 
 class ExporterFactory:
     """Factory for creating exporters based on format"""
@@ -723,6 +727,8 @@ async def compile_document(
         if not project_path:
             raise HTTPException(status_code=404, detail="Project path not configured")
         
+        # Ensure project path is absolute and normalized for cross-platform compatibility
+        project_path = os.path.abspath(os.path.normpath(project_path))
         print(f"Project path: {project_path}")
         
         # Validate project path exists

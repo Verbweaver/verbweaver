@@ -18,7 +18,7 @@ class TemplateService:
     
     def __init__(self, project_path: str):
         self.project_path = project_path
-        self.templates_dir = Path(project_path) / "templates" / "compiler"
+        self.templates_dir = os.path.normpath(os.path.join(project_path, "templates", "compiler"))
         self.supported_formats = ['markdown', 'html', 'pdf', 'docx', 'epub']
     
     def get_available_templates(self, format_type: str) -> List[Dict[str, str]]:
@@ -26,29 +26,34 @@ class TemplateService:
         if format_type not in self.supported_formats:
             return []
         
-        format_dir = self.templates_dir / format_type
-        if not format_dir.exists():
+        format_dir = os.path.join(self.templates_dir, format_type)
+        if not os.path.exists(format_dir):
             return []
         
         templates = []
-        for template_file in format_dir.glob("*.md"):
-            if template_file.is_file():
-                templates.append({
-                    'name': template_file.stem,
-                    'path': str(template_file.relative_to(self.project_path)),
-                    'format': format_type
-                })
+        try:
+            for filename in os.listdir(format_dir):
+                if filename.endswith('.md'):
+                    template_path = os.path.join(format_type, filename)
+                    templates.append({
+                        'name': os.path.splitext(filename)[0],
+                        'path': template_path,
+                        'format': format_type
+                    })
+        except Exception as e:
+            logger.error(f"Failed to list templates in {format_dir}: {e}")
         
         return templates
     
     def get_template_content(self, template_path: str) -> Optional[str]:
         """Get the content of a template file"""
-        full_path = Path(self.project_path) / template_path
-        if not full_path.exists():
+        full_path = os.path.normpath(os.path.join(self.project_path, template_path))
+        if not os.path.exists(full_path):
             return None
         
         try:
-            return full_path.read_text(encoding='utf-8')
+            with open(full_path, 'r', encoding='utf-8') as f:
+                return f.read()
         except Exception as e:
             logger.error(f"Failed to read template {template_path}: {e}")
             return None
@@ -211,19 +216,20 @@ class TemplateService:
             # Resolve relative path from the template file's directory
             if template_path:
                 # Get the directory of the template file
-                template_file_path = Path(self.project_path) / template_path
-                template_dir = template_file_path.parent
-                full_include_path = (template_dir / include_path).resolve()
+                template_file_path = os.path.normpath(os.path.join(self.project_path, template_path))
+                template_dir = os.path.dirname(template_file_path)
+                full_include_path = os.path.normpath(os.path.join(template_dir, include_path))
             else:
                 # Fallback to templates/compiler directory (for backward compatibility)
-                full_include_path = (self.templates_dir / include_path).resolve()
+                full_include_path = os.path.normpath(os.path.join(self.templates_dir, include_path))
             
             try:
-                if full_include_path.exists():
-                    included_content = full_include_path.read_text(encoding='utf-8')
+                if os.path.exists(full_include_path):
+                    with open(full_include_path, 'r', encoding='utf-8') as f:
+                        included_content = f.read()
                     # Recursively process includes in the included template
                     # Pass the included template's path for correct relative path resolution
-                    included_template_path = str(full_include_path.relative_to(self.project_path))
+                    included_template_path = os.path.relpath(full_include_path, self.project_path)
                     return self.process_includes_only(included_content, included_template_path)
                 else:
                     logger.error(f"Included template not found: {full_include_path}")
@@ -256,19 +262,20 @@ class TemplateService:
             # Resolve relative path from the template file's directory
             if template_path:
                 # Get the directory of the template file
-                template_file_path = Path(self.project_path) / template_path
-                template_dir = template_file_path.parent
-                full_include_path = (template_dir / include_path).resolve()
+                template_file_path = os.path.normpath(os.path.join(self.project_path, template_path))
+                template_dir = os.path.dirname(template_file_path)
+                full_include_path = os.path.normpath(os.path.join(template_dir, include_path))
             else:
                 # Fallback to templates/compiler directory (for backward compatibility)
-                full_include_path = (self.templates_dir / include_path).resolve()
+                full_include_path = os.path.normpath(os.path.join(self.templates_dir, include_path))
             
             try:
-                if full_include_path.exists():
-                    included_content = full_include_path.read_text(encoding='utf-8')
+                if os.path.exists(full_include_path):
+                    with open(full_include_path, 'r', encoding='utf-8') as f:
+                        included_content = f.read()
                     # Recursively process the included template
                     # Pass the included template's path for correct relative path resolution
-                    included_template_path = str(full_include_path.relative_to(self.project_path))
+                    included_template_path = os.path.relpath(full_include_path, self.project_path)
                     return self.process_template(included_content, data, included_template_path)
                 else:
                     logger.error(f"Included template not found: {full_include_path}")
@@ -582,13 +589,20 @@ class TemplateService:
                 temp_file_path = temp_file.name
             
             try:
+                # Ensure temp_file_path is absolute for cross-platform compatibility
+                temp_file_path = os.path.abspath(temp_file_path)
+                
                 # Build pandoc command
                 cmd = ['pandoc', temp_file_path, '-o', output_file]
                 # Ensure resources (images) resolve relative to project root
                 try:
                     if os.path.isdir(self.project_path):
-                        cmd.extend(['--resource-path', self.project_path])
-                except Exception:
+                        # Use absolute path for resource-path to avoid platform-specific issues
+                        abs_project_path = os.path.abspath(self.project_path)
+                        cmd.extend(['--resource-path', abs_project_path])
+                        logger.debug(f"Added resource path: {abs_project_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to add resource path: {e}")
                     pass
 
                 # Enable table of contents when requested
@@ -614,6 +628,11 @@ class TemplateService:
                     # Kindle format (requires calibre)
                     return False, "MOBI format requires Calibre. Please install Calibre to use this feature."
                 
+                # Log command for debugging
+                logger.debug(f"Pandoc command: {' '.join(cmd)}")
+                logger.debug(f"Working directory: {working_dir}")
+                logger.debug(f"Temp file path: {temp_file_path}")
+                
                 # Run pandoc with working directory if provided
                 if working_dir:
                     result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir)
@@ -622,14 +641,20 @@ class TemplateService:
                 
                 if result.returncode != 0:
                     error_msg = result.stderr.strip()
+                    logger.error(f"Pandoc conversion failed with return code {result.returncode}")
+                    logger.error(f"Pandoc stderr: {error_msg}")
+                    logger.error(f"Pandoc stdout: {result.stdout.strip()}")
+                    
                     if "xelatex" in error_msg and output_format == 'pdf':
                         # Try with pdflatex as fallback
                         cmd = ['pandoc', temp_file_path, '-o', output_file, '--pdf-engine=pdflatex']
+                        logger.debug(f"Retrying with pdflatex: {' '.join(cmd)}")
                         if working_dir:
                             result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir)
                         else:
                             result = subprocess.run(cmd, capture_output=True, text=True)
                         if result.returncode != 0:
+                            logger.error(f"Pandoc PDF conversion failed with pdflatex: {result.stderr}")
                             return False, f"Pandoc PDF conversion failed: {result.stderr}"
                     else:
                         return False, f"Pandoc conversion failed: {error_msg}"
@@ -638,11 +663,16 @@ class TemplateService:
                 
             finally:
                 # Clean up temporary file
-                os.unlink(temp_file_path)
+                try:
+                    if os.path.exists(temp_file_path):
+                        os.unlink(temp_file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
                 
         except FileNotFoundError:
             return False, "Pandoc is not installed. Please install Pandoc to use this feature."
         except Exception as e:
+            logger.error(f"Pandoc conversion error: {str(e)}")
             return False, f"Pandoc conversion error: {str(e)}"
     
     def create_default_templates(self) -> None:
