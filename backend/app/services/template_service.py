@@ -226,7 +226,8 @@ class TemplateService:
             # Resolve relative path from the template file's directory
             if template_path:
                 # Get the directory of the template file
-                template_file_path = os.path.normpath(os.path.join(self.project_path, template_path))
+                # template_path is relative to templates_dir, so join with templates_dir
+                template_file_path = os.path.normpath(os.path.join(self.templates_dir, template_path))
                 template_dir = os.path.dirname(template_file_path)
                 full_include_path = os.path.normpath(os.path.join(template_dir, include_path))
             else:
@@ -239,7 +240,8 @@ class TemplateService:
                         included_content = f.read()
                     # Recursively process includes in the included template
                     # Pass the included template's path for correct relative path resolution
-                    included_template_path = os.path.relpath(full_include_path, self.project_path)
+                    # The included template path should be relative to templates_dir
+                    included_template_path = os.path.relpath(full_include_path, self.templates_dir)
                     return self.process_includes_only(included_content, included_template_path)
                 else:
                     logger.error(f"Included template not found: {full_include_path}")
@@ -272,7 +274,8 @@ class TemplateService:
             # Resolve relative path from the template file's directory
             if template_path:
                 # Get the directory of the template file
-                template_file_path = os.path.normpath(os.path.join(self.project_path, template_path))
+                # template_path is relative to templates_dir, so join with templates_dir
+                template_file_path = os.path.normpath(os.path.join(self.templates_dir, template_path))
                 template_dir = os.path.dirname(template_file_path)
                 full_include_path = os.path.normpath(os.path.join(template_dir, include_path))
             else:
@@ -285,7 +288,8 @@ class TemplateService:
                         included_content = f.read()
                     # Recursively process the included template
                     # Pass the included template's path for correct relative path resolution
-                    included_template_path = os.path.relpath(full_include_path, self.project_path)
+                    # The included template path should be relative to templates_dir
+                    included_template_path = os.path.relpath(full_include_path, self.templates_dir)
                     return self.process_template(included_content, data, included_template_path)
                 else:
                     logger.error(f"Included template not found: {full_include_path}")
