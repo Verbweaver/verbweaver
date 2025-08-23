@@ -19,6 +19,14 @@ export default defineConfig({
       // Add any CSS preprocessing if needed
     }
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html')
+      }
+    }
+  },
+  publicDir: false, // Disable automatic copying of public directory
   server: {
     port: 3000,
     proxy: {
