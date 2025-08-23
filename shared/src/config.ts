@@ -25,31 +25,66 @@ export class ConfigManager {
     if (!isElectron()) return;
 
     try {
-      // Get the backend URL from electron store
+      // Wait a bit for Electron API to be available
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      while (attempts < maxAttempts) {
+        const electronAPI = (window as any).electronAPI;
+        if (electronAPI && electronAPI.getStoreValue) {
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      
+      if (attempts >= maxAttempts) {
+        throw new Error('Electron API not available after maximum attempts');
+      }
+
       const electronAPI = (window as any).electronAPI;
+      
+      // Get the backend URL from electron store
       const storedUrl = await electronAPI.getStoreValue('backendUrl');
       if (storedUrl) {
         this.backendUrl = storedUrl;
         this.wsUrl = storedUrl.replace('http://', 'ws://');
+        console.log('[ConfigManager] Using stored backend URL:', storedUrl);
+        return;
+      }
+      
+      // If not stored, check backend status
+      const status = await electronAPI.getBackendStatus();
+      if (status.running && status.port) {
+        this.backendUrl = `http://127.0.0.1:${status.port}`;
+        this.wsUrl = `ws://127.0.0.1:${status.port}`;
+        // Store for future use
+        await electronAPI.setStoreValue('backendUrl', this.backendUrl);
+        console.log('[ConfigManager] Backend detected and URL stored:', this.backendUrl);
       } else {
-        // If not stored, check backend status
-        const status = await electronAPI.getBackendStatus();
-        if (status.running && status.port) {
-          this.backendUrl = `http://127.0.0.1:${status.port}`;
-          this.wsUrl = `ws://127.0.0.1:${status.port}`;
-          // Store for future use
-          await electronAPI.setStoreValue('backendUrl', this.backendUrl);
-        }
+        console.warn('[ConfigManager] Backend not running, using fallback URL');
+        // Use fallback URL if backend is not running
+        this.backendUrl = 'http://127.0.0.1:8000';
+        this.wsUrl = 'ws://127.0.0.1:8000';
       }
     } catch (error) {
       console.error('Failed to initialize Electron backend URL:', error);
+      // Use fallback URL on error
+      this.backendUrl = 'http://127.0.0.1:8000';
+      this.wsUrl = 'ws://127.0.0.1:8000';
     }
   }
 
   getApiBaseUrl(): string {
     // For Electron, use the dynamic backend URL
     if (isElectron() && this.backendUrl) {
-      return `${this.backendUrl}/api/v1`;
+      const url = `${this.backendUrl}/api/v1`;
+      // Ensure we don't return file:// URLs (which indicate an error)
+      if (url.startsWith('file://')) {
+        console.warn('[ConfigManager] Detected file:// URL, using fallback');
+        return 'http://127.0.0.1:8000/api/v1';
+      }
+      return url;
     }
     
     // For web production, use relative URLs
@@ -99,7 +134,10 @@ export const configManager = ConfigManager.getInstance();
 
 // Initialize for Electron on module load
 if (typeof window !== 'undefined' && isElectron()) {
-  configManager.initializeForElectron().catch(console.error);
+  // Delay initialization slightly to ensure Electron API is available
+  setTimeout(() => {
+    configManager.initializeForElectron().catch(console.error);
+  }, 100);
 }
 
 /**
