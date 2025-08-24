@@ -102,7 +102,7 @@ export interface ElectronAPI {
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
-const electronAPI: ElectronAPI = {
+const electronAPI = {
   // File operations
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
@@ -208,6 +208,10 @@ const electronAPI: ElectronAPI = {
   listDocs: () => ipcRenderer.invoke('docs:list'),
   readDocContent: (fileName: string) => ipcRenderer.invoke('docs:read', fileName),
   
+  // Dependency checker
+  checkDependencies: () => ipcRenderer.invoke('dependencies:check'),
+  openInstallUrl: (url: string) => ipcRenderer.invoke('dependencies:openInstallUrl', url),
+  
   // File watching
   watchProject: (callback: (event: any) => void) => {
     ipcRenderer.on('file:changed', callback);
@@ -223,7 +227,7 @@ const electronAPI: ElectronAPI = {
   createNodeFile: (initialNodeData: Partial<any>) => ipcRenderer.invoke('graph:createNodeFile', initialNodeData),
   deleteNodeFile: (relativeFilePath: string) => ipcRenderer.invoke('graph:deleteNodeFile', relativeFilePath),
   createNodeFromTemplateFile: (args: { templateRelativePath: string, newNodeName: string, newParentRelativePath: string, initialMetadata: Record<string, any> }) => ipcRenderer.invoke('graph:createNodeFromTemplateFile', args),
-};
+} as ElectronAPI;
 
 // Securely expose the API to the renderer process
 if (process.contextIsolated) {

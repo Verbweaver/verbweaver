@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { FileDown, FileText, Book, Package, Globe, Code, Loader2, FileType } from 'lucide-react'
+import { FileDown, FileText, Book, Package, Globe, Code, Loader2, FileType, AlertTriangle } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
+import { useTabStore } from '../store/tabStore'
 import { EXPORT_FORMATS } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
@@ -98,6 +99,15 @@ function CompilerView() {
   const [title, setTitle] = useState('')
   const [author, setAuthor] = useState('')
   const [selectedNodes, setSelectedNodes] = useState<string[]>([])
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
+  const [dependencies, setDependencies] = useState<Array<{
+    name: string;
+    available: boolean;
+    version?: string;
+    installUrl?: string;
+    installInstructions?: string;
+  }>>([])
+  const [checkingDependencies, setCheckingDependencies] = useState(false)
   const [orderedNodes, setOrderedNodes] = useState<string[]>([])
   const [selectedFormat, setSelectedFormat] = useState<string>('markdown')
   const [selectedTemplate, setSelectedTemplate] = useState<string>('')
@@ -124,6 +134,18 @@ function CompilerView() {
     lineSpacing: '1.5'
   })
 
+  // Tab store for persistence
+  const { getActiveTab, updateTab } = useTabStore()
+  
+  // Flag to track if we've restored state from tab metadata
+  const [hasRestoredState, setHasRestoredState] = useState(false)
+  // Flag to prevent saving state during restoration
+  const [isRestoring, setIsRestoring] = useState(false)
+  // Flag to track if we've attempted restoration
+  const [hasAttemptedRestoration, setHasAttemptedRestoration] = useState(false)
+  // Flag to prevent initial save when component first mounts
+  const [hasInitialized, setHasInitialized] = useState(false)
+
   // Stable callbacks to avoid re-running child effects on every render
   const handleOrderChange = useCallback((paths: string[]) => {
     setOrderedNodes(paths)
@@ -135,10 +157,111 @@ function CompilerView() {
   }, [])
 
   useEffect(() => {
-    if (currentProject) {
+    if (currentProject && !hasRestoredState) {
+      console.log('[Compiler] Setting title from project name:', currentProject.name)
       setTitle(currentProject.name)
+    } else if (currentProject && hasRestoredState) {
+      console.log('[Compiler] Skipping project name title set because state was restored')
     }
-  }, [currentProject])
+  }, [currentProject, hasRestoredState])
+
+  // Restore compiler state from tab metadata when switching back to compiler tab
+  useEffect(() => {
+    console.log('[Compiler] Attempting to restore state from tab metadata')
+    const restoreState = () => {
+      const tab = getActiveTab()
+      console.log('[Compiler] Checking for saved state in tab:', tab?.type, tab?.metadata?.compilerState ? 'found' : 'not found')
+      if (tab?.type === 'compiler' && tab.metadata?.compilerState) {
+        const state = tab.metadata.compilerState
+        console.log('[Compiler] Restoring state from tab:', {
+          title: state.title,
+          author: state.author,
+          selectedNodes: state.selectedNodes?.length,
+          orderedNodes: state.orderedNodes?.length,
+          selectedFormat: state.selectedFormat,
+          selectedTemplate: state.selectedTemplate,
+          expandedDirs: (state as any).expandedDirs
+        })
+        console.log('[Compiler] Raw expandedDirs from state:', (state as any).expandedDirs)
+        
+        setIsRestoring(true)
+        // Set all state in a batch to prevent interference
+        if (state.title !== undefined) setTitle(state.title)
+        if (state.author !== undefined) setAuthor(state.author)
+        if (state.selectedNodes) setSelectedNodes(state.selectedNodes)
+        if (state.orderedNodes) setOrderedNodes(state.orderedNodes)
+        if (state.selectedFormat) setSelectedFormat(state.selectedFormat)
+        if (state.selectedTemplate) setSelectedTemplate(state.selectedTemplate)
+        if (state.customVariables) setCustomVariables(state.customVariables)
+        if (state.nodeVariables) setNodeVariables(state.nodeVariables)
+        if (state.docVars) setDocVars(state.docVars)
+        if (state.options) setOptions(prev => ({ ...prev, ...state.options }))
+        if (state.expandedDirs) setExpandedDirs(new Set(state.expandedDirs))
+        setHasRestoredState(true)
+        console.log('[Compiler] State restored, setting hasRestoredState to true')
+        
+        // Small delay to ensure all state updates are processed before allowing saves
+        setTimeout(() => {
+          setIsRestoring(false)
+          setHasInitialized(true)
+          console.log('[Compiler] Restoration complete, saving enabled')
+        }, 100)
+      } else if (tab?.type === 'compiler' && !hasRestoredState) {
+        // If we're on a compiler tab but no saved state, mark as restored to prevent project name override
+        console.log('[Compiler] No saved state found, marking as restored to prevent project name override')
+        setHasRestoredState(true)
+        setHasInitialized(true)
+      }
+    }
+    
+    // Small delay to ensure component is fully mounted
+    const timeoutId = setTimeout(restoreState, 0)
+    return () => clearTimeout(timeoutId)
+  }, [getActiveTab]) // Run when active tab changes only
+
+  // Save compiler state to tab metadata whenever state changes
+  useEffect(() => {
+    if (isRestoring || !hasInitialized) {
+      console.log('[Compiler] Skipping save during restoration or initialization')
+      return
+    }
+    
+
+    
+    const tab = getActiveTab()
+    if (tab?.type === 'compiler') {
+             console.log('[Compiler] Saving state to tab:', {
+         title,
+         author,
+         selectedNodes: selectedNodes.length,
+         orderedNodes: orderedNodes.length,
+         selectedFormat,
+         selectedTemplate,
+         expandedDirs: Array.from(expandedDirs)
+       })
+       updateTab(tab.id, {
+         metadata: {
+           ...tab.metadata,
+           compilerState: {
+             title,
+             author,
+             selectedNodes,
+             orderedNodes,
+             selectedFormat,
+             selectedTemplate,
+             customVariables,
+             nodeVariables,
+             docVars,
+             options,
+             expandedDirs: Array.from(expandedDirs)
+           }
+         }
+       })
+    }
+  }, [
+    title, author, selectedNodes, orderedNodes, selectedFormat, selectedTemplate,
+    customVariables, nodeVariables, docVars, options, expandedDirs, isRestoring, hasInitialized
+  ])
 
   // Load templates when format changes
   useEffect(() => {
@@ -146,6 +269,40 @@ function CompilerView() {
       loadTemplates(selectedFormat)
     }
   }, [currentProject, selectedFormat])
+
+  // Check dependencies on mount (desktop only)
+  useEffect(() => {
+    const checkDependencies = async () => {
+      const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined;
+      if (isElectron) {
+        try {
+          setCheckingDependencies(true);
+          const deps = await (window as any).electronAPI.checkDependencies();
+          setDependencies(deps);
+        } catch (error) {
+          console.error('Failed to check dependencies:', error);
+        } finally {
+          setCheckingDependencies(false);
+        }
+      }
+    };
+    
+    checkDependencies();
+  }, []);
+
+  // Track the last project ID to detect actual project changes
+  const [lastProjectId, setLastProjectId] = useState<string | null>(null)
+  
+  // Reset restoration flag only when project actually changes
+  useEffect(() => {
+    if (currentProject?.id !== lastProjectId) {
+      console.log('[Compiler] Project actually changed from', lastProjectId, 'to', currentProject?.id)
+      setLastProjectId(currentProject?.id || null)
+      setHasRestoredState(false)
+      setIsRestoring(false)
+      setHasInitialized(false)
+    }
+  }, [currentProject?.id, lastProjectId])
 
   const loadTemplates = async (format: string) => {
     if (!currentProject) return
@@ -611,6 +768,8 @@ function CompilerView() {
           selectedNodes={selectedNodes}
           onSelectionChange={setSelectedNodes}
           showFolders={false}
+          expandedDirs={expandedDirs}
+          onExpandedDirsChange={setExpandedDirs}
         />
       </div>
 
@@ -632,6 +791,45 @@ function CompilerView() {
               Configure and export your project as a document
             </p>
           </div>
+
+          {/* Dependency Warning */}
+          {dependencies.some(dep => !dep.available) && (
+            <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-1">
+                    Missing Dependencies
+                  </h4>
+                  <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                    Some export formats require additional software to be installed on your system.
+                  </p>
+                  <div className="space-y-2">
+                    {dependencies.filter(dep => !dep.available).map((dep) => (
+                      <div key={dep.name} className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{dep.name}</span>
+                        {dep.installUrl && (
+                          <button
+                            onClick={() => {
+                              const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined;
+                              if (isElectron) {
+                                (window as any).electronAPI.openInstallUrl(dep.installUrl!);
+                              } else {
+                                window.open(dep.installUrl, '_blank');
+                              }
+                            }}
+                            className="text-xs text-amber-700 dark:text-amber-300 hover:underline"
+                          >
+                            Install
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Document Info */}
           <div className="space-y-4">

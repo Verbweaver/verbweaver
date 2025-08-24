@@ -240,6 +240,19 @@ function GraphView() {
   // Keyboard: Delete selected nodes
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Check if user is typing in an input field, textarea, or contenteditable element
+      const activeElement = document.activeElement
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.getAttribute('contenteditable') === 'true'
+      )
+      
+      // Don't process shortcuts if user is typing
+      if (isTyping) {
+        return
+      }
+      
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeIds.size > 0) {
         e.preventDefault()
         if (selectedNodeIds.size === 1) {

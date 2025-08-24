@@ -61,30 +61,61 @@ Verbweaver organizes ideas and tasks as Markdown files under the `nodes/` folder
     empty_flat_path = empty_flat_dir / 'Empty.md'
     try:
         # Repo assets path: <repo_root>/assets/templates/nodes
-        assets_base = Path(__file__).resolve().parents[5] / 'assets' / 'templates' / 'nodes'
-        src_empty = assets_base / 'Empty.md'
-        if src_empty.exists():
+        current_file = os.path.abspath(__file__)
+        repo_root = os.path.normpath(os.path.join(current_file, '..', '..', '..', '..', '..'))
+        assets_base = os.path.join(repo_root, 'assets', 'templates', 'nodes')
+        src_empty = os.path.join(assets_base, 'Empty.md')
+        print(f"Looking for node template in: {src_empty}")
+        
+        if os.path.exists(src_empty):
             if not empty_nodes_path.exists():
-                empty_nodes_path.write_text(src_empty.read_text(encoding='utf-8'), encoding='utf-8')
+                print(f"Copying node template to: {empty_nodes_path}")
+                with open(src_empty, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                empty_nodes_path.write_text(content, encoding='utf-8')
             if not empty_flat_path.exists():
-                empty_flat_path.write_text(src_empty.read_text(encoding='utf-8'), encoding='utf-8')
-    except Exception:
+                print(f"Copying node template to: {empty_flat_path}")
+                with open(src_empty, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                empty_flat_path.write_text(content, encoding='utf-8')
+        else:
+            print(f"Node template not found: {src_empty}")
+    except Exception as e:
+        print(f"Error seeding node templates: {e}")
         pass
 
     # Compiler templates: copy from repository assets (Markdown for all formats)
     try:
         # Repo assets path: <repo_root>/assets/templates/compiler
-        assets_compiler = Path(__file__).resolve().parents[5] / 'assets' / 'templates' / 'compiler'
+        # Use os.path for more reliable cross-platform path resolution
+        current_file = os.path.abspath(__file__)
+        repo_root = os.path.normpath(os.path.join(current_file, '..', '..', '..', '..', '..'))
+        assets_compiler = os.path.join(repo_root, 'assets', 'templates', 'compiler')
+        print(f"Looking for compiler templates in: {assets_compiler}")
+        
         for fmt in ['markdown', 'html', 'pdf', 'docx', 'epub', 'odt']:
-            fmt_dir = root / 'templates' / 'compiler' / fmt
-            fmt_dir.mkdir(parents=True, exist_ok=True)
-            src_fmt = assets_compiler / fmt
-            if src_fmt.exists() and src_fmt.is_dir():
-                for src_file in src_fmt.glob('*.md'):
-                    dst_file = fmt_dir / src_file.name
-                    if not dst_file.exists():
-                        dst_file.write_text(src_file.read_text(encoding='utf-8'), encoding='utf-8')
-    except Exception:
+            fmt_dir = os.path.join(root, 'templates', 'compiler', fmt)
+            os.makedirs(fmt_dir, exist_ok=True)
+            src_fmt = os.path.join(assets_compiler, fmt)
+            print(f"Checking format {fmt}: src={src_fmt}, dst={fmt_dir}")
+            
+            if os.path.exists(src_fmt) and os.path.isdir(src_fmt):
+                for filename in os.listdir(src_fmt):
+                    if filename.endswith('.md'):
+                        src_file = os.path.join(src_fmt, filename)
+                        dst_file = os.path.join(fmt_dir, filename)
+                        if not os.path.exists(dst_file):
+                            print(f"Copying template: {src_file} -> {dst_file}")
+                            with open(src_file, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            with open(dst_file, 'w', encoding='utf-8') as f:
+                                f.write(content)
+                        else:
+                            print(f"Template already exists: {dst_file}")
+            else:
+                print(f"Source format directory not found: {src_fmt}")
+    except Exception as e:
+        print(f"Error seeding compiler templates: {e}")
         pass
 
 

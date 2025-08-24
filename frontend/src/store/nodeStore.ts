@@ -129,18 +129,14 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
   let content: string | null = null;
   
   try {
-    // Resolve absolute paths for file operations
-    const absolutePath = normalizedPath.startsWith(currentProjectPath) 
-      ? normalizedPath 
-      : joinPaths(currentProjectPath, normalizedPath);
-    
-    const absoluteMetadataPath = metadataPath.startsWith(currentProjectPath)
-      ? metadataPath
-      : joinPaths(currentProjectPath, metadataPath);
+    // readProjectFiles returns relative paths, so pass them directly to readFile
+    // The main process will handle joining with the project path
+    const relativePath = normalizedPath;
+    const relativeMetadataPath = metadataPath;
 
     if (isMarkdown && !isDirectory) {
       // Read Markdown file with front matter
-      const fileContent = await window.electronAPI.readFile(absolutePath);
+      const fileContent = await window.electronAPI.readFile(relativePath);
       const parsed = parseMarkdownWithFrontMatter(fileContent);
       // Preserve the ID from the file if it exists, otherwise use the generated one
       metadata = { 
@@ -153,7 +149,7 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
     } else if (!isDirectory) {
       // Check for .metadata.md file
       try {
-        const metadataContent = await window.electronAPI.readFile(absoluteMetadataPath);
+        const metadataContent = await window.electronAPI.readFile(relativeMetadataPath);
         const parsed = parseMarkdownWithFrontMatter(metadataContent);
         // Preserve the ID from the file if it exists
         metadata = { 
@@ -176,10 +172,8 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
   
   if (isDirectory) {
     try {
-      const absoluteDirPath = normalizedPath.startsWith(currentProjectPath)
-        ? normalizedPath
-        : joinPaths(currentProjectPath, normalizedPath);
-      const dirContents = await window.electronAPI.readDirectory(absoluteDirPath);
+      const relativeDirPath = normalizedPath;
+      const dirContents = await window.electronAPI.readDirectory(relativeDirPath);
       children = dirContents.map(item => joinPaths(normalizedPath, item.name).replace(/\\/g, '/'));
     } catch (error) {
       console.error(`Failed to read directory ${normalizedPath}:`, error);

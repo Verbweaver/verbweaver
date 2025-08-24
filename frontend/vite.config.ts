@@ -12,10 +12,21 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@verbweaver/shared': path.resolve(__dirname, '../shared/src'),
-      'fc-core-css': path.resolve(__dirname, 'node_modules/@fullcalendar/core/dist/index.css'),
-      'fc-daygrid-css': path.resolve(__dirname, 'node_modules/@fullcalendar/daygrid/dist/index.css')
     }
   },
+  css: {
+    preprocessorOptions: {
+      // Add any CSS preprocessing if needed
+    }
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html')
+      }
+    }
+  },
+  publicDir: false, // Disable automatic copying of public directory
   server: {
     port: 3000,
     proxy: {

@@ -588,22 +588,33 @@ function setupIpcHandlers() {
   ipcMain.handle('fs:readDirectory', async (_event, dirPath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
+      console.log(`[main] fs:readDirectory called with dirPath: "${dirPath}", projectPath: "${projectPath}"`);
+      
       // Allow absolute paths even if no project is open (for global templates folder)
       const fullPath = path.isAbsolute(dirPath)
         ? dirPath
         : (projectPath ? path.join(projectPath as string, dirPath) : dirPath);
-      const items = await fs.readdir(fullPath, { withFileTypes: true });
       
-      return items.map(item => ({
-        name: item.name,
-        // Return relative path from the project root
-        path: path.isAbsolute(dirPath) 
-          ? path.relative(projectPath as string, path.join(dirPath, item.name))
-          : path.join(dirPath, item.name),
-        type: item.isDirectory() ? 'directory' : 'file'
-      }));
+      console.log(`[main] fs:readDirectory resolved fullPath: "${fullPath}"`);
+      
+      const items = await fs.readdir(fullPath, { withFileTypes: true });
+      console.log(`[main] fs:readDirectory found ${items.length} items in "${fullPath}":`, items.map(i => i.name));
+      
+      const result = items
+        .filter(item => item.name !== '.gitkeep') // Exclude .gitkeep files as they are not actual nodes
+        .map(item => ({
+          name: item.name,
+          // Return relative path from the project root, or just the filename for absolute paths with no project
+          path: path.isAbsolute(dirPath) 
+            ? (projectPath ? path.relative(projectPath as string, path.join(dirPath, item.name)) : item.name)
+            : path.join(dirPath, item.name),
+          type: item.isDirectory() ? 'directory' : 'file'
+        }));
+      
+      console.log(`[main] fs:readDirectory returning ${result.length} items:`, result.map(i => ({ name: i.name, path: i.path, type: i.type })));
+      return result;
     } catch (error) {
-      console.error('Failed to read directory:', error);
+      console.error('[main] fs:readDirectory failed:', error);
       throw error;
     }
   });
@@ -1491,7 +1502,24 @@ Start your content here.
             const fileContent = await fs.readFile(fullEntryPath, 'utf8');
             const { data: frontmatter, content: mdContent } = matter(fileContent);
             
-            const nodeName = frontmatter.title || entry.name.replace(/\.md$/, '');
+            // Use frontmatter title if available, otherwise try to derive a better display name from the filename
+            let nodeName = frontmatter.title;
+            console.log(`[graph:loadData] Processing file: ${entry.name}`);
+            console.log(`[graph:loadData] Frontmatter title: "${frontmatter.title}"`);
+            console.log(`[graph:loadData] Frontmatter keys:`, Object.keys(frontmatter));
+            if (!nodeName) {
+              // If no title in frontmatter, try to derive a better name from the filename
+              // Remove .md extension and try to convert from slug format back to readable format
+              const filenameWithoutExt = entry.name.replace(/\.md$/, '');
+              // Convert slug format (e.g., "my-node-name") back to readable format (e.g., "My Node Name")
+              nodeName = filenameWithoutExt
+                .split('-')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+              console.log(`[graph:loadData] Derived nodeName from filename: "${nodeName}"`);
+            } else {
+              console.log(`[graph:loadData] Using frontmatter title: "${nodeName}"`);
+            }
             const nodeType = frontmatter.type || 'document';
             const nodePosition = frontmatter.position || undefined;
 
@@ -1599,6 +1627,10 @@ Start your content here.
       ...(initialNodeData?.data || {}), // Merge other initial data/metadata
       ...(initialNodeData?.metadata || {}), // Accommodate if metadata is passed separately
     };
+    
+    console.log(`[graph:createNodeFile] Creating node with desiredLabel: "${desiredLabel}"`);
+    console.log(`[graph:createNodeFile] Frontmatter title: "${frontmatter.title}"`);
+    console.log(`[graph:createNodeFile] Filename: "${filename}"`);
 
     // If position is provided, add it to frontmatter
     if (initialNodeData?.position) {
@@ -2465,6 +2497,26 @@ Start your content here.
       throw error;
     }
   });
+
+  // Dependency checker handlers
+  ipcMain.handle('dependencies:check', async () => {
+    try {
+      return await checkDependencies();
+    } catch (error) {
+      console.error('Failed to check dependencies:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('dependencies:openInstallUrl', async (_, url: string) => {
+    try {
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to open install URL:', error);
+      return { success: false, error: String(error) };
+    }
+  });
 }
 
 // App event handlers
@@ -2544,3 +2596,87 @@ process.on('SIGTERM', () => {
   void stopBackend();
   process.exit(0);
 });
+
+// Dependency checker service
+interface DependencyCheck {
+  name: string;
+  available: boolean;
+  version?: string;
+  installUrl?: string;
+  installInstructions?: string;
+}
+
+async function checkDependencies(): Promise<DependencyCheck[]> {
+  const dependencies: DependencyCheck[] = [];
+  
+  // Check Pandoc
+  try {
+    const result = await new Promise<{ success: boolean; version?: string }>((resolve) => {
+      const child = require('child_process').spawn('pandoc', ['--version'], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      
+      let output = '';
+      child.stdout.on('data', (data: Buffer) => {
+        output += data.toString();
+      });
+      
+      child.on('close', (code: number) => {
+        if (code === 0) {
+          const versionMatch = output.match(/pandoc\s+(\d+\.\d+\.\d+)/);
+          resolve({ success: true, version: versionMatch?.[1] });
+        } else {
+          resolve({ success: false });
+        }
+      });
+      
+      child.on('error', () => {
+        resolve({ success: false });
+      });
+    });
+    
+    dependencies.push({
+      name: 'Pandoc',
+      available: result.success,
+      version: result.version,
+      installUrl: 'https://pandoc.org/installing.html',
+      installInstructions: getPandocInstallInstructions()
+    });
+  } catch (error) {
+    dependencies.push({
+      name: 'Pandoc',
+      available: false,
+      installUrl: 'https://pandoc.org/installing.html',
+      installInstructions: getPandocInstallInstructions()
+    });
+  }
+  
+  return dependencies;
+}
+
+function getPandocInstallInstructions(): string {
+  const platform = process.platform;
+  
+  switch (platform) {
+    case 'win32':
+      return `Windows Installation:
+1. Download from https://pandoc.org/installing.html
+2. Or use winget: winget install pandoc
+3. Or use Chocolatey: choco install pandoc`;
+    
+    case 'darwin':
+      return `macOS Installation:
+1. Use Homebrew: brew install pandoc
+2. Or download from https://pandoc.org/installing.html`;
+    
+    case 'linux':
+      return `Linux Installation:
+Ubuntu/Debian: sudo apt-get install pandoc
+Fedora: sudo dnf install pandoc
+Arch: sudo pacman -S pandoc
+Or download from https://pandoc.org/installing.html`;
+    
+    default:
+      return 'Please visit https://pandoc.org/installing.html for installation instructions.';
+  }
+}

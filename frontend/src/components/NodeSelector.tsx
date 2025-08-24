@@ -17,17 +17,79 @@ interface NodeSelectorProps {
   selectedNodes: string[]
   onSelectionChange: (selectedNodes: string[]) => void
   showFolders?: boolean // Whether to show folders as selectable items
+  expandedDirs?: Set<string> // External expanded directories state
+  onExpandedDirsChange?: (expandedDirs: Set<string>) => void // Callback for expanded directories changes
 }
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
 
-function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }: NodeSelectorProps) {
+function NodeSelector({ 
+  selectedNodes, 
+  onSelectionChange, 
+  showFolders = false, 
+  expandedDirs: externalExpandedDirs,
+  onExpandedDirsChange 
+}: NodeSelectorProps) {
   const { currentProject, currentProjectPath } = useProjectStore()
   const [fileTree, setFileTree] = useState<FileNode[]>([])
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
+  const [internalExpandedDirs, setInternalExpandedDirs] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
   const [showNodesOnly, setShowNodesOnly] = useState(true)
+  
+  // Use external expandedDirs if provided, otherwise use internal state
+  const expandedDirs = externalExpandedDirs !== undefined ? externalExpandedDirs : internalExpandedDirs
+
+  // Sync internal state with external state when it changes
+  useEffect(() => {
+    if (externalExpandedDirs !== undefined) {
+      setInternalExpandedDirs(externalExpandedDirs)
+    }
+  }, [externalExpandedDirs])
+
+  // Load contents for directories that should be expanded
+  useEffect(() => {
+    const loadExpandedDirectories = async () => {
+      if (!currentProjectPath || expandedDirs.size === 0) return
+      
+      // Find directories in the file tree that should be expanded but don't have loaded children
+      const directoriesToLoad: FileNode[] = []
+      
+      const findDirectoriesToLoad = (nodes: FileNode[]) => {
+        nodes.forEach(node => {
+          if (node.type === 'directory' && expandedDirs.has(node.path) && !node.loaded) {
+            directoriesToLoad.push(node)
+          }
+          if (node.children) {
+            findDirectoriesToLoad(node.children)
+          }
+        })
+      }
+      
+      findDirectoriesToLoad(fileTree)
+      
+      // Load contents for each directory that should be expanded
+      for (const node of directoriesToLoad) {
+        await loadDirectoryContents(node)
+      }
+    }
+    
+    loadExpandedDirectories()
+  }, [expandedDirs, fileTree, currentProjectPath])
+  
+
+
+
+
+
+  const setExpandedDirs = (newExpandedDirs: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+    if (onExpandedDirsChange) {
+      const finalValue = typeof newExpandedDirs === 'function' ? newExpandedDirs(expandedDirs) : newExpandedDirs
+      onExpandedDirsChange(finalValue)
+    } else {
+      setInternalExpandedDirs(newExpandedDirs)
+    }
+  }
 
   useEffect(() => {
     if (currentProject) {
@@ -96,8 +158,11 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
     const tree: FileNode[] = []
     const nodeMap = new Map<string, FileNode>()
 
-    // Create nodes
+    // Create nodes, excluding .gitkeep files
     files.forEach(file => {
+      // Skip .gitkeep files as they are not actual nodes
+      if (file.name === '.gitkeep') return
+      
       const node: FileNode = {
         id: file.path,
         name: file.name,
@@ -159,11 +224,39 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
         node.loaded = true
         setFileTree([...fileTree]) // Trigger re-render
       } else {
-        // For web API, we'll need to implement this differently
-        console.warn('Directory loading not implemented for web API')
-        node.children = []
-        node.loaded = true
-        setFileTree([...fileTree]) // Trigger re-render
+        // For web API, we need to load the directory contents from the API
+        try {
+          const apiTree = await editorApi.getFileTree(currentProject!.id, node.path)
+          const transformNode = (apiNode: any): FileNode => ({
+            id: apiNode.path,
+            name: apiNode.name,
+            path: apiNode.path,
+            type: apiNode.type,
+            children: apiNode.children ? apiNode.children.map(transformNode) : undefined,
+            loaded: true
+          })
+          
+          // Filter to only show nodes directory if showNodesOnly is true
+          let tree = apiTree.map(transformNode)
+          if (showNodesOnly) {
+            tree = tree.filter(apiNode => {
+              // Include the nodes directory itself
+              if (apiNode.path === 'nodes') return true
+              // Include all files and subdirectories within nodes
+              if (apiNode.path.startsWith('nodes/')) return true
+              return false
+            })
+          }
+          
+          node.children = tree
+          node.loaded = true
+          setFileTree([...fileTree]) // Trigger re-render
+        } catch (error) {
+          console.error('Failed to load directory contents from API:', error)
+          node.children = []
+          node.loaded = true
+          setFileTree([...fileTree]) // Trigger re-render
+        }
       }
     } catch (error) {
       console.error('Failed to load directory contents:', error)
@@ -257,6 +350,8 @@ function NodeSelector({ selectedNodes, onSelectionChange, showFolders = false }:
     const isIndeterminate = isNodeIndeterminate(node)
     const Icon = node.type === 'directory' ? Folder : FileText
     const ChevronIcon = isExpanded ? ChevronDown : ChevronRight
+    
+
 
     return (
       <div key={node.id}>

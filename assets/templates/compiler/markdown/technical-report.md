@@ -4,9 +4,6 @@ author: $author$
 date: $date$
 summary: $summary$
 variables:
-  toc:
-    type: boolean
-    description: Include a generated table of contents.
   summary:
     type: string
     description: Executive summary paragraph.
@@ -55,11 +52,6 @@ nodeVariables:
 ---
 
 # $title$
-
-$if(toc)$
-## Table of Contents
-$toc$
-$endif$
 
 ## Executive Summary
 

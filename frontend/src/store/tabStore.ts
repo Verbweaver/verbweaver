@@ -9,6 +9,31 @@ export interface Tab {
   metadata?: {
     filePath?: string // For editor tabs
     isModified?: boolean // Track if file has unsaved changes
+    unsavedContent?: string // Store unsaved content for editor tabs
+    // For compiler tabs
+    compilerState?: {
+      title?: string
+      author?: string
+      selectedNodes?: string[]
+      orderedNodes?: string[]
+      selectedFormat?: string
+      selectedTemplate?: string
+      customVariables?: Array<{ name: string; value: string }>
+      nodeVariables?: Record<string, Record<string, any>>
+      docVars?: Record<string, any>
+      expandedDirs?: string[]
+      options?: {
+        includeMetadata?: boolean
+        includeToc?: boolean
+        includeIndex?: boolean
+        includeBibliography?: boolean
+        embedUploadedFiles?: boolean
+        pageSize?: 'A4' | 'Letter' | 'A5'
+        fontSize?: 'small' | 'medium' | 'large'
+        margins?: 'narrow' | 'normal' | 'wide'
+        lineSpacing?: 'single' | '1.5' | 'double'
+      }
+    }
   }
 }
 
@@ -155,4 +180,4 @@ export const useTabStore = create<TabState>()(
       }
     }
   )
-) 
+)

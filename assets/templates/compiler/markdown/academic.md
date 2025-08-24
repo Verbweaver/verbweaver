@@ -3,20 +3,12 @@ title: $title$
 author: $author$
 date: $date$
 variables:
-  toc:
-    type: boolean
-    description: Include a generated table of contents.
   includeMetadata:
     type: boolean
     description: Show each node's metadata under its content.
 ---
 
 # $title$
-
-$if(toc)$
-## Table of Contents
-$toc$
-$endif$
 
 $for(nodes)$
 ## $nodes.title$

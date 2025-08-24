@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 import uvicorn
 
 from app.core.config import settings
@@ -19,6 +20,29 @@ from app.websocket import websocket_endpoint
 from app.db.redis_client import get_redis_client, close_redis_client
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI app"""
+    # Startup
+    await init_db()
+    if settings.REDIS_URL:
+        try:
+            get_redis_client()
+            print("Successfully connected to Redis.")
+        except ConnectionError as e:
+            print(f"Failed to connect to Redis on startup: {e}")
+    
+    import os
+    os.makedirs(settings.GIT_PROJECTS_ROOT, exist_ok=True)
+    
+    yield
+    
+    # Shutdown
+    if settings.REDIS_URL:
+        await close_redis_client()
+        print("Redis client connection closed.")
+
+
 # Create database tables
 # Note: With async SQLAlchemy, tables are created in init_db() during startup
 # Base.metadata.create_all(bind=engine)
@@ -30,6 +54,7 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url=f"{settings.API_V1_STR}/docs",
     redoc_url=f"{settings.API_V1_STR}/redoc",
+    lifespan=lifespan,
 )
 
 # Set up CORS
@@ -62,27 +87,7 @@ app.websocket("/ws/{project_id}")(websocket_endpoint)
 # app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the application on startup"""
-    await init_db()
-    if settings.REDIS_URL:
-        try:
-            get_redis_client()
-            print("Successfully connected to Redis.")
-        except ConnectionError as e:
-            print(f"Failed to connect to Redis on startup: {e}")
-    
-    import os
-    os.makedirs(settings.GIT_PROJECTS_ROOT, exist_ok=True)
 
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up application resources on shutdown"""
-    if settings.REDIS_URL:
-        await close_redis_client()
-        print("Redis client connection closed.")
 
 
 @app.get("/")

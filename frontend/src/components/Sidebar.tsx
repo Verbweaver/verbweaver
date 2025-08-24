@@ -16,6 +16,10 @@ import clsx from 'clsx'
 import { useProjectStore } from '../store/projectStore'
 import { useAuthStore } from '../services/auth'
 import { useTabStore } from '../store/tabStore'
+import { useEffect, useState } from 'react'
+
+// Check if we're in Electron
+const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
 
 interface SidebarProps {
   isCollapsed: boolean
@@ -27,6 +31,23 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
   const { currentProject } = useProjectStore()
   const { user } = useAuthStore()
   const { tabs, addTab, setActiveTab } = useTabStore()
+  const [faviconPath, setFaviconPath] = useState('/favicon.svg')
+
+  // Get the favicon path dynamically
+  useEffect(() => {
+    if (isElectron) {
+      // In Electron, try to get the favicon from the document head
+      const faviconLink = document.querySelector('link[rel="icon"]') as HTMLLinkElement
+      if (faviconLink && faviconLink.href) {
+        // Extract the relative path
+        const url = new URL(faviconLink.href, window.location.href)
+        setFaviconPath(url.pathname)
+      } else {
+        // Fallback to the known hashed path
+        setFaviconPath('./assets/favicon-CBf4nkjE.svg')
+      }
+    }
+  }, [isElectron])
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, type: 'dashboard' as const },
@@ -86,15 +107,18 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
         <div className="flex-1 min-w-0">
           {!isCollapsed && (
             <>
-              <h1 className="text-xl font-bold leading-tight">Verbweaver</h1>
+              <div className="flex items-center gap-2">
+                <img src={faviconPath} alt="Verbweaver" className="w-6 h-6" />
+                <h1 className="text-xl font-bold leading-tight">Verbweaver</h1>
+              </div>
               {currentProject && (
                 <p className="text-sm text-muted-foreground mt-1 truncate" title={currentProject.name}>{currentProject.name}</p>
               )}
             </>
           )}
           {isCollapsed && (
-            <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center">
-              <span className="text-primary-foreground font-bold">V</span>
+            <div className="w-8 h-8 flex items-center justify-center">
+              <img src={faviconPath} alt="Verbweaver" className="w-6 h-6" />
             </div>
           )}
         </div>

@@ -14,7 +14,7 @@ from app.core.security import (
     get_password_hash,
     get_current_user
 )
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 
 router = APIRouter()
 
@@ -35,8 +35,7 @@ class UserResponse(BaseModel):
     full_name: Optional[str]
     is_active: bool
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):

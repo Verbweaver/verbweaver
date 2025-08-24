@@ -1,9 +1,7 @@
 import axios from 'axios';
 import { create, StateCreator, StoreApi, UseBoundStore } from 'zustand';
 import { persist, PersistOptions, PersistStorage } from 'zustand/middleware';
-import { getApiUrl } from '@verbweaver/shared';
-
-const API_URL = getApiUrl();
+import { getApiUrl, configManager } from '@verbweaver/shared';
 
 // Check if we're in Electron - with fallback check
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -107,13 +105,32 @@ const initialElectronState: AuthStateFields = {
 
 // Create axios instance for auth requests
 const authApi = axios.create({
-  baseURL: API_URL,
+  baseURL: getApiUrl(),
 });
 
 // Create authenticated axios instance
 export const api = axios.create({
-  baseURL: API_URL,
+  baseURL: getApiUrl(),
 });
+
+// Update base URLs for Electron
+if (typeof window !== 'undefined' && isElectron && window.electronAPI) {
+  // Initialize ConfigManager and update base URLs
+  configManager.initializeForElectron().then(() => {
+    const electronApiUrl = configManager.getApiBaseUrl();
+    if (electronApiUrl) {
+      console.log('[Auth Service] Updating base URL for Electron:', electronApiUrl);
+      authApi.defaults.baseURL = electronApiUrl;
+      api.defaults.baseURL = electronApiUrl;
+    }
+  }).catch(error => {
+    console.error('[Auth Service] Failed to initialize Electron backend URL:', error);
+    // Fallback to default URL
+    const fallbackUrl = 'http://127.0.0.1:8000/api/v1';
+    authApi.defaults.baseURL = fallbackUrl;
+    api.defaults.baseURL = fallbackUrl;
+  });
+}
 
 // Add request interceptor to include auth token
 api.interceptors.request.use(

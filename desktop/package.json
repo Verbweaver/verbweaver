@@ -18,7 +18,11 @@
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:full": "cd ../frontend && npm run build && cd ../desktop && npm run build && electron-builder",
+    "dist:full:win": "cd ../frontend && npm run build && cd ../desktop && npm run build && electron-builder --win",
+    "dist:full:mac": "cd ../frontend && npm run build && cd ../desktop && npm run build && electron-builder --mac",
+    "dist:full:linux": "cd ../frontend && npm run build && cd ../desktop && npm run build && electron-builder --linux"
   },
   "dependencies": {
     "@verbweaver/shared": "file:../shared",
@@ -68,6 +72,22 @@
       {
         "from": "../frontend/dist",
         "to": "renderer"
+      },
+      {
+        "from": "debug-installer.ps1",
+        "to": "debug-installer.ps1"
+      },
+      {
+        "from": "test-installer.ps1",
+        "to": "test-installer.ps1"
+      },
+      {
+        "from": "installer-debug-readme.md",
+        "to": "installer-debug-readme.md"
+      },
+      {
+        "from": "debug-installer.bat",
+        "to": "debug-installer.bat"
       }
     ],
     "mac": {
@@ -103,7 +123,15 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "allowElevation": true,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "installerHeaderIcon": "resources/icon.ico",
+      "artifactName": "Verbweaver-Setup-${version}.${ext}",
+      "runAfterFinish": false,
+      "displayLanguageSelector": false
     },
     "dmg": {
       "contents": [

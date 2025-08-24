@@ -1,7 +1,7 @@
 """
 User Pydantic Schemas
 """
-from pydantic import BaseModel, EmailStr, validator, Field
+from pydantic import BaseModel, EmailStr, field_validator, Field, ConfigDict
 from typing import Optional, Dict, Any
 from datetime import datetime
 from app.core.config import settings # For PASSWORD_MIN_LENGTH
@@ -15,7 +15,8 @@ class UserCreate(UserBase):
     """Schema for user registration, includes password."""
     password: str
     
-    @validator('password')
+    @field_validator('password')
+    @classmethod
     def password_not_empty(cls, v):
         if not v or not v.strip():
             raise ValueError('Password cannot be empty')
@@ -39,8 +40,7 @@ class UserInDB(UserBase): # Renamed from UserInDBBase for consistency
     avatar: Optional[str] = None
     preferences: Optional[Dict[str, Any]] = {} # Added as __init__.py imports UserWithPreferences
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class UserResponse(UserInDB): # Inherits from UserInDB which includes preferences
     """Schema for user data returned in API responses, excluding sensitive fields like hashed_password."""
