@@ -790,15 +790,6 @@ async def compile_document(
         print("Aggregating content...")
         print(f"Template: {request.template}")
         print(f"Custom variables: {request.custom_variables}")
-        print(f"Node variables: {request.node_variables}")
-        print(f"Options: {request.options}")
-        
-        # Debug template availability
-        if not request.template:
-            print("No template specified, looking for default template...")
-            available_templates = aggregator.template_service.get_available_templates(request.format)
-            print(f"Available templates for format {request.format}: {available_templates}")
-        
         content = aggregator.aggregate_content(
             request.nodes, 
             request.options,
