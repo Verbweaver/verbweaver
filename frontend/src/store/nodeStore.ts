@@ -324,9 +324,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     
     try {
       if (isElectron && window.electronAPI && currentProjectPath) {
-        // Build absolute path for Electron
-        const absolutePath = joinPaths(currentProjectPath, relativePath);
-        await window.electronAPI.writeFile(absolutePath, fileContent);
+        // Electron: pass project-relative path; main process joins with project path
+        await window.electronAPI.writeFile(relativePath, fileContent);
       } else if (!isElectron) {
         // Web API call
         await apiClient.post(`/projects/${useProjectStore.getState().currentProject?.id}/nodes`, { path: relativePath, metadata, content });
@@ -377,9 +376,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       
       try {
         if (isElectron && window.electronAPI && currentProjectPath) {
-          // Build absolute path for Electron
-          const absolutePath = path.startsWith(currentProjectPath) ? path : joinPaths(currentProjectPath, path);
-          await window.electronAPI.writeFile(absolutePath, fileContent);
+          // Electron: send project-relative path; main process resolves
+          await window.electronAPI.writeFile(path, fileContent);
         } else if (!isElectron) {
           await apiClient.put(`/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}`, { metadata: updatedMetadata, content: updatedContent });
         }
@@ -409,9 +407,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       
       try {
         if (isElectron && window.electronAPI && currentProjectPath) {
-          // Build absolute path for Electron
-          const absoluteMetadataPath = joinPaths(currentProjectPath, metadataPath);
-          await window.electronAPI.writeFile(absoluteMetadataPath, metadataContent);
+          // Electron: send project-relative metadata path
+          await window.electronAPI.writeFile(metadataPath, metadataContent);
         } else if (!isElectron) {
           await apiClient.put(`/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}/metadata`, { metadata: updatedMetadata });
         }
