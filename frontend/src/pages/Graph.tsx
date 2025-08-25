@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import ReactFlow, {
   Node,
   Edge,
@@ -13,6 +13,7 @@ import ReactFlow, {
   NodeTypes,
   MarkerType,
   ReactFlowProvider,
+  useReactFlow,
 } from 'react-flow-renderer'
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
@@ -59,6 +60,9 @@ const isElectron = typeof window !== 'undefined' && window.electronAPI !== undef
 
 function GraphView() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const reactFlow = useReactFlow()
+  const focusAppliedRef = useRef<string | null>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const { nodes: verbweaverNodes, loadNodes, updateNode, createNode, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
   const { addEditorTab } = useTabStore()
@@ -1194,6 +1198,24 @@ function GraphView() {
             border: '1px solid hsl(var(--border))',
           }}
         />
+        {(() => {
+          // Auto-focus handler: run once per target after nodes render
+          const params = new URLSearchParams(location.search)
+          const targetPath = params.get('focus')
+          if (targetPath && focusAppliedRef.current !== targetPath) {
+            try {
+              const target = nodes.find(n => n.id === targetPath)
+              if (target) {
+                focusAppliedRef.current = targetPath
+                setSelectedNodeIds(new Set([targetPath]))
+                setNodes(prev => prev.map(n => ({ ...n, selected: n.id === targetPath })))
+                // Smooth center on the node
+                const { x, y } = target.position || { x: 0, y: 0 }
+                try { reactFlow.setCenter(x, y, { zoom: 1.5, duration: 600 }) } catch {}
+              }
+            } catch {}
+          }
+        })()}
       </ReactFlow>
       )}
 

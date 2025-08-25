@@ -6,6 +6,7 @@ import { useTabStore } from '../../store/tabStore'
 import { TaskState } from '@verbweaver/shared'
 import { FileStorage, StoredFile } from '../../utils/fileStorage'
 import clsx from 'clsx'
+import SharedCreateLinkModal from '../common/CreateLinkModal'
 import { KanbanColumn } from './ColumnManager'
 import toast from 'react-hot-toast'
 
@@ -725,17 +726,18 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
         </div>
       </div>
       
-      {/* Create Link Modal */}
-      {isCreateLinkModalOpen && (
-        <CreateLinkModal
-          currentNode={node}
+      {/* Create Link Modal (shared) */}
+      {isCreateLinkModalOpen && node && (
+        <SharedCreateLinkModal
+          currentNodePath={node.path}
           onClose={() => setIsCreateLinkModalOpen(false)}
-          onLinkCreated={(updatedNode?: VerbweaverNode) => {
+          onLinkCreated={(updatedLinks) => {
             setIsCreateLinkModalOpen(false)
-            if (updatedNode) {
+            if (updatedLinks) {
+              const updatedNode = { ...node, metadata: { ...node.metadata, links: updatedLinks } } as any
               onUpdate(updatedNode)
-            } else if (node) {
-              onUpdate({ ...node })
+            } else {
+              onUpdate({ ...(node as any) })
             }
           }}
         />
