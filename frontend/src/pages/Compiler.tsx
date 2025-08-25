@@ -708,6 +708,8 @@ function CompilerView() {
         options: {
           title,
           author,
+          // Ensure backend aggregator has access to output format in options
+          format: selectedFormat,
           ...options
         }
       }, {
