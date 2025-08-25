@@ -1,9 +1,7 @@
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import { resolve } from 'path';
 
-export default defineConfig({
+export default {
   main: {
-    plugins: [externalizeDepsPlugin()],
     build: {
       lib: {
         entry: resolve(__dirname, 'src/main.ts')
@@ -17,7 +15,6 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     build: {
       lib: {
         entry: resolve(__dirname, 'src/preload.ts')
@@ -30,4 +27,4 @@ export default defineConfig({
       }
     }
   }
-}); 
+} as const;

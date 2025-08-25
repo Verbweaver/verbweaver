@@ -327,12 +327,21 @@ function createWindow() {
     icon: join(__dirname, '../../resources/icon.png'),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     frame: process.platform !== 'darwin',
-    show: false // Don't show until ready
+    show: true // Show window immediately; still show again on ready-to-show
   });
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+  });
+
+  // Extra visibility/logging for troubleshooting renderer load
+  mainWindow.webContents.on('did-finish-load', () => {
+    try { mainWindow?.show(); } catch {}
+  });
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('Renderer failed to load:', { errorCode, errorDescription, validatedURL });
+    try { mainWindow?.show(); } catch {}
   });
 
   // Load the frontend
