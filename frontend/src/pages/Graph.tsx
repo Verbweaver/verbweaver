@@ -1131,6 +1131,22 @@ function GraphView() {
         fitView
         className="bg-background relative z-10"
       >
+        {/* Auto-focus target node if focus query param is present */}
+        {(() => {
+          const params = new URLSearchParams(location.search)
+          const targetPath = params.get('focus')
+          if (targetPath && focusAppliedRef.current !== targetPath) {
+            const target = nodes.find(n => n.id === targetPath)
+            if (target) {
+              focusAppliedRef.current = targetPath
+              setSelectedNodeIds(new Set([targetPath]))
+              setNodes(prev => prev.map(n => ({ ...n, selected: n.id === targetPath })))
+              const { x, y } = target.position || { x: 0, y: 0 }
+              try { reactFlow.setCenter(x, y, { zoom: 1.5, duration: 600 }) } catch {}
+            }
+          }
+          return null
+        })()}
         <Background />
         <Controls />
         {/* Mind Map right-side panel */}
@@ -1198,24 +1214,6 @@ function GraphView() {
             border: '1px solid hsl(var(--border))',
           }}
         />
-        {(() => {
-          // Auto-focus handler: run once per target after nodes render
-          const params = new URLSearchParams(location.search)
-          const targetPath = params.get('focus')
-          if (targetPath && focusAppliedRef.current !== targetPath) {
-            try {
-              const target = nodes.find(n => n.id === targetPath)
-              if (target) {
-                focusAppliedRef.current = targetPath
-                setSelectedNodeIds(new Set([targetPath]))
-                setNodes(prev => prev.map(n => ({ ...n, selected: n.id === targetPath })))
-                // Smooth center on the node
-                const { x, y } = target.position || { x: 0, y: 0 }
-                try { reactFlow.setCenter(x, y, { zoom: 1.5, duration: 600 }) } catch {}
-              }
-            } catch {}
-          }
-        })()}
       </ReactFlow>
       )}
 
