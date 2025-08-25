@@ -17,7 +17,7 @@ from sqlalchemy import select
 from app.database import get_db
 from app.models.project import Project
 from app.models.user import User
-from app.core.security import get_current_user, get_current_active_superuser
+from app.core.security import get_current_user
 from app.services.git_service import GitService
 from app.services.template_service import TemplateService
 
@@ -65,26 +65,12 @@ class ContentAggregator:
     def _process_with_template(self, node_paths: List[str], options: Dict[str, Any],
                              template_path: str, custom_variables: Optional[Dict[str, Any]] = None,
                              node_variables: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
-        """Process content using a template with enhanced Linux compatibility"""
+        """Process content using a template"""
         
         # Get template content
         template_content = self.template_service.get_template_content(template_path)
         if not template_content:
-            # Enhanced error message for Linux debugging
-            error_msg = f"Template not found: {template_path}"
-            if os.name == 'posix':
-                # Check if template directory exists
-                template_dir = os.path.join(self.project_path, "templates", "compiler")
-                if not os.path.exists(template_dir):
-                    error_msg += f" (Template directory does not exist: {template_dir})"
-                else:
-                    # List available templates for debugging
-                    try:
-                        available_templates = os.listdir(template_dir)
-                        error_msg += f" (Available templates: {available_templates})"
-                    except Exception as e:
-                        error_msg += f" (Cannot list templates: {e})"
-            raise ValueError(error_msg)
+            raise ValueError(f"Template not found: {template_path}")
         
         # First, process includes to get the final template content
         # This ensures we extract schema from the actual template that will be used
@@ -93,7 +79,7 @@ class ContentAggregator:
         # Validate template and get schema (variables + nodeVariables) from the final template
         is_valid, custom_vars, schema, validation_messages = self.template_service.validate_template(final_template_content)
         if not is_valid:
-            raise ValueError(f"Invalid template: {validation_messages}")
+            raise ValueError(f"Invalid template: {custom_vars}")
 
         # --- Compute helpers (safe, minimal) ---
         def resolve_path(root: Dict[str, Any], path: str):
@@ -325,14 +311,10 @@ class ContentAggregator:
                     data['nodes'].append(node_data)
                     
             except Exception as e:
-                # Enhanced error handling for Linux debugging
-                error_msg = f"Error loading file: {str(e)}"
-                if os.name == 'posix':
-                    error_msg += f" (Path: {path}, Full path: {os.path.normpath(os.path.join(self.project_path, path))})"
                 # Add error node
                 data['nodes'].append({
                     'title': os.path.basename(path),
-                    'content': f"*{error_msg}*",
+                    'content': f"*Error loading file: {str(e)}*",
                     'metadata': {},
                     'attachments': [],
                     'path': path
@@ -652,26 +634,15 @@ class PandocExporter:
         self.template_service = TemplateService(project_path)
     
     def export(self, content: str, options: Dict[str, Any], output_format: str) -> bytes:
-        """Export content using Pandoc with Linux compatibility"""
+        """Export content using Pandoc"""
         import tempfile
         import os
         
         print(f"PandocExporter: Starting export to {output_format}")
         print(f"PandocExporter: Content length: {len(content)} characters")
         
-        # Platform-specific temp file handling
-        if os.name == 'posix':  # Linux/Unix
-            # Use /tmp explicitly on Linux with proper permissions
-            temp_dir = '/tmp'
-            # Ensure temp directory is writable
-            if not os.access(temp_dir, os.W_OK):
-                temp_dir = None  # Fall back to system default
-                print("PandocExporter: Cannot write to /tmp, using system default temp directory")
-        else:
-            temp_dir = None
-        
         # Create temporary output file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{output_format}', dir=temp_dir) as temp_output:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{output_format}') as temp_output:
             output_file = temp_output.name
         
         # Ensure output file path is absolute for cross-platform compatibility
@@ -727,13 +698,6 @@ async def compile_document(
     """Compile selected nodes into a document"""
     
     try:
-        # Add OS-specific logging
-        import platform
-        print(f"Platform: {platform.system()}")
-        print(f"Platform version: {platform.version()}")
-        print(f"Architecture: {platform.machine()}")
-        print(f"OS name: {os.name}")
-        
         print(f"Compiling document for project {project_id}")
         print(f"Request nodes: {request.nodes}")
         print(f"Request format: {request.format}")
@@ -770,18 +734,6 @@ async def compile_document(
         # Validate project path exists
         if not os.path.exists(project_path):
             raise HTTPException(status_code=404, detail="Project directory not found")
-        
-        # Check file system capabilities on Linux
-        if os.name == 'posix':
-            try:
-                test_file = os.path.join(project_path, '.test_write')
-                with open(test_file, 'w') as f:
-                    f.write('test')
-                os.unlink(test_file)
-                print("File system write test passed")
-            except Exception as e:
-                print(f"File system write test failed: {e}")
-                raise HTTPException(status_code=500, detail=f"File system access issue: {e}")
         
         # Create content aggregator
         aggregator = ContentAggregator(project_path)
@@ -833,100 +785,6 @@ async def compile_document(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Compilation failed: {str(e)}")
-
-@router.get("/health")
-async def compiler_health_check(
-    current_user: User = Depends(get_current_active_superuser)
-):
-    """Health check endpoint for debugging Linux-specific issues - Admin only"""
-    import platform
-    import tempfile
-    import subprocess
-    
-    health_info = {
-        "platform": {
-            "system": platform.system(),
-            "architecture": platform.machine(),
-            "python_version": platform.python_version()
-        },
-        "file_system": {
-            "temp_dir_writable": os.access(tempfile.gettempdir(), os.W_OK),
-            "current_dir_writable": os.access(os.getcwd(), os.W_OK)
-        },
-        "dependencies": {
-            "pandoc_available": False,
-            "pandoc_version": None,
-            "pandoc_error": None
-        },
-        "environment": {
-            "temp_vars_set": bool(os.environ.get('TEMP') or os.environ.get('TMP') or os.environ.get('TMPDIR'))
-        }
-    }
-    
-    # Check Pandoc availability
-    try:
-        result = subprocess.run(['pandoc', '--version'], 
-                              capture_output=True, text=True, timeout=10)
-        if result.returncode == 0:
-            health_info["dependencies"]["pandoc_available"] = True
-            version_match = result.stdout.strip().split('\n')[0]
-            health_info["dependencies"]["pandoc_version"] = version_match
-        else:
-            health_info["dependencies"]["pandoc_error"] = result.stderr.strip()
-    except subprocess.TimeoutExpired:
-        health_info["dependencies"]["pandoc_error"] = "Timeout checking pandoc"
-    except FileNotFoundError:
-        health_info["dependencies"]["pandoc_error"] = "Pandoc not found in PATH"
-    except Exception as e:
-        health_info["dependencies"]["pandoc_error"] = str(e)
-    
-    # Test temp file creation
-    try:
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
-            f.write('test')
-            temp_file_path = f.name
-        
-        # Test reading the temp file
-        with open(temp_file_path, 'r') as f:
-            content = f.read()
-        
-        # Clean up
-        os.unlink(temp_file_path)
-        
-        health_info["file_system"]["temp_file_test"] = "PASSED"
-    except Exception as e:
-        health_info["file_system"]["temp_file_test"] = f"FAILED: {str(e)}"
-    
-    return health_info
-
-@router.get("/status")
-async def compiler_status(
-    current_user: User = Depends(get_current_user)
-):
-    """Basic compiler status check - Available to all authenticated users"""
-    import subprocess
-    
-    status_info = {
-        "status": "operational",
-        "dependencies": {
-            "pandoc_available": False
-        }
-    }
-    
-    # Check Pandoc availability (basic check only)
-    try:
-        result = subprocess.run(['pandoc', '--version'], 
-                              capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
-            status_info["dependencies"]["pandoc_available"] = True
-        else:
-            status_info["status"] = "degraded"
-            status_info["dependencies"]["pandoc_available"] = False
-    except Exception:
-        status_info["status"] = "degraded"
-        status_info["dependencies"]["pandoc_available"] = False
-    
-    return status_info
 
 @router.get("/formats")
 async def get_supported_formats():

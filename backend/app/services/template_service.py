@@ -52,50 +52,23 @@ class TemplateService:
         return templates
     
     def get_template_content(self, template_path: str) -> Optional[str]:
-        """Get the content of a template file with enhanced Linux compatibility"""
+        """Get the content of a template file"""
         # Construct the full path to the template file
         # template_path is expected to be in format like "pdf/simple.md"
         # We need to construct: {project_path}/templates/compiler/{template_path}
         full_path = os.path.normpath(os.path.join(self.templates_dir, template_path))
         logger.debug(f"Getting template content from: {full_path}")
         
-        # Enhanced path validation for Linux
         if not os.path.exists(full_path):
             logger.error(f"Template file not found: {full_path}")
-            # Try case-insensitive search on Linux
-            if os.name == 'posix':  # Linux/Unix
-                dir_path = os.path.dirname(full_path)
-                if os.path.exists(dir_path):
-                    for filename in os.listdir(dir_path):
-                        if filename.lower() == os.path.basename(full_path).lower():
-                            full_path = os.path.join(dir_path, filename)
-                            logger.info(f"Found template with case correction: {full_path}")
-                            break
-            if not os.path.exists(full_path):
-                return None
+            return None
         
         try:
-            # Check file permissions on Linux
-            if os.name == 'posix' and not os.access(full_path, os.R_OK):
-                logger.error(f"Template file not readable: {full_path}")
-                return None
-                
             with open(full_path, 'r', encoding='utf-8') as f:
                 content = f.read()
                 logger.debug(f"Successfully read template file, length: {len(content)}")
                 logger.debug(f"Template content starts with: {content[:100]}...")
                 return content
-        except UnicodeDecodeError as e:
-            logger.error(f"Unicode decode error reading template {template_path}: {e}")
-            # Try with different encoding
-            try:
-                with open(full_path, 'r', encoding='latin-1') as f:
-                    content = f.read()
-                    logger.warning(f"Read template with latin-1 encoding: {template_path}")
-                    return content
-            except Exception as e2:
-                logger.error(f"Failed to read template with latin-1 encoding: {e2}")
-                return None
         except Exception as e:
             logger.error(f"Failed to read template {template_path} from {full_path}: {e}")
             return None
@@ -683,7 +656,7 @@ class TemplateService:
     
     def convert_with_pandoc(self, markdown_content: str, output_format: str, 
                            output_file: str, working_dir: str = None, options: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
-        """Convert markdown content to target format using Pandoc with Linux compatibility"""
+        """Convert markdown content to target format using Pandoc"""
         try:
             # Check if Pandoc is available
             result = subprocess.run(['pandoc', '--version'], 
@@ -691,20 +664,9 @@ class TemplateService:
             if result.returncode != 0:
                 return False, "Pandoc is not installed. Please install Pandoc to use this feature."
             
-            # Platform-specific temp file handling
-            if os.name == 'posix':  # Linux/Unix
-                # Use /tmp explicitly on Linux with proper permissions
-                temp_dir = '/tmp'
-                # Ensure temp directory is writable
-                if not os.access(temp_dir, os.W_OK):
-                    temp_dir = None  # Fall back to system default
-                    logger.warning("Cannot write to /tmp, using system default temp directory")
-            else:
-                temp_dir = None
-                
             # Create temporary markdown file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.md', 
-                                           delete=False, encoding='utf-8', dir=temp_dir) as temp_file:
+                                           delete=False, encoding='utf-8') as temp_file:
                 temp_file.write(markdown_content)
                 temp_file_path = temp_file.name
             
@@ -748,26 +710,16 @@ class TemplateService:
                     # Kindle format (requires calibre)
                     return False, "MOBI format requires Calibre. Please install Calibre to use this feature."
                 
-                # Platform-specific subprocess handling
-                env = os.environ.copy()
-                if os.name == 'posix':
-                    # Ensure PATH includes common Linux locations
-                    linux_paths = ['/usr/bin', '/usr/local/bin', '/bin']
-                    current_path = env.get('PATH', '')
-                    env['PATH'] = ':'.join(linux_paths + [current_path])
-                    logger.debug(f"Enhanced PATH for Linux: {env['PATH']}")
-                
                 # Log command for debugging
                 logger.debug(f"Pandoc command: {' '.join(cmd)}")
                 logger.debug(f"Working directory: {working_dir}")
                 logger.debug(f"Temp file path: {temp_file_path}")
-                logger.debug(f"Environment PATH: {env.get('PATH', 'Not set')}")
                 
                 # Run pandoc with working directory if provided
                 if working_dir:
-                    result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir, env=env)
+                    result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir)
                 else:
-                    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+                    result = subprocess.run(cmd, capture_output=True, text=True)
                 
                 if result.returncode != 0:
                     error_msg = result.stderr.strip()
@@ -780,9 +732,9 @@ class TemplateService:
                         cmd = ['pandoc', temp_file_path, '-o', output_file, '--pdf-engine=pdflatex']
                         logger.debug(f"Retrying with pdflatex: {' '.join(cmd)}")
                         if working_dir:
-                            result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir, env=env)
+                            result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir)
                         else:
-                            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+                            result = subprocess.run(cmd, capture_output=True, text=True)
                         if result.returncode != 0:
                             logger.error(f"Pandoc PDF conversion failed with pdflatex: {result.stderr}")
                             return False, f"Pandoc PDF conversion failed: {result.stderr}"

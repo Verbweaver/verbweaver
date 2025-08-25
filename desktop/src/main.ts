@@ -2609,68 +2609,6 @@ interface DependencyCheck {
 async function checkDependencies(): Promise<DependencyCheck[]> {
   const dependencies: DependencyCheck[] = [];
   
-  // Add Linux-specific checks
-  if (process.platform === 'linux') {
-    // Check for required Linux libraries
-    try {
-      const { execSync } = require('child_process');
-      execSync('ldd --version', { stdio: 'ignore' });
-      dependencies.push({
-        name: 'Linux Dynamic Linker',
-        available: true,
-        installUrl: undefined,
-        installInstructions: 'Built into Linux systems'
-      });
-    } catch (error) {
-      dependencies.push({
-        name: 'Linux Dynamic Linker',
-        available: false,
-        installUrl: undefined,
-        installInstructions: 'System issue - contact support'
-      });
-    }
-    
-    // Check for common Linux utilities
-    try {
-      const { execSync } = require('child_process');
-      execSync('which bash', { stdio: 'ignore' });
-      dependencies.push({
-        name: 'Bash Shell',
-        available: true,
-        installUrl: undefined,
-        installInstructions: 'Built into Linux systems'
-      });
-    } catch (error) {
-      dependencies.push({
-        name: 'Bash Shell',
-        available: false,
-        installUrl: undefined,
-        installInstructions: 'System issue - contact support'
-      });
-    }
-    
-    // Check for temp directory access
-    try {
-      const fs = require('fs');
-      const testFile = '/tmp/verbweaver-test';
-      fs.writeFileSync(testFile, 'test');
-      fs.unlinkSync(testFile);
-      dependencies.push({
-        name: 'Temp Directory Access',
-        available: true,
-        installUrl: undefined,
-        installInstructions: 'Built into Linux systems'
-      });
-    } catch (error) {
-      dependencies.push({
-        name: 'Temp Directory Access',
-        available: false,
-        installUrl: undefined,
-        installInstructions: 'Check /tmp directory permissions'
-      });
-    }
-  }
-  
   // Check Pandoc
   try {
     const result = await new Promise<{ success: boolean; version?: string }>((resolve) => {
