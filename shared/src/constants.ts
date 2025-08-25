@@ -122,6 +122,7 @@ export const STORAGE_KEYS = {
   SIDEBAR_WIDTH: 'verbweaver_sidebar_width',
   COMPILER_SELECTION: 'verbweaver_compiler_selection',
   EDITOR_HIDE_METADATA: 'verbweaver_editor_hide_metadata',
+  EDITOR_LINKS_EXPANDED: 'verbweaver_editor_links_expanded',
   TASKS_VIEW_PREFERENCES: 'verbweaver_tasks_view_preferences',
   GRAPH_HIDE_UPLOADS: 'verbweaver_graph_hide_uploads',
   GRAPH_RIGID_MODE: 'verbweaver_graph_rigid_mode',

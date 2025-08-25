@@ -21,6 +21,7 @@ Notes:
 - Ctrl + B: Toggle bold (Markdown)
 - Ctrl + I: Toggle italic (Markdown)
 - Ctrl + K: Insert link (Markdown)
+- Ctrl + Shift + L: Create Link (open Create Link modal)
 
 Monaco default bindings (subset):
 - Ctrl + F: Find in file
