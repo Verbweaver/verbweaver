@@ -2192,19 +2192,18 @@ Start your content here.
     const { spawn } = require('child_process');
     
     return new Promise((resolve, reject) => {
-      // Use double quotes for Windows compatibility
-      const formatString = process.platform === 'win32' 
-        ? '"%H|%an|%ae|%ad|%s"'
-        : '%H|%an|%ae|%ad|%s';
-      
+      // Keep pipes inside a single argument. Avoid shell on non‑Windows so '|' isn't treated as a pipeline.
+      const isWin = process.platform === 'win32';
+      const formatString = isWin ? '"%H|%an|%ae|%ad|%s"' : '%H|%an|%ae|%ad|%s';
+
       const git = spawn('git', [
-        'log', 
+        'log',
         `--max-count=${limit}`,
         `--pretty=format:${formatString}`,
         '--date=iso'
-      ], { 
+      ], {
         cwd: projectPath,
-        shell: true 
+        shell: isWin
       });
       
       let output = '';
