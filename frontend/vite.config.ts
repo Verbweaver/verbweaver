@@ -43,7 +43,7 @@ export default defineConfig({
       }
     }
   },
-  publicDir: false, // Disable automatic copying of public directory
+  // Use default public directory so assets like favicon.svg are copied to dist root
   server: {
     port: 3000,
     proxy: {
