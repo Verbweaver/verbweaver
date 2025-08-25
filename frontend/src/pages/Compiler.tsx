@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { FileDown, FileText, Book, Package, Globe, Code, Loader2, FileType, AlertTriangle, Settings, Bug } from 'lucide-react'
+import { FileDown, FileText, Book, Package, Globe, Code, Loader2, FileType, AlertTriangle } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { useTabStore } from '../store/tabStore'
 import { EXPORT_FORMATS } from '@verbweaver/shared'
@@ -743,34 +743,6 @@ function CompilerView() {
     }
   }
 
-  const handleDebugCheck = async () => {
-    try {
-      const healthInfo = await compilerApi.healthCheck()
-      console.log('Compiler Status Check:', healthInfo)
-      
-      // Show a summary to the user
-      const issues = []
-      if (!healthInfo.dependencies.pandoc_available) {
-        issues.push('Pandoc not available')
-      }
-      if (healthInfo.status === 'degraded') {
-        issues.push('System is in degraded state')
-      }
-      
-      if (issues.length > 0) {
-        toast.error(`System issues detected: ${issues.join(', ')}`)
-      } else {
-        toast.success('System check passed')
-      }
-      
-      // Log full details for debugging
-      console.log('Full status info:', JSON.stringify(healthInfo, null, 2))
-    } catch (error) {
-      console.error('Status check failed:', error)
-      toast.error('Status check failed')
-    }
-  }
-
   const updateOption = <K extends keyof CompileOptions>(key: K, value: CompileOptions[K]) => {
     setOptions(prev => ({ ...prev, [key]: value }))
   }
@@ -1170,17 +1142,6 @@ function CompilerView() {
                 </div>
               </div>
             )}
-          </div>
-
-          {/* Debug Button */}
-          <div className="flex justify-end">
-            <button
-              onClick={handleDebugCheck}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
-            >
-              <Bug className="h-4 w-4" />
-              Debug System Health
-            </button>
           </div>
         </div>
       </div>

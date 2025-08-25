@@ -56,15 +56,5 @@ export const compilerApi = {
       params: { format }
     })
     return response.data
-  },
-
-  async healthCheck(): Promise<any> {
-    const response = await apiClient.get('/compiler/status')
-    return response.data
-  },
-
-  async adminHealthCheck(): Promise<any> {
-    const response = await apiClient.get('/compiler/health')
-    return response.data
   }
 } 
