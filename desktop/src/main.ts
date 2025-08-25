@@ -2660,6 +2660,52 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
     });
   }
   
+  // Check LaTeX engines for PDF support
+  try {
+    const checkEngine = async (cmd: string) => {
+      return await new Promise<{ success: boolean; version?: string }>((resolve) => {
+        const child = require('child_process').spawn(cmd, ['--version'], {
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+        let output = '';
+        child.stdout.on('data', (data: Buffer) => { output += data.toString(); });
+        child.on('close', (code: number) => {
+          if (code === 0) {
+            const ver = (output.split('\n')[0] || '').trim();
+            resolve({ success: true, version: ver });
+          } else {
+            resolve({ success: false });
+          }
+        });
+        child.on('error', () => resolve({ success: false }));
+      });
+    };
+    const xe = await checkEngine('xelatex');
+    const pdf = xe.success ? xe : await checkEngine('pdflatex');
+    dependencies.push({
+      name: 'LaTeX (xelatex/pdflatex)',
+      available: pdf.success,
+      version: pdf.version,
+      installUrl: 'https://www.tug.org/texlive/',
+      installInstructions: process.platform === 'linux'
+        ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
+        : (process.platform === 'darwin'
+          ? 'Install MacTeX (brew install --cask mactex)'
+          : 'Install MiKTeX or TeX Live on Windows')
+    });
+  } catch {
+    dependencies.push({
+      name: 'LaTeX (xelatex/pdflatex)',
+      available: false,
+      installUrl: 'https://www.tug.org/texlive/',
+      installInstructions: process.platform === 'linux'
+        ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
+        : (process.platform === 'darwin'
+          ? 'Install MacTeX (brew install --cask mactex)'
+          : 'Install MiKTeX or TeX Live on Windows')
+    });
+  }
+  
   return dependencies;
 }
 
