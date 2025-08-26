@@ -1,28 +1,34 @@
 # Verbweaver
 
-*Verbweaver* is a writing and design platform that thinks in relationships (graphs). It's designed for writers, artists, engineers, developers, analysts, and anyone who wants to design things while linking every idea together and turning those ideas into manageable tasks.
+*Verbweaver* is a writing and design platform that thinks in relationships (graphs). It's designed for writers, artists, engineers, developers, analysts, and anyone who wants to design things while linking every idea together and turning those ideas into manageable tasks. Think and take notes in a way that is natural to you. Then, when it comes time to communicate your ideas or information to other people, use the Compiler and the powerful templating engine to generate a linear document in various common filetypes.
 
 ![Verbweaver Logo](docs/images/logo.png)
 
 ## 🌟 Features
 
 - **Graph-based Design**: Visualize relationships between your ideas, documents, and tasks
-- **Markdown-powered**: All content is stored as Markdown files with metadata headers. The [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown) format is used to enable exporting to many file formats using Pandoc with advanced formatting.
-- **Git Version Control**: Built-in version control for all your projects
 - **Task Management**: Turn any idea into a trackable task with Kanban boards
-- **Multi-platform**: Available as a web app, desktop app (Windows, Mac, Linux), and mobile app (iOS, Android)
+- **Markdown-powered**: All content is stored as Markdown files with metadata headers. The [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown) format is used to enable exporting to many file formats using Pandoc with advanced formatting.
+- **Write to your heart's content**: Use the built-in Editor or your favorite Markdown editor application to write chapter, notes, data, findings, or anything else.
 - **Real-time Collaboration**: Work together with your team in real-time
 - **Export Anywhere**: Compile your non-linear notes into linear documents (PDF, Word, ePub, etc.)
+- **Git Version Control**: Built-in version control for all your projects
+- **Multi-platform**: Available as a web app, desktop app (Windows, Mac, Linux), and mobile app (iOS, Android)
 
 ## 🚀 Getting Started
 
 ### Desktop Application (Recommended for Individual Writers)
 
-The desktop application provides the best offline experience:
+The desktop application provides the best offline experience.
+
+Installers are available for each release:
+- Windows: `.exe` installer
+- macOS: `.dmg` installer  
+- Linux: `.AppImage` (or `.deb` / `.rpm` installers)
 
 ```bash
 # Clone and build from source
-git clone https://github.com/yourusername/verbweaver.git
+git clone https://github.com/TheWover/verbweaver.git
 cd verbweaver
 
 # Setup and run desktop app
@@ -30,11 +36,6 @@ cd desktop
 npm install
 npm run dev
 ```
-
-Pre-built installers coming soon:
-- Windows: `.exe` installer
-- macOS: `.dmg` installer  
-- Linux: `.AppImage`
 
 ### Web Application (For Teams)
 
@@ -96,6 +97,7 @@ The desktop version offers unique advantages:
 ### Features
 - **Offline Mode**: Work without internet connection
 - **Local Storage**: Your data stays on your machine
+- **Cross-platform**: Built with Electron, the desktop app works on Windows, MacOS, and Linux
 - **Native Performance**: Faster file operations and Git integration
 - **System Integration**: Native file dialogs, system tray, auto-updates
 - **No Authentication**: Start working immediately
@@ -114,7 +116,9 @@ npm run build
 npm run dist -- --win --mac --linux
 ```
 
-## 🔧 Configuration
+For Windows, a convenient script to build and run the application in development mode is located at `desktop\build-and-run.ps1`.
+
+## 🔧 Web Server Configuration
 
 Key configuration options can be set via environment variables:
 
@@ -201,7 +205,9 @@ Verbweaver uses a modern, scalable architecture:
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License + Commons Clause - see the [LICENSE](LICENSE) file for details.
+
+The MIT License ensures that you have unrestricted rights to use, modify, and redistribute Verbweaver free of charge. However, the Commons Clause rider prohibits you from selling Verbweaver or a providing a service (such as a cloud-hosting solution) "whose value derives, entirely or substantially" from Verbweaver. If you wish to purchase a license exception to this clause, then please contact us with your offer.
 
 ## 🙏 Acknowledgments
 
@@ -217,8 +223,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 - **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/verbweaver/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/verbweaver/discussions)
+- **Issues**: [GitHub Issues](https://github.com/TheWover/verbweaver/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/TheWover/verbweaver/discussions)
 - **Discord**: [Join our community](https://discord.gg/verbweaver)
 - **Email**: support@verbweaver.com
 
