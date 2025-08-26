@@ -218,8 +218,8 @@ class TemplateService:
                     errors.append(f"{scope}.{k} must be an object")
                     return
                 t = defn.get('type')
-                if t not in ('string','number','boolean','array'):
-                    errors.append(f"{scope}.{k}.type must be one of string|number|boolean|array")
+                if t not in ('string','number','boolean','array','table'):
+                    errors.append(f"{scope}.{k}.type must be one of string|number|boolean|array|table")
                 if t == 'array':
                     item = defn.get('item')
                     if not isinstance(item, dict):
@@ -239,6 +239,27 @@ class TemplateService:
                             # primitive array
                             if not _is_primitive_type(item.get('type','string')):
                                 errors.append(f"{scope}.{k}.item.type must be string|number|boolean")
+                if t == 'table':
+                    # Optional defaults for columns/types
+                    cols_def = defn.get('columnsDefault')
+                    if cols_def is not None and not (isinstance(cols_def, list) and all(isinstance(x, (str, int, float, bool)) or x is None for x in cols_def)):
+                        errors.append(f"{scope}.{k}.columnsDefault must be an array of strings (column names)")
+                    types_def = defn.get('columnTypes')
+                    if types_def is not None:
+                        if not isinstance(types_def, dict):
+                            errors.append(f"{scope}.{k}.columnTypes must be an object when provided")
+                        else:
+                            for ck, ct in types_def.items():
+                                if not isinstance(ct, dict):
+                                    errors.append(f"{scope}.{k}.columnTypes.{ck} must be an object")
+                                    continue
+                                ctype = ct.get('type', 'string')
+                                if ctype not in ('string','number','boolean','enum'):
+                                    errors.append(f"{scope}.{k}.columnTypes.{ck}.type must be string|number|boolean|enum")
+                                if ctype == 'enum':
+                                    enum_vals = ct.get('enum')
+                                    if not (isinstance(enum_vals, list) and all(isinstance(ev, (str, int, float, bool)) for ev in enum_vals)):
+                                        errors.append(f"{scope}.{k}.columnTypes.{ck}.enum must be an array for enum type")
                 if scope == 'nodeVariables':
                     # Optional dotted path
                     if 'path' in defn and not isinstance(defn.get('path'), str):

@@ -338,6 +338,94 @@ class ContentAggregator:
         except Exception:
             pass
 
+        # Precompute helpers for table-type document variables (provide both nested and top-level helpers)
+        try:
+            vars_schema = (schema or {}).get('variables', {}) if isinstance(schema, dict) else {}
+            if isinstance(vars_schema, dict):
+                for var_name, var_def in vars_schema.items():
+                    try:
+                        if not (isinstance(var_def, dict) and var_def.get('type') == 'table'):
+                            continue
+                        # Ensure a value exists in data for this table var
+                        value = data.get(var_name)
+                        # Initialize from defaults if missing or invalid
+                        if not isinstance(value, dict):
+                            value = {}
+                        columns = value.get('columns')
+                        if not (isinstance(columns, list) and all(isinstance(c, str) for c in columns)):
+                            columns = list(var_def.get('columnsDefault') or ['Task'])
+                        types = value.get('types')
+                        if not isinstance(types, dict):
+                            types = {}
+                        rows = value.get('rows')
+                        if not (isinstance(rows, list) and all(isinstance(r, dict) for r in rows)):
+                            rows = []
+
+                        # Sanitize columns (unique, non-empty strings)
+                        clean_cols = []
+                        seen = set()
+                        for c in columns:
+                            cn = str(c).strip()
+                            if not cn or cn in seen:
+                                continue
+                            clean_cols.append(cn)
+                            seen.add(cn)
+                        if not clean_cols:
+                            clean_cols = ['Task']
+
+                        # Build header separator (simple Markdown style)
+                        header_sep = '|' + '|'.join(['---' for _ in clean_cols]) + '|'
+
+                        # Build row lines and cells aligned to columns
+                        def _format_cell(x: Any) -> str:
+                            if x is None:
+                                return ''
+                            if isinstance(x, bool):
+                                return 'true' if x else 'false'
+                            return str(x)
+
+                        rendered_rows = []
+                        for r in rows:
+                            cells = [_format_cell(r.get(col, '')) for col in clean_cols]
+                            line = '| ' + ' | '.join(cells) + ' |'
+                            # augment row dict with helper keys without losing original keys
+                            rr = dict(r)
+                            rr['cells'] = cells
+                            rr['line'] = line
+                            rendered_rows.append(rr)
+
+                        # Full markdown helper (A)
+                        header_line = '| ' + ' | '.join(clean_cols) + ' |'
+                        table_md = header_line + '\n' + header_sep
+                        if rendered_rows:
+                            table_md += '\n' + '\n'.join([rr['line'] for rr in rendered_rows])
+
+                        # Write nested helpers under data[var_name]
+                        try:
+                            nested = data.get(var_name)
+                            if not isinstance(nested, dict):
+                                nested = {}
+                            nested['columns'] = clean_cols
+                            nested['types'] = types if isinstance(types, dict) else {}
+                            nested['rows'] = rendered_rows
+                            nested['headerSeparator'] = header_sep
+                            nested['headerLine'] = header_line
+                            nested['markdown'] = table_md
+                            data[var_name] = nested
+                        except Exception:
+                            pass
+
+                        # Also expose top-level convenience variables (B)
+                        data[f"{var_name}_columns"] = clean_cols
+                        data[f"{var_name}_headerSeparator"] = header_sep
+                        data[f"{var_name}_headerLine"] = header_line
+                        data[f"{var_name}_rows"] = rendered_rows
+                        data[f"{var_name}_markdown"] = table_md
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
         # Process template with data (use original template_content, not final_template_content)
         # The includes will be processed again during the full template processing
         return self.template_service.process_template(template_content, data, template_path)

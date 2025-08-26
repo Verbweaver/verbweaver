@@ -294,7 +294,7 @@ nodeVariables:
 ```
 
 Field options:
-- `type`: string | number | boolean | array
+- `type`: string | number | boolean | array | table
 - `label`: human-friendly label (optional)
 - `description`: helper text (optional)
 - `required`: boolean (document scope only for now)
@@ -304,6 +304,66 @@ Field options:
 - `path`: for `nodeVariables`, dotted path into node frontmatter to prefill (e.g., `metadata.cvss`)
 - `item`: when `type: array`, item schema (supports `type: object` with `fields`)
 - `compute`: computed value (see below)
+
+#### Table Variables (type: table)
+
+Schema shape (document scope only):
+
+```yaml
+variables:
+  myTable:
+    type: table
+    columnsDefault: ["Task", "Status"]              # optional; defaults to ["Task"]
+    columnTypes:                           # optional per-column type defaults
+      Task: { type: string }
+      Status: { type: enum, enum: [todo, doing, done] }
+```
+
+Runtime value (what users edit in the Compiler UI):
+
+```json
+{
+  "columns": ["Task", "Alice", "Bob"],
+  "types": { "Task": { "type": "string" }, "Alice": { "type": "enum", "enum": ["", "R", "A", "C", "I"] } },
+  "rows": [ { "Task": "Kickoff", "Alice": "R" } ]
+}
+```
+
+Rendering options provided by the compiler:
+
+- A) Full table as Markdown:
+  - Nested: `$myTable.markdown$`
+  - Top-level convenience: `$myTable_markdown$`
+
+- B) Structured pieces for custom layouts:
+  - Headers: `$for(myTable.columns)$ ... $endfor$` or `$for(myTable_columns)$ ... $endfor$`
+  - Separator: `${myTable.headerSeparator}` or `$myTable_headerSeparator$`
+  - Rows: `$for(myTable.rows)$ $it.line$ $endfor$` or `$for(myTable_rows)$ $it.line$ $endfor$`
+  - Each row has `cells` (aligned to current columns) and a prebuilt `line` string.
+
+UI behavior:
+- Add/remove/rename/reorder columns, per-column type (string/number/boolean/enum), CSV import/export
+- Web limits: ≤ 256 columns, ≤ 2000 characters per cell (blocked with validation message)
+- Desktop: no limits
+
+Example (RACI, Option A):
+```markdown
+## RACI Matrix
+
+$raci_markdown$
+```
+
+Example (RACI, Option B):
+
+```markdown
+## RACI Matrix
+
+| $for(raci_columns)$ $it$ |$endfor$
+$raci_headerSeparator$
+$for(raci_rows)$
+$it.line$
+$endfor$
+```
 
 ## Computed Fields
 
@@ -737,12 +797,12 @@ $for(stakeholders)$
 | $it.name$ | $it.role$ | $it.contact$ |
 $endfor$
 
-## RACI Matrix
+## RACI Matrix (table variables)
 
-| Task | R | A | C | I |
-|------|---|---|---|---|
-$for(raci)$
-| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |
+| $for(raci_columns)$ $it$ |$endfor$
+$raci_headerSeparator$
+$for(raci_rows)$
+$it.line$
 $endfor$
 
 $for(nodes)$

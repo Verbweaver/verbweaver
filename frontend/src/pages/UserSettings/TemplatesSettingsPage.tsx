@@ -106,8 +106,15 @@ export default function TemplatesSettingsPage() {
             ...filesTemplates.map(i => ({ path: `templates/${i.path}`, name: i.name })),
             ...filesRoot.map(i => ({ path: i.path, name: i.name }))
           ]
-          console.log(`[TemplatesSettingsPage] Final combined files:`, files)
-          setItems(files)
+          // Deduplicate by path to avoid duplicate React keys and confusing duplicates in UI
+          const seen = new Set<string>()
+          const dedup: TemplateItem[] = []
+          for (const f of files) {
+            if (!seen.has(f.path)) { seen.add(f.path); dedup.push(f) }
+          }
+          dedup.sort((a,b) => a.path.localeCompare(b.path))
+          console.log(`[TemplatesSettingsPage] Final combined files (deduped ${files.length - dedup.length} duplicates):`, dedup)
+          setItems(dedup)
         } else {
           console.warn(`[TemplatesSettingsPage] No base directory available, setting empty items`)
           setItems([])
