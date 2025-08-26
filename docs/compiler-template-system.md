@@ -841,19 +841,19 @@ Notes:
 
 ### Get Available Templates
 ```
-GET /api/v1/projects/{project_id}/compiler/templates?format={format}
+GET /api/v1/compiler/{project_id}/templates?format_type={format}
 ```
 Returns a list of available templates for the specified format.
 
 ### Get Template Content
 ```
-GET /api/v1/projects/{project_id}/compiler/templates/{template_path}
+GET /api/v1/compiler/{project_id}/templates/{template_path}
 ```
 Returns the template content, validation status, and detected custom variables.
 
 ### Compile Document
 ```
-POST /api/v1/projects/{project_id}/compiler/compile
+POST /api/v1/compiler/{project_id}/compile
 ```
 Compiles a document using the specified template and custom variables.
 

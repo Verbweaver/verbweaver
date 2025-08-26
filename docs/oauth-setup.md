@@ -16,6 +16,8 @@ The following environment variables must be set in your Verbweaver backend envir
 ```env
 # Common Settings
 FRONTEND_URL=http://localhost:3000 # Or your production frontend URL
+BACKEND_CORS_ORIGINS=["http://localhost:3000"]
+SESSION_SECRET_KEY=change_me_to_a_long_random_value
 
 # Google OAuth Credentials
 GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID
@@ -110,7 +112,7 @@ Replace `YOUR_..._ID` and `YOUR_..._SECRET` with the actual credentials obtained
 *   **HTTPS for Production:** For production environments, both your frontend and backend should be served over HTTPS. OAuth providers often require or strongly recommend HTTPS for redirect URIs.
 *   **Redirect URI Matching:** The redirect URIs configured in the Google Cloud Console and GitHub OAuth App settings must *exactly* match the URIs your Verbweaver backend uses for the OAuth callbacks. Any mismatch (e.g., `http` vs `https`, trailing slashes, different ports) will cause the OAuth flow to fail.
 *   **Environment Variable Security:** Keep your Client Secrets confidential. Do not commit them to your version control system. Use environment variables or a secure secrets management system.
-*   **CSRF Protection (State Parameter):** The current implementation includes stubs for a `state` parameter in the OAuth flow. For enhanced security against Cross-Site Request Forgery (CSRF) attacks, it is highly recommended to fully implement the generation, storage (e.g., in a server-side session or secure cookie), and verification of the `state` parameter during the OAuth handshake. (This feature is partially stubbed in the `oauth.py` router and should be completed for production systems).
+*   **CSRF Protection (State Parameter):** Implemented. The backend generates, stores (via session middleware), and validates the `state` parameter during the OAuth handshake. Ensure `SESSION_SECRET_KEY` is set in your environment.
 *   **Error Handling:** Review and enhance error handling in the backend OAuth callback endpoints to provide clear feedback to users or logs for administrators in case of issues.
 
 After configuring the environment variables and setting up the OAuth applications with Google and GitHub, users should be able to use the "Sign in with Google" and "Sign in with GitHub" buttons on the Verbweaver login page. 

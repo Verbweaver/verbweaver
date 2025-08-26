@@ -120,6 +120,11 @@ sudo systemctl enable --now verbweaver-backend
 - Offline installs: prepare a wheelhouse (pip download), and a prebuilt frontend `dist` tarball; host them on internal artifact storage.
 
 ## Redis (optional)
-- If using realtime or caching, set `REDIS_URL=redis://localhost:6379/0`.
+- If using OAuth or Passkey flows or rate-limiting features, set `REDIS_URL=redis://localhost:6379/0`.
+
+## Development convenience scripts
+
+- Windows: from the project root run `start-dev.ps1` to launch backend (8000) and Vite (3000).
+- Linux/macOS: from the project root run `./start-dev.sh` to launch backend (8000) and Vite (3000).
 
 

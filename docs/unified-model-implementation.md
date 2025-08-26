@@ -20,11 +20,12 @@ The unified model ensures that:
    - Integrates with GitService for version control
    - Supports both Markdown files and non-Markdown files (using `.metadata.md`)
 
-2. **Updated API Endpoints**
-   - `/graph` - Uses NodeService to read/write nodes from Git
-   - `/tasks` - Treats tasks as nodes with task metadata
-   - `/editor` - Reads/writes files using NodeService
-   - All endpoints now work with the same underlying data
+2. **Updated API Endpoints (prefix `/api/v1`)**
+   - `GET /projects/{project_id}/graph` - Uses NodeService to read nodes from Git
+   - `POST /projects/{project_id}/graph/nodes` - Creates nodes
+   - `POST /projects/{project_id}/graph/edges` - Creates soft links
+   - `GET/PUT/POST/DELETE /projects/{project_id}/files/...` - File CRUD via NodeService
+   - All endpoints operate on the same underlying repository data
 
 3. **WebSocket Integration** (`backend/app/websocket.py`)
    - File watching using `watchdog` library
@@ -33,7 +34,7 @@ The unified model ensures that:
 
 ### Frontend Components
 
-1. **NodeStore** (`frontend/src/store/nodeStore.ts`)
+1. **NodeStore** (`frontend/src/store/*`)
    - Central store for managing all nodes
    - Supports both Electron (file system) and web (API) operations
    - Handles node filtering, searching, and relationships
@@ -113,7 +114,7 @@ This is the content of the node...
 - Automatic UI refresh without manual reload
 
 ### 3. Version Control
-- All changes committed to Git automatically
+- Changes are committed to Git either automatically or via user action, depending on settings
 - Full history tracking for every node/task/file
 - Rollback and diff capabilities
 

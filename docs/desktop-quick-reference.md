@@ -3,7 +3,7 @@
 ## Starting Verbweaver
 
 ### First Time Setup
-1. Download installer from [releases](https://github.com/yourusername/verbweaver/releases)
+1. Download installer from GitHub Releases
 2. Run installer (may require admin/sudo)
 3. Launch Verbweaver
 4. Create or open a project
@@ -69,19 +69,7 @@
 
 ## Command Line
 
-```bash
-# Open project
-verbweaver /path/to/project
-
-# Create and open new project
-verbweaver new "My Project"
-
-# Export current project
-verbweaver export --pdf
-
-# Show help
-verbweaver --help
-```
+The desktop app does not include a separate CLI at this time. Use the GUI for common actions. Automation is available via the server REST API.
 
 ## File Locations
 
@@ -151,8 +139,6 @@ verbweaver --help
 - Use workspace layouts
 
 ### Troubleshooting
-- **Reset Settings**: Hold `Shift` while starting
-- **Safe Mode**: `verbweaver --safe-mode`
 - **Check Logs**: Help → Show Logs
 - **Clear Cache**: Help → Clear Cache
 
