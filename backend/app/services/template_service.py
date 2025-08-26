@@ -130,6 +130,10 @@ class TemplateService:
                 # Skip if it's a control variable
                 if clean_var in control_vars:
                     continue
+
+                # Skip loop iterator variables like it.* (any property name)
+                if clean_var == 'it' or clean_var.startswith('it.'):
+                    continue
                 
                 # Skip if it starts with control keywords (handles cases like 'fornodes', 'ifnodes.vars')
                 if clean_var.startswith(('for', 'if', 'endif', 'endfor')):

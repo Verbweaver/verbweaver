@@ -331,8 +331,9 @@ function CompilerView() {
         setTemplateSchema(schema)
         setTemplateMessages(Array.isArray((templateContent as any).messages) ? (templateContent as any).messages : [])
         if (templateContent.custom_variables.length > 0) {
+          const filtered = templateContent.custom_variables.filter((name: string) => !(name === 'it' || String(name).startsWith('it.')))
           setCustomVariables(
-            templateContent.custom_variables.map((name: string) => ({ name, value: '' }))
+            filtered.map((name: string) => ({ name, value: '' }))
           )
         } else {
           setCustomVariables([])
