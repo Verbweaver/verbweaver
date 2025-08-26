@@ -1182,29 +1182,95 @@ function CompilerView() {
               </button>
               <label className="px-3 py-2 border border-input rounded-md cursor-pointer">
                 Load Configuration
-                <input type="file" accept="application/json,.json" className="hidden" onChange={async (e)=>{
-                  const f = e.target.files?.[0]
-                  if (!f) return
-                  try {
-                    const text = await f.text()
-                    const cfg = JSON.parse(text)
-                    if (cfg.title !== undefined) setTitle(cfg.title)
-                    if (cfg.author !== undefined) setAuthor(cfg.author)
-                    if (Array.isArray(cfg.selectedNodes)) setSelectedNodes(cfg.selectedNodes)
-                    if (Array.isArray(cfg.orderedNodes)) setOrderedNodes(cfg.orderedNodes)
-                    if (typeof cfg.selectedFormat === 'string') setSelectedFormat(cfg.selectedFormat)
-                    if (typeof cfg.selectedTemplate === 'string') setSelectedTemplate(cfg.selectedTemplate)
-                    if (Array.isArray(cfg.customVariables)) setCustomVariables(cfg.customVariables)
-                    if (cfg.nodeVariables && typeof cfg.nodeVariables === 'object') setNodeVariables(cfg.nodeVariables)
-                    if (cfg.docVars && typeof cfg.docVars === 'object') setDocVars(cfg.docVars)
-                    if (cfg.options && typeof cfg.options === 'object') setOptions(prev => ({ ...prev, ...cfg.options }))
-                  } catch (err) {
-                    console.error('Failed to load configuration', err)
-                    toast.error('Invalid configuration file')
-                  } finally {
-                    // reset input so same file can be selected again later
-                    e.currentTarget.value = ''
-                  }
+                <input type="file" accept="application/json,.json" className="hidden" onChange={(e)=>{
+                  const inputEl = e.currentTarget
+                  const file = inputEl.files?.[0]
+                  if (!file) return
+                  ;(async () => {
+                    try {
+                      const text = await file.text()
+                      const cfg = JSON.parse(text)
+                      const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined
+
+                      // Normalize template path separators
+                      let normalizedTemplate = typeof cfg.selectedTemplate === 'string' ? String(cfg.selectedTemplate).replace(/\\/g, '/') : undefined
+
+                      // Validate and filter node paths against project tree (best-effort)
+                      let safeSelectedNodes: string[] | undefined = undefined
+                      let safeOrderedNodes: string[] | undefined = undefined
+                      try {
+                        if (currentProject && Array.isArray(cfg.selectedNodes)) {
+                          const tree = await editorApi.getFileTree(currentProject.id, 'nodes')
+                          const flatten = (items: any[], prefix: string): string[] => {
+                            const out: string[] = []
+                            for (const it of items || []) {
+                              const rel = prefix ? `${prefix}/${it.name}` : it.name
+                              if (it.type === 'directory') out.push(...flatten(it.children || [], rel))
+                              else if (it.type === 'file') out.push(rel)
+                            }
+                            return out
+                          }
+                          const all = flatten(tree, '').map(p => `nodes/${p}`.replace(/\\/g, '/'))
+                          const exist = new Set(all)
+                          safeSelectedNodes = (cfg.selectedNodes || []).map((p: string) => String(p).replace(/\\/g,'/')).filter((p: string) => exist.has(p))
+                          if (Array.isArray(cfg.orderedNodes)) {
+                            const orderedNorm = (cfg.orderedNodes || []).map((p: string) => String(p).replace(/\\/g,'/'))
+                            safeOrderedNodes = orderedNorm.filter((p: string) => exist.has(p) && safeSelectedNodes!.includes(p))
+                          }
+                        }
+                      } catch {}
+
+                      // Validate docVars: enforce table constraints and web limits
+                      let safeDocVars = (cfg.docVars && typeof cfg.docVars === 'object') ? { ...cfg.docVars } : undefined
+                      try {
+                        if (safeDocVars) {
+                          const isWebLimited = !isElectron
+                          const MAX_WEB_COLUMNS = 256
+                          const MAX_WEB_CELL_LEN = 2000
+                          Object.keys(safeDocVars).forEach((k) => {
+                            const v: any = (safeDocVars as any)[k]
+                            if (v && typeof v === 'object' && Array.isArray(v.columns) && Array.isArray(v.rows)) {
+                              // Treat as table
+                              let cols = v.columns.map((c: any) => String(c || '').trim()).filter((c: string) => !!c)
+                              // unique preserve order
+                              const seen = new Set<string>()
+                              cols = cols.filter((c: string) => (seen.has(c) ? false : (seen.add(c), true)))
+                              if (isWebLimited && cols.length > MAX_WEB_COLUMNS) cols = cols.slice(0, MAX_WEB_COLUMNS)
+                              const rows = Array.isArray(v.rows) ? v.rows : []
+                              const normRows = rows.map((r: any) => {
+                                const obj: any = {}
+                                cols.forEach((c: string) => {
+                                  let cell = r && typeof r === 'object' ? r[c] : ''
+                                  if (cell === null || cell === undefined) cell = ''
+                                  if (typeof cell !== 'string') cell = String(cell)
+                                  if (isWebLimited && cell.length > MAX_WEB_CELL_LEN) cell = cell.slice(0, MAX_WEB_CELL_LEN)
+                                  obj[c] = cell
+                                })
+                                return obj
+                              })
+                              ;(safeDocVars as any)[k] = { columns: cols, types: (v.types && typeof v.types==='object') ? v.types : {}, rows: normRows }
+                            }
+                          })
+                        }
+                      } catch {}
+
+                      if (cfg.title !== undefined) setTitle(cfg.title)
+                      if (cfg.author !== undefined) setAuthor(cfg.author)
+                      if (Array.isArray(cfg.selectedNodes)) setSelectedNodes(safeSelectedNodes ?? cfg.selectedNodes.map((p: any)=>String(p).replace(/\\/g,'/')))
+                      if (Array.isArray(cfg.orderedNodes)) setOrderedNodes(safeOrderedNodes ?? cfg.orderedNodes.map((p: any)=>String(p).replace(/\\/g,'/')))
+                      if (typeof cfg.selectedFormat === 'string') setSelectedFormat(cfg.selectedFormat)
+                      if (typeof normalizedTemplate === 'string') setSelectedTemplate(normalizedTemplate)
+                      if (Array.isArray(cfg.customVariables)) setCustomVariables(cfg.customVariables)
+                      if (cfg.nodeVariables && typeof cfg.nodeVariables === 'object') setNodeVariables(cfg.nodeVariables)
+                      if (safeDocVars) setDocVars(safeDocVars)
+                      if (cfg.options && typeof cfg.options === 'object') setOptions(prev => ({ ...prev, ...cfg.options }))
+                    } catch (err) {
+                      console.error('Failed to load configuration', err)
+                      toast.error('Invalid configuration file')
+                    } finally {
+                      try { inputEl.value = '' } catch {}
+                    }
+                  })()
                 }} />
               </label>
             </div>
