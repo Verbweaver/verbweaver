@@ -7,6 +7,7 @@ import NewProjectDialog from './NewProjectDialog'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX } from '@verbweaver/shared'
 import { useProjectStore } from '../store/projectStore'
+import { useTabStore, Tab } from '../store/tabStore'
 
 // Check if we're in Electron
 const isElectron = window.electronAPI !== undefined
@@ -15,8 +16,37 @@ function Layout() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const groupRef = useRef<any>(null)
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false)
-  const { setCurrentProjectPath } = useProjectStore()
+  const { setCurrentProjectPath, currentProject, currentProjectPath } = useProjectStore()
+  const tabStore = useTabStore()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    // Per-project tab persistence: on project change, load tab set for that project from localStorage
+    const projectKey = currentProject?.id || currentProjectPath || null
+    if (!projectKey) return
+    try {
+      const raw = localStorage.getItem(`verbweaver_tabs_${projectKey}`)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed && Array.isArray(parsed.tabs)) {
+          tabStore.setTabs(parsed.tabs as Tab[], parsed.activeTabId as string | null)
+          return
+        }
+      }
+      // No saved tabs for this project: ensure a dashboard
+      tabStore.setTabs([])
+    } catch {}
+  }, [currentProject?.id, currentProjectPath])
+
+  useEffect(() => {
+    // Persist tabs for current project whenever tabs or active tab change
+    const projectKey = currentProject?.id || currentProjectPath || null
+    if (!projectKey) return
+    try {
+      const state = { tabs: tabStore.tabs, activeTabId: tabStore.activeTabId }
+      localStorage.setItem(`verbweaver_tabs_${projectKey}`, JSON.stringify(state))
+    } catch {}
+  }, [tabStore.tabs, tabStore.activeTabId, currentProject?.id, currentProjectPath])
 
   useEffect(() => {
     if (!isElectron || !window.electronAPI) return
