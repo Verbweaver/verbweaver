@@ -5,12 +5,20 @@ Welcome to the Verbweaver documentation! This guide will help you understand, us
 ## Table of Contents
 
 1. [Getting Started](getting-started.md)
-2. [User Guide](user-guide/README.md)
-3. [Architecture](architecture.md)
-4. [API Reference](api/README.md)
-5. [Development Guide](development.md)
-6. [Deployment](deployment.md)
-7. [Contributing](CONTRIBUTING.md)
+2. [Desktop Guide](desktop-guide.md)
+3. [Desktop Quick Reference](desktop-quick-reference.md)
+4. [Architecture](architecture.md)
+5. [API Reference](api-reference.md)
+6. [Install: Desktop](install-desktop.md)
+7. [Install: Server](install-server.md)
+8. [Deploy with Docker](docker-deploy.md)
+9. [OAuth Setup](oauth-setup.md)
+10. [Passkey (WebAuthn) Setup](passkey-setup.md)
+11. [Compiler Template System](compiler-template-system.md)
+12. [Dependency Checker](dependency-checker.md)
+13. [Repository Paths](repository-paths.md)
+14. [Security Checklist](security-checklist.md)
+15. [Release Checklist](RELEASE_CHECKLIST.md)
 
 ## What is Verbweaver?
 
@@ -57,14 +65,14 @@ Verbweaver provides multiple views to work with your content:
 
 1. **Install Verbweaver** (see [Getting Started](getting-started.md))
 2. **Create a Project** backed by a Git repository
-3. **Add Content** using the Editor view
+3. **Add Content** in the Editor view
 4. **Link Ideas** in the Graph view
 5. **Track Progress** with Tasks
-6. **Export** your work using the Compiler
+6. **Export** your work with the Compiler
 
 ## Need Help?
 
-- Check the [User Guide](user-guide/README.md) for detailed instructions
-- Read the [API Reference](api/README.md) for technical details
+- See [Desktop Guide](desktop-guide.md) for usage tips
+- Read the [API Reference](api-reference.md) for technical details
 - Join our community discussions
 - Report issues on GitHub 

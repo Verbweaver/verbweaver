@@ -3,7 +3,7 @@
 This guide covers installing Verbweaver Desktop on Windows, macOS, and Linux. The app bundles its own backend, so no Python installation is required for end users.
 
 ## Download
-- Windows: Verbweaver-x.y.z.exe (NSIS installer)
+- Windows: Verbweaver-Setup-x.y.z.exe (NSIS installer)
 - macOS: Verbweaver-x.y.z.dmg
 - Linux: Verbweaver-x.y.z.AppImage, .deb (Debian/Ubuntu), .rpm (RHEL/Fedora)
 
@@ -26,7 +26,7 @@ The app is signed and notarized. If Gatekeeper blocks it, open System Settings �
 - RHEL/Fedora: install the .rpm package.
 
 ## Auto-updates
-- Updates download silently in the background.
+- Updates download in the background.
 - You’ll be prompted to restart when an update is ready.
 
 ## Data locations (default and configurable)
@@ -40,10 +40,10 @@ You can change these from Preferences or via environment variables:
 
 ## First run
 - Create or open a project.
-- The app runs a local backend on a random available port bound to 127.0.0.1.
+- The app runs a local backend bound to 127.0.0.1 on an available port.
 
 ## Troubleshooting
-- If the app cannot start the backend, ensure antivirus is not blocking the bundled binary.
+- If the app cannot start the backend, ensure antivirus is not blocking the bundled backend binary.
 - On Windows, if opening files fails, try running as an administrator once.
 - See logs in Developer Tools (Ctrl+Shift+I) → Console.
 

@@ -56,7 +56,7 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
   - [ ] URL points to `Verbweaver-v<tag>-x64.exe`
   - [ ] Opens/updates PR to winget‑pkgs
 - [ ] `.github/workflows/publish-docker.yml`
-  - [ ] Publishes multi‑arch backend images to Docker Hub and GHCR on `v*.*.*` tags (latest + semver tags)
+  - [ ] Publishes backend images to Docker Hub and/or GHCR on `v*.*.*` tags (latest + semver tags)
 - [ ] `.github/workflows/publish-deb-rpm.yml`
   - [ ] Builds and uploads `verbweaver-backend` `.deb` and `.rpm` to the GitHub Release
 
@@ -74,7 +74,7 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
   - [ ] Database URL (e.g., `sqlite+aiosqlite:///C:/Path/verbweaver.db`)
   - [ ] Git Projects Root
 - [ ] Verify backend reads envs `DATABASE_URL` and `GIT_PROJECTS_ROOT` (launch app and test)
-- [ ] Confirm desktop backend runs on `127.0.0.1:<port>` only and terminates when the app exits
+- [ ] Confirm desktop backend binds to `127.0.0.1:<port>` only and terminates when the app exits
 
 ## 8) Local validation before tagging
 - [ ] Build backend binary locally (section 3)

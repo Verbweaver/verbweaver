@@ -8,12 +8,12 @@ Welcome to Verbweaver! This guide will help you get up and running quickly.
 
 The desktop application provides the best experience for individual writers who want to work offline with their local Git repositories.
 
-#### Pre-built Releases (Coming Soon)
+#### Pre-built Releases
 
-Once available, download the installer for your platform:
-- **Windows**: `Verbweaver-Setup-x.x.x.exe`
-- **macOS**: `Verbweaver-x.x.x.dmg`
-- **Linux**: `Verbweaver-x.x.x.AppImage`
+Download the installer for your platform from GitHub Releases:
+- **Windows**: `Verbweaver-Setup-x.y.z.exe`
+- **macOS**: `Verbweaver-x.y.z.dmg`
+- **Linux**: `Verbweaver-x.y.z.AppImage` (or `.deb`/`.rpm`)
 
 #### Building from Source
 
@@ -21,14 +21,11 @@ Once available, download the installer for your platform:
    - Node.js 18+ and npm
    - Python 3.11+
    - Git
-   - Build tools for your platform:
-     - **Windows**: Windows Build Tools (`npm install -g windows-build-tools`)
-     - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
-     - **Linux**: `build-essential` package
+   - Pandoc
 
 2. **Clone and Setup**
    ```bash
-   git clone https://github.com/yourusername/verbweaver.git
+   git clone https://github.com/TheWover/verbweaver.git
    cd verbweaver
    
    # Install shared dependencies
@@ -37,7 +34,7 @@ Once available, download the installer for your platform:
    npm run build
    cd ..
    
-   # Setup backend (required for desktop app)
+   # Setup backend (required for desktop app and web)
    cd backend
    pip install -r requirements.txt
    python init_db.py
@@ -50,24 +47,22 @@ Once available, download the installer for your platform:
 
 3. **Run in Development Mode**
    ```bash
-   # From the desktop directory
-   npm run dev
+   # From project root (Windows)
+   .\start-dev.ps1
+
+   # From project root (Linux/macOS)
+   ./start-dev.sh
    ```
-   
-   This will start:
-   - The Electron application
-   - A local backend server (embedded)
-   - Hot reload for development
+   This starts FastAPI at http://localhost:8000 and Vite at http://localhost:3000.
 
 4. **Build for Distribution**
    ```bash
-   # Build for current platform
-   npm run build
-   
-   # Build for specific platform
-   npm run dist -- --win   # Windows
-   npm run dist -- --mac   # macOS
-   npm run dist -- --linux # Linux
+   # Build for production
+   npm run dist
+   # Or per-platform
+   npm run dist:win   # Windows
+   npm run dist:mac   # macOS
+   npm run dist:linux # Linux
    ```
    
    Built applications will be in `desktop/dist/`
@@ -88,7 +83,7 @@ Perfect for teams and collaboration.
 
 2. **Clone and Setup**
    ```bash
-   git clone https://github.com/yourusername/verbweaver.git
+   git clone https://github.com/TheWover/verbweaver.git
    cd verbweaver
    ```
 
@@ -150,10 +145,8 @@ Perfect for teams and collaboration.
 3. **Configure the Backend**
    ```bash
    cd backend
-   cp .env.example .env
-   # Edit .env with your settings
-   
-   # Initialize the database
+   # Optional: copy a .env if you maintain one
+   # Initialize the SQLite database (auto-creates tables on first run as well)
    python init_db.py
    ```
 
@@ -168,7 +161,7 @@ Perfect for teams and collaboration.
    ```
 
 5. **Access Verbweaver**
-   - Open http://localhost:5173 in your browser
+   - Open http://localhost:3000 in your browser
    - The API is available at http://localhost:8000
 
 ### Option 3: Docker Deployment
@@ -177,7 +170,7 @@ For production deployments or isolated development:
 
 ```bash
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # Access the application
 # Frontend: http://localhost:3000

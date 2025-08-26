@@ -11,7 +11,7 @@ This guide uses docker-compose to run the full stack: backend (FastAPI), fronten
 cp .env.example .env  # create if needed
 docker compose up -d
 ```
-Services:
+Services (from docker compose):
 - backend: http://localhost:8000
 - frontend: http://localhost:3000
 - nginx (optional reverse proxy): http://localhost
@@ -19,6 +19,7 @@ Services:
 ## Configuration
 - Edit `docker-compose.yml` environments:
   - `DATABASE_URL` (PostgreSQL): `postgresql+asyncpg://verbweaver:verbweaver@postgres:5432/verbweaver`
+  - `REDIS_URL`: `redis://redis:6379/0` (OAuth/Passkey/session state)
   - `SECRET_KEY`: set to a strong secret
   - Volumes `git-repos` and `uploads` are mounted under `./git-repos` and `./backend/uploads` (adjust as needed)
 
@@ -27,7 +28,7 @@ Services:
 - Or terminate TLS upstream (cloud load balancer), or use a companion like `nginx-proxy` + `letsencrypt-nginx-proxy-companion`.
 
 ## Migrations
-If/when DB migrations are added, run:
+The backend initializes tables automatically on startup. If you later adopt Alembic, run:
 ```
 docker compose --profile setup run migrate
 ```

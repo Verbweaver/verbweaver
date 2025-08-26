@@ -15,7 +15,7 @@ Most endpoints require authentication using JWT tokens.
 ### Obtain Token
 
 ```http
-POST /auth/login
+POST /api/v1/auth/login
 Content-Type: application/x-www-form-urlencoded
 
 username=user@example.com&password=yourpassword
@@ -44,7 +44,7 @@ Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc...
 
 #### Register User
 ```http
-POST /auth/register
+POST /api/v1/auth/register
 Content-Type: application/json
 
 {
@@ -56,13 +56,13 @@ Content-Type: application/json
 
 #### Login
 ```http
-POST /auth/login
+POST /api/v1/auth/login
 Content-Type: application/x-www-form-urlencoded
 ```
 
 #### Refresh Token
 ```http
-POST /auth/refresh
+POST /api/v1/auth/refresh
 Content-Type: application/json
 
 {
@@ -72,7 +72,7 @@ Content-Type: application/json
 
 #### Get Current User
 ```http
-GET /auth/me
+GET /api/v1/auth/me
 Authorization: Bearer {token}
 ```
 
@@ -80,7 +80,7 @@ Authorization: Bearer {token}
 
 #### List Projects
 ```http
-GET /projects
+GET /api/v1/projects
 Authorization: Bearer {token}
 ```
 
@@ -103,7 +103,7 @@ Response:
 
 #### Create Project
 ```http
-POST /projects
+POST /api/v1/projects
 Authorization: Bearer {token}
 Content-Type: application/json
 
@@ -118,13 +118,13 @@ Content-Type: application/json
 
 #### Get Project
 ```http
-GET /projects/{project_id}
+GET /api/v1/projects/{project_id}
 Authorization: Bearer {token}
 ```
 
 #### Update Project
 ```http
-PUT /projects/{project_id}
+PUT /api/v1/projects/{project_id}
 Authorization: Bearer {token}
 Content-Type: application/json
 
@@ -136,7 +136,7 @@ Content-Type: application/json
 
 #### Delete Project
 ```http
-DELETE /projects/{project_id}
+DELETE /api/v1/projects/{project_id}
 Authorization: Bearer {token}
 ```
 
@@ -144,7 +144,7 @@ Authorization: Bearer {token}
 
 #### Get Graph
 ```http
-GET /projects/{project_id}/graph
+GET /api/v1/projects/{project_id}/graph
 Authorization: Bearer {token}
 ```
 
@@ -173,7 +173,7 @@ Response:
 
 #### Create Node
 ```http
-POST /projects/{project_id}/graph/nodes
+POST /api/v1/projects/{project_id}/graph/nodes
 Authorization: Bearer {token}
 Content-Type: application/json
 
@@ -189,19 +189,19 @@ Content-Type: application/json
 
 #### Update Node
 ```http
-PUT /projects/{project_id}/graph/nodes/{node_id}
+PUT /api/v1/projects/{project_id}/graph/nodes/{node_id}
 Authorization: Bearer {token}
 ```
 
 #### Delete Node
 ```http
-DELETE /projects/{project_id}/graph/nodes/{node_id}
+DELETE /api/v1/projects/{project_id}/graph/nodes/{node_id}
 Authorization: Bearer {token}
 ```
 
 #### Create Edge
 ```http
-POST /projects/{project_id}/graph/edges
+POST /api/v1/projects/{project_id}/graph/edges
 Authorization: Bearer {token}
 Content-Type: application/json
 
@@ -217,13 +217,13 @@ Content-Type: application/json
 
 #### List Tasks
 ```http
-GET /projects/{project_id}/tasks
+GET /api/v1/projects/{project_id}/tasks
 Authorization: Bearer {token}
 ```
 
 #### Create Task
 ```http
-POST /projects/{project_id}/tasks
+POST /api/v1/projects/{project_id}/tasks
 Authorization: Bearer {token}
 Content-Type: application/json
 
@@ -238,13 +238,13 @@ Content-Type: application/json
 
 #### Update Task
 ```http
-PUT /projects/{project_id}/tasks/{task_id}
+PUT /api/v1/projects/{project_id}/tasks/{task_id}
 Authorization: Bearer {token}
 ```
 
 #### Move Task
 ```http
-PATCH /projects/{project_id}/tasks/{task_id}/move
+PATCH /api/v1/projects/{project_id}/tasks/{task_id}/move
 Authorization: Bearer {token}
 Content-Type: application/json
 
@@ -257,13 +257,13 @@ Content-Type: application/json
 
 #### Get File
 ```http
-GET /projects/{project_id}/files/{file_path}
+GET /api/v1/projects/{project_id}/files/{file_path}
 Authorization: Bearer {token}
 ```
 
 #### Save File
 ```http
-PUT /projects/{project_id}/files/{file_path}
+PUT /api/v1/projects/{project_id}/files/{file_path}
 Authorization: Bearer {token}
 Content-Type: application/json
 
@@ -274,7 +274,7 @@ Content-Type: application/json
 
 #### Delete File
 ```http
-DELETE /projects/{project_id}/files/{file_path}
+DELETE /api/v1/projects/{project_id}/files/{file_path}
 Authorization: Bearer {token}
 ```
 
@@ -282,13 +282,13 @@ Authorization: Bearer {token}
 
 #### Get Commits
 ```http
-GET /projects/{project_id}/git/commits
+GET /api/v1/projects/{project_id}/git/commits
 Authorization: Bearer {token}
 ```
 
 #### Create Commit
 ```http
-POST /projects/{project_id}/git/commit
+POST /api/v1/projects/{project_id}/git/commit
 Authorization: Bearer {token}
 Content-Type: application/json
 
@@ -300,7 +300,7 @@ Content-Type: application/json
 
 #### Get Diff
 ```http
-GET /projects/{project_id}/git/diff?from={commit1}&to={commit2}
+GET /api/v1/projects/{project_id}/git/diff?from={commit1}&to={commit2}
 Authorization: Bearer {token}
 ```
 
@@ -308,7 +308,7 @@ Authorization: Bearer {token}
 
 #### Export Project
 ```http
-POST /projects/{project_id}/export
+POST /api/v1/projects/{project_id}/compiler/compile
 Authorization: Bearer {token}
 Content-Type: application/json
 
@@ -334,7 +334,7 @@ Response:
 
 #### Check Export Status
 ```http
-GET /projects/{project_id}/export/{export_id}
+GET /api/v1/projects/{project_id}/compiler/status/{export_id}
 Authorization: Bearer {token}
 ```
 
@@ -343,7 +343,7 @@ Authorization: Bearer {token}
 Connect to receive real-time updates:
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8000/ws?token={token}');
+const ws = new WebSocket('ws://localhost:8000/ws/{project_id}?token={token}');
 
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
@@ -430,12 +430,8 @@ class VerbweaverAPI {
 
 ## OpenAPI Specification
 
-The full OpenAPI specification is available at:
+The OpenAPI spec and docs are available at:
 ```
 http://localhost:8000/api/v1/openapi.json
-```
-
-Interactive documentation:
-```
 http://localhost:8000/api/v1/docs
-``` 
+```
