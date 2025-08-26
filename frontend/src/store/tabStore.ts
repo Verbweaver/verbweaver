@@ -48,6 +48,7 @@ interface TabState {
   updateTab: (tabId: string, updates: Partial<Tab>) => void
   getActiveTab: () => Tab | null
   findEditorTab: (filePath: string) => Tab | undefined
+  setTabs: (tabs: Tab[], activeTabId?: string | null) => void
 }
 
 export const useTabStore = create<TabState>()(
@@ -132,6 +133,13 @@ export const useTabStore = create<TabState>()(
             activeTabId: newActiveId
           }
         })
+      },
+      
+      setTabs: (tabs: Tab[], activeId?: string | null) => {
+        set(() => ({
+          tabs: tabs.length > 0 ? tabs : [{ id: 'default-dashboard', path: '/dashboard', title: 'Dashboard', type: 'dashboard' }],
+          activeTabId: activeId ?? (tabs.length > 0 ? tabs[0].id : 'default-dashboard')
+        }))
       },
       
       setActiveTab: (tabId) => {

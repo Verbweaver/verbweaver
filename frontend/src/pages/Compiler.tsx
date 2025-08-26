@@ -172,9 +172,12 @@ function CompilerView() {
     console.log('[Compiler] Attempting to restore state from tab metadata')
     const restoreState = () => {
       const tab = getActiveTab()
-      console.log('[Compiler] Checking for saved state in tab:', tab?.type, tab?.metadata?.compilerState ? 'found' : 'not found')
-      if (tab?.type === 'compiler' && tab.metadata?.compilerState) {
-        const state = tab.metadata.compilerState
+      const stateMap: any = tab?.metadata?.compilerStateByProject
+      const legacy = (tab?.metadata as any)?.compilerState
+      const projId = currentProject?.id
+      const state = (projId && stateMap && stateMap[projId]) || (legacy && legacy.projectId && legacy.projectId === projId ? legacy : null)
+      console.log('[Compiler] Checking for saved state (by project):', tab?.type, state ? 'found' : 'not found', 'for project', projId)
+      if (tab?.type === 'compiler' && state) {
         console.log('[Compiler] Restoring state from tab:', {
           title: state.title,
           author: state.author,
@@ -219,7 +222,7 @@ function CompilerView() {
     // Small delay to ensure component is fully mounted
     const timeoutId = setTimeout(restoreState, 0)
     return () => clearTimeout(timeoutId)
-  }, [getActiveTab]) // Run when active tab changes only
+  }, [getActiveTab, currentProject?.id]) // Run when active tab or project changes
 
   // Save compiler state to tab metadata whenever state changes
   useEffect(() => {
@@ -231,38 +234,46 @@ function CompilerView() {
 
     
     const tab = getActiveTab()
-    if (tab?.type === 'compiler') {
-             console.log('[Compiler] Saving state to tab:', {
-         title,
-         author,
-         selectedNodes: selectedNodes.length,
-         orderedNodes: orderedNodes.length,
-         selectedFormat,
-         selectedTemplate,
-         expandedDirs: Array.from(expandedDirs)
-       })
-       updateTab(tab.id, {
-         metadata: {
-           ...tab.metadata,
-           compilerState: {
-             title,
-             author,
-             selectedNodes,
-             orderedNodes,
-             selectedFormat,
-             selectedTemplate,
-             customVariables,
-             nodeVariables,
-             docVars,
-             options,
-             expandedDirs: Array.from(expandedDirs)
-           }
-         }
-       })
+    const projectId = currentProject?.id
+    if (tab?.type === 'compiler' && projectId) {
+      console.log('[Compiler] Saving state to tab (per project):', {
+        projectId,
+        title,
+        author,
+        selectedNodes: selectedNodes.length,
+        orderedNodes: orderedNodes.length,
+        selectedFormat,
+        selectedTemplate,
+        expandedDirs: Array.from(expandedDirs)
+      })
+      const existing = (tab.metadata as any)?.compilerStateByProject || {}
+      const nextForProject = {
+        projectId,
+        title,
+        author,
+        selectedNodes,
+        orderedNodes,
+        selectedFormat,
+        selectedTemplate,
+        customVariables,
+        nodeVariables,
+        docVars,
+        options,
+        expandedDirs: Array.from(expandedDirs)
+      }
+      updateTab(tab.id, {
+        metadata: {
+          ...tab.metadata,
+          compilerStateByProject: {
+            ...existing,
+            [projectId]: nextForProject
+          }
+        }
+      })
     }
   }, [
     title, author, selectedNodes, orderedNodes, selectedFormat, selectedTemplate,
-    customVariables, nodeVariables, docVars, options, expandedDirs, isRestoring, hasInitialized
+    customVariables, nodeVariables, docVars, options, expandedDirs, isRestoring, hasInitialized, currentProject?.id
   ])
 
   // Load templates when format changes
