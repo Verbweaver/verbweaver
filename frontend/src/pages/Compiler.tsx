@@ -10,6 +10,7 @@ import NodeSelector from '../components/NodeSelector'
 import NodeOrderingPanel from '../components/NodeOrderingPanel'
 import { editorApi } from '../api/editorApi'
 import Tooltip from '../components/ui/Tooltip'
+import TableEditorDialog from '../components/TableEditorDialog'
 
 interface ExportFormat {
   id: string
@@ -119,6 +120,7 @@ function CompilerView() {
   const [isPrefillingNodeVars, setIsPrefillingNodeVars] = useState<boolean>(false)
   const [docVars, setDocVars] = useState<Record<string, any>>({})
   const [docVarErrors, setDocVarErrors] = useState<Record<string, string>>({})
+  const [openTableVar, setOpenTableVar] = useState<string | null>(null)
   const [templateMessages, setTemplateMessages] = useState<string[]>([])
   const [isCompiling, setIsCompiling] = useState(false)
   const [compileProgress, setCompileProgress] = useState(0)
@@ -343,7 +345,14 @@ function CompilerView() {
           const initDocVars: Record<string, any> = {}
           Object.keys(schema.variables).forEach((k) => {
             const def = schema.variables[k] || {}
-            if (def.type === 'array') initDocVars[k] = Array.isArray(def.default) ? [...def.default] : []
+            if (def.type === 'table') {
+              const cols = Array.isArray(def.columnsDefault) ? [...def.columnsDefault] : ['Task']
+              const types = def.columnTypes && typeof def.columnTypes === 'object' ? { ...def.columnTypes } : {}
+              const d = (def.default && typeof def.default === 'object') ? def.default : {}
+              const rows = Array.isArray((d as any).rows) ? (d as any).rows : []
+              initDocVars[k] = { columns: cols, types, rows }
+            }
+            else if (def.type === 'array') initDocVars[k] = Array.isArray(def.default) ? [...def.default] : []
             else if (def.type === 'number') initDocVars[k] = typeof def.default === 'number' ? def.default : ''
             else if (def.type === 'boolean') initDocVars[k] = typeof def.default === 'boolean' ? def.default : false
             else initDocVars[k] = def.default ?? ''
@@ -981,6 +990,24 @@ function CompilerView() {
                             </div>
                             {docVarErrors[key] && <div className="text-[10px] text-destructive mt-1 px-2">{docVarErrors[key]}</div>}
                           </div>
+                        ) : def?.type === 'table' ? (
+                          <div className="border rounded p-2">
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs text-muted-foreground">
+                                {Array.isArray(docVars[key]?.columns) ? `${docVars[key].columns.length} columns` : '0 columns'} · {Array.isArray(docVars[key]?.rows) ? `${docVars[key].rows.length} rows` : '0 rows'}
+                              </div>
+                              <button className="px-2 py-1 border rounded text-xs" onClick={()=>setOpenTableVar(key)}>Edit Table…</button>
+                            </div>
+                            <TableEditorDialog
+                              isOpen={openTableVar === key}
+                              title={def?.label || key}
+                              varName={key}
+                              value={docVars[key] || { columns: Array.isArray(def?.columnsDefault)? def.columnsDefault : ['Task'], rows: [] }}
+                              onChange={(val)=>setDocVars(prev=>({ ...prev, [key]: val }))}
+                              onClose={()=>setOpenTableVar(null)}
+                              isElectron={typeof window !== 'undefined' && (window as any).electronAPI !== undefined}
+                            />
+                          </div>
                         ) : (
                           <div>
                             {Array.isArray(def?.enum) ? (
@@ -1113,6 +1140,63 @@ function CompilerView() {
 
           {/* Compile Button and Progress */}
           <div className="space-y-4">
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const payload = {
+                    title,
+                    author,
+                    selectedNodes,
+                    orderedNodes,
+                    selectedFormat,
+                    selectedTemplate,
+                    customVariables,
+                    nodeVariables,
+                    docVars,
+                    options
+                  }
+                  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = 'compiler-config.json'
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  URL.revokeObjectURL(url)
+                }}
+                className="px-3 py-2 border border-input rounded-md"
+              >
+                Save Configuration
+              </button>
+              <label className="px-3 py-2 border border-input rounded-md cursor-pointer">
+                Load Configuration
+                <input type="file" accept="application/json,.json" className="hidden" onChange={async (e)=>{
+                  const f = e.target.files?.[0]
+                  if (!f) return
+                  try {
+                    const text = await f.text()
+                    const cfg = JSON.parse(text)
+                    if (cfg.title !== undefined) setTitle(cfg.title)
+                    if (cfg.author !== undefined) setAuthor(cfg.author)
+                    if (Array.isArray(cfg.selectedNodes)) setSelectedNodes(cfg.selectedNodes)
+                    if (Array.isArray(cfg.orderedNodes)) setOrderedNodes(cfg.orderedNodes)
+                    if (typeof cfg.selectedFormat === 'string') setSelectedFormat(cfg.selectedFormat)
+                    if (typeof cfg.selectedTemplate === 'string') setSelectedTemplate(cfg.selectedTemplate)
+                    if (Array.isArray(cfg.customVariables)) setCustomVariables(cfg.customVariables)
+                    if (cfg.nodeVariables && typeof cfg.nodeVariables === 'object') setNodeVariables(cfg.nodeVariables)
+                    if (cfg.docVars && typeof cfg.docVars === 'object') setDocVars(cfg.docVars)
+                    if (cfg.options && typeof cfg.options === 'object') setOptions(prev => ({ ...prev, ...cfg.options }))
+                  } catch (err) {
+                    console.error('Failed to load configuration', err)
+                    toast.error('Invalid configuration file')
+                  } finally {
+                    // reset input so same file can be selected again later
+                    e.currentTarget.value = ''
+                  }
+                }} />
+              </label>
+            </div>
             <button
               onClick={handleCompile}
               disabled={isCompiling || orderedNodes.length === 0}
