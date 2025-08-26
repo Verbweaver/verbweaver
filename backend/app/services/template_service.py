@@ -143,6 +143,15 @@ class TemplateService:
                 if any(keyword in clean_var for keyword in ['for', 'if', 'endif', 'endfor']):
                     continue
                 
+                # Skip precomputed helper/convenience variables for table types
+                try:
+                    if re.match(r'^[A-Za-z_]\w*_(markdown|headerSeparator|headerLine|rows|columns)$', clean_var):
+                        continue
+                    if re.match(r'^[A-Za-z_]\w*\.(markdown|headerSeparator|headerLine|rows|columns)$', clean_var):
+                        continue
+                except Exception:
+                    pass
+
                 # Add to custom variables if not already present
                 if clean_var not in custom_variables:
                     custom_variables.append(clean_var)
