@@ -81,6 +81,19 @@ function EditorView() {
   })
   const [createLinkOpen, setCreateLinkOpen] = useState(false)
 
+  // Robust YAML frontmatter detection (handles BOM and leading blank lines)
+  const FRONTMATTER_RE = /^\uFEFF?(?:\s*\r?\n)*---\s*[\r\n][\s\S]*?[\r\n]---\s*(?:[\r\n]|$)/
+  // Keep the latest detected frontmatter so we can re-inject it when hiding metadata during edits
+  const frontmatterRef = useRef<string>('')
+  useEffect(() => {
+    try {
+      const match = (content || '').match(FRONTMATTER_RE)
+      frontmatterRef.current = match ? match[0] : ''
+    } catch {
+      frontmatterRef.current = ''
+    }
+  }, [content])
+
   // Resolve current node path (project-relative in Electron; API path in web)
   const resolvedNodePath = useMemo(() => {
     if (isElectron) {
@@ -648,7 +661,7 @@ function EditorView() {
       const filename = localFileName || currentFile?.name || ''
       if (!filename.endsWith('.md')) return
              try {
-         const source = hideMetadata ? content.replace(/^---\s*[\s\S]*?\n---\s*\n?/, '') : content
+         const source = hideMetadata ? (content || '').replace(FRONTMATTER_RE, '') : content
          // Compute project-relative file path for resource resolution
          let projectRel: string | undefined
          if (isElectron && localFilePath && currentProjectPath) {
@@ -1051,8 +1064,16 @@ function EditorView() {
             />
           ) : (
             <Editor
-            value={hideMetadata ? content.replace(/^---\s*[\s\S]*?\n---\s*\n?/, '') : content}
-            onChange={handleEditorChange}
+            value={hideMetadata ? ((content || '').replace(FRONTMATTER_RE, '')) : content}
+            onChange={(value) => {
+              if (value === undefined) return
+              if (hideMetadata) {
+                const header = frontmatterRef.current || ''
+                handleEditorChange(header + value)
+              } else {
+                handleEditorChange(value)
+              }
+            }}
             language="markdown"
             theme={theme === 'dark' ? 'vs-dark' : 'light'}
             options={{
