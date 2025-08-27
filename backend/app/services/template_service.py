@@ -415,25 +415,41 @@ class TemplateService:
                     # Fallback to naive replacement if regex compilation fails for any reason
                     processed_content = processed_content.replace(f'${key}$', str(value))
 
-        # Top-level conditionals like $if(toc)$ ... $endif$, plus $if(nodes)$ and $ifnot(nodes)$
+        # Top-level conditionals: handle ANY $if(expr)$/$ifnot(expr)$ that does NOT start with 'nodes.'
+        # Supports dotted paths into data (e.g., 'raci.rows', 'summary')
         def compute_truthy(value: Any) -> bool:
             if isinstance(value, list):
                 return len(value) > 0
             return bool(value)
 
-        def replace_top_level_if(var_name: str, text: str) -> str:
-            pattern = re.compile(rf"\$if\({re.escape(var_name)}\)\$(.*?)\$endif\$", re.DOTALL)
-            truthy = compute_truthy(data.get(var_name))
-            return pattern.sub(lambda m: m.group(1) if truthy else '', text)
+        def apply_generic_conditionals(text: str) -> str:
+            try:
+                if_pat = re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
+                ifnot_pat = re.compile(r"\$ifnot\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
 
-        def replace_top_level_ifnot(var_name: str, text: str) -> str:
-            pattern = re.compile(rf"\$ifnot\({re.escape(var_name)}\)\$(.*?)\$endif\$", re.DOTALL)
-            truthy = compute_truthy(data.get(var_name))
-            return pattern.sub(lambda m: m.group(1) if not truthy else '', text)
+                def if_repl(m):
+                    expr = (m.group(1) or '').strip()
+                    # Leave node-scoped expressions for node processing
+                    if expr.startswith('nodes.'):
+                        return m.group(0)
+                    val = resolve_path(expr, data)
+                    return m.group(2) if compute_truthy(val) else ''
 
-        for cond in ['toc', 'includeMetadata', 'include_metadata', 'nodes']:
-            processed_content = replace_top_level_if(cond, processed_content)
-            processed_content = replace_top_level_ifnot(cond, processed_content)
+                def ifnot_repl(m):
+                    expr = (m.group(1) or '').strip()
+                    if expr.startswith('nodes.'):
+                        return m.group(0)
+                    val = resolve_path(expr, data)
+                    return m.group(2) if not compute_truthy(val) else ''
+
+                text = if_pat.sub(if_repl, text)
+                text = ifnot_pat.sub(ifnot_repl, text)
+                return text
+            except Exception:
+                # Fail-safe: return text unchanged on any error
+                return text
+
+        processed_content = apply_generic_conditionals(processed_content)
 
         # Helper to resolve dotted path against arbitrary data dict
         def resolve_path(expr: str, ctx: Dict[str, Any]) -> Any:
