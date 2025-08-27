@@ -415,6 +415,16 @@ class TemplateService:
                     # Fallback to naive replacement if regex compilation fails for any reason
                     processed_content = processed_content.replace(f'${key}$', str(value))
 
+        # Helper to resolve dotted path against arbitrary data dict
+        def resolve_path(expr: str, ctx: Dict[str, Any]) -> Any:
+            cur: Any = ctx
+            for part in str(expr).split('.') if expr else []:
+                if isinstance(cur, dict) and part in cur:
+                    cur = cur[part]
+                else:
+                    return None
+            return cur
+
         # Top-level conditionals: handle ANY $if(expr)$/$ifnot(expr)$ that does NOT start with 'nodes.'
         # Supports dotted paths into data (e.g., 'raci.rows', 'summary')
         def compute_truthy(value: Any) -> bool:
@@ -450,16 +460,6 @@ class TemplateService:
                 return text
 
         processed_content = apply_generic_conditionals(processed_content)
-
-        # Helper to resolve dotted path against arbitrary data dict
-        def resolve_path(expr: str, ctx: Dict[str, Any]) -> Any:
-            cur: Any = ctx
-            for part in str(expr).split('.') if expr else []:
-                if isinstance(cur, dict) and part in cur:
-                    cur = cur[part]
-                else:
-                    return None
-            return cur
 
         # Generic top-level loops for document variables: $for(var)$...$endfor$
         # Supports arrays of primitives/objects and dicts.
