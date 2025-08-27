@@ -48,7 +48,9 @@ nodeVariables:
 
 ## Executive Summary
 
+$if(summary)$
 $summary$
+$endif$
 
 ## Document Changelog
 

@@ -67,10 +67,6 @@
 - **Edit Task**: Double-click card
 - **Quick Status**: Right-click → Change Status
 
-## Command Line
-
-The desktop app does not include a separate CLI at this time. Use the GUI for common actions. Automation is available via the server REST API.
-
 ## File Locations
 
 ### Windows
@@ -141,10 +137,3 @@ The desktop app does not include a separate CLI at this time. Use the GUI for co
 ### Troubleshooting
 - **Check Logs**: Help → Show Logs
 - **Clear Cache**: Help → Clear Cache
-
-## Need Help?
-
-- **In-app Help**: Press `F1`
-- **Documentation**: Help → Documentation
-- **Report Issue**: Help → Report Issue
-- **Community**: [Discord](https://discord.gg/verbweaver) 
