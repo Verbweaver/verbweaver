@@ -310,22 +310,11 @@ async function stopBackend(): Promise<void> {
     
     try {
       if (process.platform === 'win32' && processToKill.pid) {
-        // Prefer terminating the Job (kills all associated processes)
-        try {
-          if (backendJobHandle) {
-            terminateWindowsJob(backendJobHandle);
-            // Close after termination
-            closeWindowsHandle(backendJobHandle);
-            backendJobHandle = null;
-          }
-        } catch (e) {
-          console.warn('TerminateJobObject failed, falling back to taskkill:', e);
-          // Fallbacks to ensure cleanup
-          const killerTree = spawn('taskkill', ['/pid', processToKill.pid.toString(), '/f', '/t']);
-          killerTree.on('error', () => { try { processToKill.kill(); } catch {} });
-          const killerImage = spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']);
-          killerImage.on('error', () => {});
-        }
+        // Ensure entire tree is terminated by PID and image name
+        const killerTree = spawn('taskkill', ['/pid', processToKill.pid.toString(), '/f', '/t']);
+        killerTree.on('error', () => { try { processToKill.kill(); } catch {} });
+        const killerImage = spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']);
+        killerImage.on('error', () => {});
       } else {
         try { processToKill.kill('SIGTERM'); } catch {}
         // As a safety, force kill after short grace period if still alive
