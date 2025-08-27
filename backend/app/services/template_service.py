@@ -402,10 +402,18 @@ class TemplateService:
         
         processed_content = include_pattern.sub(replace_include, processed_content)
 
-        # Replace simple variables first
+        # Replace simple variables first, but only when they appear as standalone tokens.
+        # This avoids replacing inside node-scoped placeholders like `$nodes.title$`.
         for key, value in data.items():
             if isinstance(value, (str, bool, int, float)):
-                processed_content = processed_content.replace(f'${key}$', str(value))
+                try:
+                    # Match `$key$` not immediately preceded by an identifier character or dot.
+                    # Example: will match `$title$` in text, but NOT inside `$nodes.title$`.
+                    pattern = re.compile(rf"(?<![A-Za-z0-9_\.])\${re.escape(str(key))}\$")
+                    processed_content = pattern.sub(str(value), processed_content)
+                except Exception:
+                    # Fallback to naive replacement if regex compilation fails for any reason
+                    processed_content = processed_content.replace(f'${key}$', str(value))
 
         # Top-level conditionals like $if(toc)$ ... $endif$, plus $if(nodes)$ and $ifnot(nodes)$
         def compute_truthy(value: Any) -> bool:
@@ -506,7 +514,8 @@ class TemplateService:
     
     def _process_nodes_array(self, template: str, nodes: List[Dict[str, Any]]) -> str:
         """Process all $for(nodes)$ ... $endfor$ loops in the template (zero or more occurrences)."""
-        pattern = re.compile(r'\$for\(nodes\)\$(.*)\$endfor\$', re.DOTALL)
+        # Use non-greedy matching so multiple $for(nodes)$ blocks are processed independently
+        pattern = re.compile(r'\$for\(nodes\)\$(.*?)\$endfor\$', re.DOTALL)
         out_parts: List[str] = []
         idx = 0
         while True:

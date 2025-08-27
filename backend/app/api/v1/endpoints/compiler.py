@@ -249,12 +249,25 @@ class ContentAggregator:
                     with open(full_path, 'r', encoding='utf-8') as f:
                         content = f.read()
                     
-                    # Extract metadata and content
-                    title = self._extract_title(content) or os.path.basename(path).replace('.md', '')
-                    clean_content = self._clean_content(content, options.get('includeMetadata', True))
-                    
-                    # Get node metadata
+                    # Extract metadata first so we can prefer frontmatter title
                     metadata = self._extract_metadata(content)
+
+                    # Determine display title with sensible precedence:
+                    # 1) explicit frontmatter title
+                    # 2) first H1 heading that is not a template placeholder (e.g. "$title$")
+                    # 3) filename stem
+                    fm_title = None
+                    try:
+                        if isinstance(metadata, dict):
+                            fm_title = metadata.get('title')
+                    except Exception:
+                        fm_title = None
+
+                    extracted_title = self._extract_title(content)
+                    title = (fm_title or extracted_title or os.path.basename(path).replace('.md', ''))
+
+                    # Prepare content (optionally include metadata rendering)
+                    clean_content = self._clean_content(content, options.get('includeMetadata', True))
                     
                     # Get attachments
                     attachments = []
@@ -484,7 +497,16 @@ class ContentAggregator:
         lines = content.split('\n')
         for line in lines:
             if line.startswith('# '):
-                return line[2:].strip()
+                heading_text = line[2:].strip()
+                # Ignore common placeholder headings like "$title$" or "$nodes.*$"
+                try:
+                    import re as _re
+                    if _re.fullmatch(r"\$[A-Za-z_][A-Za-z0-9_\.]*\$", heading_text):
+                        # Placeholder, not a real title
+                        return None
+                except Exception:
+                    pass
+                return heading_text
         return None
     
     def _clean_content(self, content: str, include_metadata: bool = True) -> str:
