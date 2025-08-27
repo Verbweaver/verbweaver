@@ -10,7 +10,7 @@ import {
 import { join } from 'path';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, execFile } from 'child_process';
 import { autoUpdater } from 'electron-updater';
 import Store from 'electron-store';
 import * as net from 'net';
@@ -331,6 +331,8 @@ async function stopBackend(): Promise<void> {
         if (backendServerPid) {
           try { spawn('taskkill', ['/pid', String(backendServerPid), '/f']); } catch {}
         }
+        // Enumerate any remaining processes by name/command line and kill them
+        killAllBackendsWindows().finally(() => {});
       } else {
         try { processToKill.kill('SIGTERM'); } catch {}
         // As a safety, force kill after short grace period if still alive
@@ -2628,6 +2630,7 @@ app.on('before-quit', () => {
     if (backendServerPid) {
       try { setTimeout(() => { try { spawn('taskkill', ['/pid', String(backendServerPid), '/f']); } catch {} }, 700); } catch {}
     }
+    try { setTimeout(() => { killAllBackendsWindows().catch(()=>{}); }, 1200); } catch {}
   }
 });
 
@@ -2635,8 +2638,31 @@ app.on('will-quit', () => { try { void stopBackend(); } catch {} });
 app.on('quit', () => {
   if (process.platform === 'win32') {
     try { spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']); } catch {}
+    try { killAllBackendsWindows().catch(()=>{}); } catch {}
   }
 });
+
+// Enumerate all PIDs of verbweaver-backend.exe (and any with command line containing it) and kill them
+async function killAllBackendsWindows(): Promise<void> {
+  if (process.platform !== 'win32') return;
+  const ps = 'Get-CimInstance Win32_Process | Where-Object { $_.Name -eq "verbweaver-backend.exe" -or ($_.CommandLine -like "*verbweaver-backend*") } | Select-Object -ExpandProperty ProcessId';
+  const getPids = (): Promise<number[]> => new Promise((resolve) => {
+    try {
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true }, (err, stdout) => {
+        if (err) { resolve([]); return; }
+        const lines = String(stdout || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        const ids = lines.map(s => parseInt(s, 10)).filter(n => Number.isFinite(n));
+        resolve(Array.from(new Set(ids)));
+      });
+    } catch { resolve([]); }
+  });
+
+  const pids = await getPids();
+  if (!pids.length) return;
+  for (const pid of pids) {
+    try { spawn('taskkill', ['/pid', String(pid), '/f']); } catch {}
+  }
+}
 
 // Extra safety: stop backend on process exit or termination signals
 process.on('exit', () => { try { void stopBackend(); } catch {} });
