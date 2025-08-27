@@ -47,6 +47,8 @@ const store = new Store({
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
 let backendPort: number | null = null;
+// Track uvicorn child pid if printed ("Started server process [PID]") so we can kill it explicitly
+let backendServerPid: number | null = null;
 // Windows Job object handle to ensure backend and its children die together
 // Note: previous Job-object approach removed due to build issues
 
@@ -250,6 +252,10 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     currentProcess.stdout?.on('data', (data) => {
       console.log(`Backend: ${data}`);
       mainWindow?.webContents.send('backend:log', data.toString());
+      try {
+        const m = /Started server process \[(\d+)\]/.exec(String(data));
+        if (m && m[1]) backendServerPid = parseInt(m[1], 10);
+      } catch {}
       
       if (data.toString().includes('Uvicorn running on')) {
         // Add a small delay to ensure the server is fully started
@@ -266,6 +272,10 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     currentProcess.stderr?.on('data', (data) => {
       console.error(`Backend Error: ${data}`);
       mainWindow?.webContents.send('backend:log', `ERROR: ${data}`);
+      try {
+        const m = /Started server process \[(\d+)\]/.exec(String(data));
+        if (m && m[1]) backendServerPid = parseInt(m[1], 10);
+      } catch {}
       
       // Also check stderr for the startup message
       if (data.toString().includes('Uvicorn running on')) {
@@ -288,6 +298,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       console.log(`Backend process exited with code ${code}`);
       backendProcess = null;
       backendPort = null;
+      backendServerPid = null;
     });
   });
 }
@@ -305,6 +316,7 @@ async function stopBackend(): Promise<void> {
     processToKill.on('exit', () => {
       backendProcess = null;
       backendPort = null;
+      backendServerPid = null;
       resolve();
     });
     
@@ -315,6 +327,10 @@ async function stopBackend(): Promise<void> {
         killerTree.on('error', () => { try { processToKill.kill(); } catch {} });
         const killerImage = spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']);
         killerImage.on('error', () => {});
+        // If we discovered the uvicorn child pid, kill that explicitly as well
+        if (backendServerPid) {
+          try { spawn('taskkill', ['/pid', String(backendServerPid), '/f']); } catch {}
+        }
       } else {
         try { processToKill.kill('SIGTERM'); } catch {}
         // As a safety, force kill after short grace period if still alive
@@ -2608,6 +2624,10 @@ app.on('before-quit', () => {
   if (process.platform === 'win32') {
     try { setTimeout(() => { try { spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']); } catch {} }, 500); } catch {}
     try { setTimeout(() => { try { spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']); } catch {} }, 1500); } catch {}
+    // Also kill by discovered server pid if present
+    if (backendServerPid) {
+      try { setTimeout(() => { try { spawn('taskkill', ['/pid', String(backendServerPid), '/f']); } catch {} }, 700); } catch {}
+    }
   }
 });
 
