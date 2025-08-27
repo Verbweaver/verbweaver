@@ -339,48 +339,7 @@ function CompilerView() {
     
     if (templatePath && currentProject) {
       try {
-        const templateContent: any = await compilerApi.getTemplateContent(currentProject.id, templatePath)
-        const schema = (templateContent && (templateContent as any).schema) || null
-        setTemplateSchema(schema)
-        setTemplateMessages(Array.isArray((templateContent as any).messages) ? (templateContent as any).messages : [])
-        if (templateContent.custom_variables.length > 0) {
-          const filtered = templateContent.custom_variables.filter((name: string) => !(name === 'it' || String(name).startsWith('it.')))
-          setCustomVariables(
-            filtered.map((name: string) => ({ name, value: '' }))
-          )
-        } else {
-          setCustomVariables([])
-        }
-        // Initialize docVars from schema.variables
-        if (schema && schema.variables) {
-          const initDocVars: Record<string, any> = {}
-          Object.keys(schema.variables).forEach((k) => {
-            const def = schema.variables[k] || {}
-            if (def.type === 'table') {
-              const cols = Array.isArray(def.columnsDefault) ? [...def.columnsDefault] : ['Task']
-              const types = def.columnTypes && typeof def.columnTypes === 'object' ? { ...def.columnTypes } : {}
-              const d = (def.default && typeof def.default === 'object') ? def.default : {}
-              const rows = Array.isArray((d as any).rows) ? (d as any).rows : []
-              initDocVars[k] = { columns: cols, types, rows }
-            }
-            else if (def.type === 'array') initDocVars[k] = Array.isArray(def.default) ? [...def.default] : []
-            else if (def.type === 'number') initDocVars[k] = typeof def.default === 'number' ? def.default : ''
-            else if (def.type === 'boolean') initDocVars[k] = typeof def.default === 'boolean' ? def.default : false
-            else initDocVars[k] = def.default ?? ''
-          })
-          setDocVars(initDocVars)
-        } else {
-          setDocVars({})
-        }
-        // Initialize nodeVariables grid from schema.nodeVariables if present
-        const nv = ((templateContent as any).schema && (templateContent as any).schema.nodeVariables) || {}
-        if (Object.keys(nv).length > 0 && orderedNodes.length > 0) {
-          const init: Record<string, Record<string, any>> = {}
-          for (const p of orderedNodes) init[p] = {}
-          setNodeVariables(init)
-        } else {
-          setNodeVariables({})
-        }
+        await fetchTemplateSchema(templatePath, false)
       } catch (error) {
         console.error('Failed to load template content:', error)
         setCustomVariables([])
@@ -394,6 +353,75 @@ function CompilerView() {
       setDocVars({})
     }
   }
+
+  // Fetch and apply template schema; when preserveExisting is true, do not clobber existing values.
+  const fetchTemplateSchema = async (templatePath: string, preserveExisting: boolean) => {
+    if (!currentProject || !templatePath) return
+    const templateContent: any = await compilerApi.getTemplateContent(currentProject.id, templatePath)
+    const schema = (templateContent && (templateContent as any).schema) || null
+    setTemplateSchema(schema)
+    setTemplateMessages(Array.isArray((templateContent as any).messages) ? (templateContent as any).messages : [])
+
+    // Merge/initialize custom variables by name
+    const names: string[] = (templateContent.custom_variables || []).filter((name: string) => !(name === 'it' || String(name).startsWith('it.')))
+    if (names.length > 0) {
+      if (preserveExisting) {
+        const byName = new Map(customVariables.map(cv => [cv.name, cv.value]))
+        setCustomVariables(names.map(n => ({ name: n, value: (byName.get(n) ?? '') as string })))
+      } else {
+        setCustomVariables(names.map((name: string) => ({ name, value: '' })))
+      }
+    } else if (!preserveExisting) {
+      setCustomVariables([])
+    }
+
+    // Initialize or merge document variables from schema
+    if (schema && schema.variables) {
+      const initDocVars: Record<string, any> = {}
+      Object.keys(schema.variables).forEach((k) => {
+        const def = schema.variables[k] || {}
+        if (def.type === 'table') {
+          const cols = Array.isArray(def.columnsDefault) ? [...def.columnsDefault] : ['Task']
+          const types = def.columnTypes && typeof def.columnTypes === 'object' ? { ...def.columnTypes } : {}
+          const d = (def.default && typeof def.default === 'object') ? def.default : {}
+          const rows = Array.isArray((d as any).rows) ? (d as any).rows : []
+          initDocVars[k] = { columns: cols, types, rows }
+        }
+        else if (def.type === 'array') initDocVars[k] = Array.isArray(def.default) ? [...def.default] : []
+        else if (def.type === 'number') initDocVars[k] = typeof def.default === 'number' ? def.default : ''
+        else if (def.type === 'boolean') initDocVars[k] = typeof def.default === 'boolean' ? def.default : false
+        else initDocVars[k] = def.default ?? ''
+      })
+      if (preserveExisting) {
+        // Keep existing values; backfill only missing keys
+        const merged: Record<string, any> = { ...initDocVars, ...(docVars || {}) }
+        setDocVars(merged)
+      } else {
+        setDocVars(initDocVars)
+      }
+    } else if (!preserveExisting) {
+      setDocVars({})
+    }
+
+    // Node variables grid: only initialize when not preserving (to avoid clobber)
+    const nv = ((templateContent as any).schema && (templateContent as any).schema.nodeVariables) || {}
+    if (!preserveExisting) {
+      if (Object.keys(nv).length > 0 && orderedNodes.length > 0) {
+        const init: Record<string, Record<string, any>> = {}
+        for (const p of orderedNodes) init[p] = {}
+        setNodeVariables(init)
+      } else {
+        setNodeVariables({})
+      }
+    }
+  }
+
+  // When a template is already selected (e.g., returning to tab) but schema is not loaded, fetch it without clobbering values
+  useEffect(() => {
+    if (currentProject && selectedTemplate && !templateSchema) {
+      fetchTemplateSchema(selectedTemplate, true).catch(() => {})
+    }
+  }, [currentProject?.id, selectedTemplate])
 
   // Prefill nodeVariables from node frontmatter based on schema.nodeVariables.path
   useEffect(() => {
