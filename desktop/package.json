@@ -26,8 +26,6 @@
   },
   "dependencies": {
     "@verbweaver/shared": "file:../shared",
-    "ffi-napi": "^4.0.3",
-    "ref-napi": "^3.0.3",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.7",
     "gray-matter": "^4.0.3"
