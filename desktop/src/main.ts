@@ -2590,7 +2590,7 @@ app.on('window-all-closed', () => {
 });
 
 // Ensure backend process is stopped when the app is quitting
-app.on('before-quit', (e) => {
+app.on('before-quit', () => {
   // Attempt graceful shutdown; prevent default quit until we signal cleanup started
   // but don't block indefinitely. We'll allow Electron to proceed immediately after triggering stop.
   try { void stopBackend(); } catch {}
