@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body, Response
 from typing import Dict, Any, Optional, List
 from app.services.template_service import TemplateService
 from pydantic import BaseModel
+import yaml
 
 router = APIRouter()
 
@@ -53,6 +54,49 @@ async def preview_markdown(request: PreviewRequest):
             return _re.sub(r'(!\[[^\]]*\]\()([^)]*)(\))', repl, md)
 
         normalized_markdown = _rewrite_img_paths(request.markdown_text)
+
+        # Simple variable preprocessing so $title$ (and friends) work in Preview
+        # Extract frontmatter from the provided markdown_text itself
+        def _extract_frontmatter(md: str) -> Dict[str, Any]:
+            try:
+                m = _re.match(r'^---\s*\n(.*?)\n---\s*\n', md, _re.DOTALL)
+                if not m:
+                    return {}
+                data = yaml.safe_load(m.group(1)) or {}
+                return data if isinstance(data, dict) else {}
+            except Exception:
+                return {}
+
+        fm = _extract_frontmatter(request.markdown_text)
+        vars_map: Dict[str, Any] = {}
+        for k in ('title', 'author', 'date'):
+            v = fm.get(k)
+            if isinstance(v, (str, int, float, bool)):
+                vars_map[k] = v
+
+        # Replace $var$ when standalone (avoid nodes-scoped syntax)
+        if vars_map:
+            for key, value in vars_map.items():
+                try:
+                    pat = _re.compile(rf"(?<![A-Za-z0-9_\.])\${_re.escape(str(key))}\$")
+                    normalized_markdown = pat.sub(str(value), normalized_markdown)
+                except Exception:
+                    normalized_markdown = normalized_markdown.replace(f'${key}$', str(value))
+
+            # Minimal support for $if(var)$...$endif$ used by templates
+            def _truthy(x: Any) -> bool:
+                return bool(x)
+            try:
+                if_pat = _re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", _re.DOTALL)
+                def _if_repl(m):
+                    expr = (m.group(1) or '').strip()
+                    if expr.startswith('nodes.'):
+                        return m.group(0)
+                    val = vars_map.get(expr)
+                    return m.group(2) if _truthy(val) else ''
+                normalized_markdown = if_pat.sub(_if_repl, normalized_markdown)
+            except Exception:
+                pass
 
         # Create temporary markdown file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.md', 
