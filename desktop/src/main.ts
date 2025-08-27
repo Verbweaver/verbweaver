@@ -2604,9 +2604,19 @@ app.on('before-quit', () => {
   // Attempt graceful shutdown; prevent default quit until we signal cleanup started
   // but don't block indefinitely. We'll allow Electron to proceed immediately after triggering stop.
   try { void stopBackend(); } catch {}
+  // Extra safety on Windows: issue image-based kill a moment later
+  if (process.platform === 'win32') {
+    try { setTimeout(() => { try { spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']); } catch {} }, 500); } catch {}
+    try { setTimeout(() => { try { spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']); } catch {} }, 1500); } catch {}
+  }
 });
 
 app.on('will-quit', () => { try { void stopBackend(); } catch {} });
+app.on('quit', () => {
+  if (process.platform === 'win32') {
+    try { spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']); } catch {}
+  }
+});
 
 // Extra safety: stop backend on process exit or termination signals
 process.on('exit', () => { try { void stopBackend(); } catch {} });
