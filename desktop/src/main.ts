@@ -170,6 +170,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
         throw new Error(`Bundled backend binary not found at ${binaryPath}`);
       }
 
+      // Spawn bundled backend directly (no shell) so we track the real PID and can terminate it reliably
       backendProcess = spawn(binaryPath, [], {
         env: {
           ...process.env,
@@ -186,7 +187,9 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
             'file://'
           ])
         },
-        shell: process.platform === 'win32'
+        shell: false,
+        windowsHide: true,
+        detached: false
       });
     } else {
       // Development: try to use a local Python + uvicorn
@@ -299,9 +302,13 @@ async function stopBackend(): Promise<void> {
     
     try {
       if (process.platform === 'win32' && processToKill.pid) {
-        spawn('taskkill', ['/pid', processToKill.pid.toString(), '/f', '/t']);
+        // Ensure entire tree is terminated; fallback to SIGKILL if needed
+        const killer = spawn('taskkill', ['/pid', processToKill.pid.toString(), '/f', '/t']);
+        killer.on('error', () => { try { processToKill.kill(); } catch {} });
       } else {
-        processToKill.kill('SIGTERM');
+        try { processToKill.kill('SIGTERM'); } catch {}
+        // As a safety, force kill after short grace period if still alive
+        setTimeout(() => { try { processToKill.kill('SIGKILL'); } catch {} }, 3000);
       }
     } catch (error) {
       console.error('Error stopping backend:', error);
@@ -2583,27 +2590,18 @@ app.on('window-all-closed', () => {
 });
 
 // Ensure backend process is stopped when the app is quitting
-app.on('before-quit', () => {
-  // Fire and forget; stopBackend handles platform-specific termination
-  void stopBackend();
+app.on('before-quit', (e) => {
+  // Attempt graceful shutdown; prevent default quit until we signal cleanup started
+  // but don't block indefinitely. We'll allow Electron to proceed immediately after triggering stop.
+  try { void stopBackend(); } catch {}
 });
 
-app.on('will-quit', () => {
-  void stopBackend();
-});
+app.on('will-quit', () => { try { void stopBackend(); } catch {} });
 
 // Extra safety: stop backend on process exit or termination signals
-process.on('exit', () => {
-  void stopBackend();
-});
-process.on('SIGINT', () => {
-  void stopBackend();
-  process.exit(0);
-});
-process.on('SIGTERM', () => {
-  void stopBackend();
-  process.exit(0);
-});
+process.on('exit', () => { try { void stopBackend(); } catch {} });
+process.on('SIGINT', () => { try { void stopBackend(); } catch {} process.exit(0); });
+process.on('SIGTERM', () => { try { void stopBackend(); } catch {} process.exit(0); });
 
 // Dependency checker service
 interface DependencyCheck {
