@@ -2517,9 +2517,18 @@ Start your content here.
       const docsPath = path.join(app.getAppPath(), '..', 'docs');
       console.log(`Listing docs from: ${docsPath}`);
       
-      const result = await listDocsRecursive(docsPath);
-      console.log(`Found ${JSON.stringify(result, null, 2)} docs`);
-      return result;
+      const all = await listDocsRecursive(docsPath);
+      console.log(`Found ${JSON.stringify(all, null, 2)} docs`);
+      // Flatten only top-level files; filter out directories for the left list UI
+      const filesOnly: Array<{ name: string; path: string; type: 'file' }> = [];
+      const walk = (nodes: DocFile[]) => {
+        for (const n of nodes) {
+          if (n.type === 'file') filesOnly.push({ name: n.name, path: n.path, type: 'file' });
+          if (n.children && n.children.length) walk(n.children);
+        }
+      };
+      walk(all as any);
+      return filesOnly;
     } catch (error) {
       console.error('Failed to list docs:', error);
       throw error;
@@ -2532,6 +2541,12 @@ Start your content here.
       const docsPath = path.join(app.getAppPath(), '..', 'docs');
       const filePath = path.join(docsPath, fileName);
       console.log(`[main] Reading doc file: ${filePath}`);
+      
+      // Guard against directories
+      const stat = await fs.stat(filePath);
+      if (stat.isDirectory()) {
+        throw new Error('Requested path is a directory.');
+      }
       
       const content = await fs.readFile(filePath, 'utf-8');
       return content;

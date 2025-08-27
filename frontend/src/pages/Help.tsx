@@ -26,6 +26,8 @@ export default function Help() {
   const [docFiles, setDocFiles] = useState<DocFile[]>([]);
   const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [docContent, setDocContent] = useState<string>('');
+  const [findQuery, setFindQuery] = useState<string>('');
+  const [findIndex, setFindIndex] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
@@ -99,6 +101,65 @@ export default function Help() {
     }
   }, [selectedDocPath, loadDocContent]);
 
+  // Basic Ctrl+F handling within this view (client-side search in rendered text)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isCtrlF = (e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F');
+      if (isCtrlF) {
+        e.preventDefault();
+        const q = prompt('Find in document:', findQuery) || '';
+        if (q) {
+          setFindQuery(q);
+          setFindIndex(0);
+          setTimeout(() => highlightMatch(q, 0), 0);
+        }
+      } else if (findQuery && (e.key === 'Enter')) {
+        e.preventDefault();
+        const next = e.shiftKey ? findIndex - 1 : findIndex + 1;
+        setFindIndex(next);
+        setTimeout(() => highlightMatch(findQuery, next), 0);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [findQuery, findIndex, docContent]);
+
+  const highlightMatch = (q: string, index: number) => {
+    try {
+      const container = document.querySelector('#help-doc-container');
+      if (!container) return;
+      // Clear previous
+      container.querySelectorAll('.help-find-hit').forEach(n => n.classList.remove('help-find-hit'));
+      const text = container.textContent || '';
+      const pattern = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const matches = [...text.matchAll(pattern)].map(m => ({ start: m.index || 0, end: (m.index || 0) + (m[0]?.length || 0) }));
+      if (matches.length === 0) return;
+      const idx = ((index % matches.length) + matches.length) % matches.length;
+      // crude scroll to selection by walking text nodes
+      let pos = 0;
+      const target = matches[idx];
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      let node: any;
+      while ((node = walker.nextNode())) {
+        const nextPos = pos + node.textContent.length;
+        if (target.start >= pos && target.start < nextPos) {
+          const range = document.createRange();
+          range.setStart(node, target.start - pos);
+          range.setEnd(node, Math.min(target.end - pos, node.textContent.length));
+          const sel = window.getSelection();
+          if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+          const span = document.createElement('span');
+          span.className = 'help-find-hit';
+          span.style.background = 'rgba(255, 213, 0, 0.45)';
+          range.surroundContents(span);
+          (span as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+          break;
+        }
+        pos = nextPos;
+      }
+    } catch {}
+  };
+
   if (isLoading && docFiles.length === 0 && !error) {
     return <div className="p-6 text-center">Loading documentation...</div>;
   }
@@ -131,7 +192,7 @@ export default function Help() {
         </div>
       </div>
 
-      <div className="flex-1 p-6 overflow-y-auto">
+      <div className="flex-1 p-6 overflow-y-auto" id="help-doc-container">
         {isLoading && !docContent && (
           <div className="flex justify-center items-center h-full">
             <p className="text-muted-foreground">Loading content...</p>
