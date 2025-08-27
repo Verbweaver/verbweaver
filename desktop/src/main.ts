@@ -17,6 +17,7 @@ import * as net from 'net';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import matter from 'gray-matter';
+// For Windows Job Objects, we'll lazy-load ffi bindings only on win32
 
 // Helper function to generate a slug for filenames (simple version)
 function slugify(text: string): string {
@@ -46,6 +47,8 @@ const store = new Store({
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
 let backendPort: number | null = null;
+// Windows Job object handle to ensure backend and its children die together
+let backendJobHandle: Buffer | null = null;
 
 // Configuration
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -253,6 +256,14 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
         setTimeout(() => {
           clearTimeout(timeout);
           backendPort = port;
+          // On Windows, place backend into a Job so all children terminate with it
+          try {
+            if (process.platform === 'win32' && currentProcess?.pid) {
+              await attachProcessToWindowsJob(currentProcess.pid);
+            }
+          } catch (e) {
+            console.warn('Failed to attach backend to Windows Job:', e);
+          }
           resolve({ port, pid: currentProcess.pid! });
         }, 1000);
       }
@@ -268,6 +279,13 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
         setTimeout(() => {
           clearTimeout(timeout);
           backendPort = port;
+          try {
+            if (process.platform === 'win32' && currentProcess?.pid) {
+              await attachProcessToWindowsJob(currentProcess.pid);
+            }
+          } catch (e) {
+            console.warn('Failed to attach backend to Windows Job:', e);
+          }
           resolve({ port, pid: currentProcess.pid! });
         }, 1000);
       }
@@ -282,8 +300,108 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       console.log(`Backend process exited with code ${code}`);
       backendProcess = null;
       backendPort = null;
+      // If process exits, release the Job handle if we held one
+      try { if (backendJobHandle) { closeWindowsHandle(backendJobHandle); backendJobHandle = null; } } catch {}
     });
   });
+}
+
+// Windows Job helpers using ffi-napi + ref-napi; loaded only when needed at runtime
+function loadWinJobBindings(): any | null {
+  if (process.platform !== 'win32') return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ffi = require('ffi-napi');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ref = require('ref-napi');
+    const voidPtr = ref.refType(ref.types.void);
+    const kernel32 = ffi.Library('kernel32', {
+      CreateJobObjectW: ['pointer', ['pointer', 'pointer']],
+      SetInformationJobObject: ['int', ['pointer', 'int', 'pointer', 'uint']],
+      AssignProcessToJobObject: ['int', ['pointer', 'pointer']],
+      TerminateJobObject: ['int', ['pointer', 'uint']],
+      CloseHandle: ['int', ['pointer']],
+      OpenProcess: ['pointer', ['uint', 'int', 'uint']],
+    });
+
+    // Structures
+    const JOBOBJECT_EXTENDED_LIMIT_INFORMATION = new ref.struct({
+      BasicLimitInformation: new ref.struct({
+        PerProcessUserTimeLimit: new ref.struct({ LowPart: ref.types.uint32, HighPart: ref.types.int32 }),
+        PerJobUserTimeLimit: new ref.struct({ LowPart: ref.types.uint32, HighPart: ref.types.int32 }),
+        LimitFlags: ref.types.uint32,
+        MinimumWorkingSetSize: ref.types.size_t,
+        MaximumWorkingSetSize: ref.types.size_t,
+        ActiveProcessLimit: ref.types.uint32,
+        Affinity: ref.types.size_t,
+        PriorityClass: ref.types.uint32,
+        SchedulingClass: ref.types.uint32,
+      }),
+      IoInfo: new ref.struct({}),
+      ProcessMemoryLimit: ref.types.size_t,
+      JobMemoryLimit: ref.types.size_t,
+      PeakProcessMemoryUsed: ref.types.size_t,
+      PeakJobMemoryUsed: ref.types.size_t,
+    });
+
+    return { ffi, ref, kernel32, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, voidPtr };
+  } catch (e) {
+    console.warn('Windows Job bindings unavailable:', e);
+    return null;
+  }
+}
+
+async function attachProcessToWindowsJob(pid: number): Promise<void> {
+  const bindings = loadWinJobBindings();
+  if (!bindings) return;
+  const { kernel32, ref, JOBOBJECT_EXTENDED_LIMIT_INFORMATION } = bindings;
+  // Create a job and set KILL_ON_JOB_CLOSE so closing handle kills all processes
+  const job = kernel32.CreateJobObjectW(ref.NULL, ref.NULL);
+  if (job.isNull && job.isNull()) throw new Error('CreateJobObject failed');
+
+  // Configure limits: KILL_ON_JOB_CLOSE
+  const JobObjectExtendedLimitInformation = 9; // per docs
+  const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+  const info = new (JOBOBJECT_EXTENDED_LIMIT_INFORMATION as any)();
+  info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  const ok = kernel32.SetInformationJobObject(job, JobObjectExtendedLimitInformation, info.ref(), info.ref().length);
+  if (!ok) {
+    kernel32.CloseHandle(job);
+    throw new Error('SetInformationJobObject failed');
+  }
+
+  // Open the process handle with PROCESS_ALL_ACCESS (0x1F0FFF) best-effort
+  const PROCESS_ALL_ACCESS = 0x1F0FFF;
+  const proc = kernel32.OpenProcess(PROCESS_ALL_ACCESS, 0, pid);
+  if (proc.isNull && proc.isNull()) {
+    kernel32.CloseHandle(job);
+    throw new Error('OpenProcess failed');
+  }
+
+  const assigned = kernel32.AssignProcessToJobObject(job, proc);
+  if (!assigned) {
+    kernel32.CloseHandle(proc);
+    kernel32.CloseHandle(job);
+    throw new Error('AssignProcessToJobObject failed');
+  }
+
+  // Keep handle to terminate later on shutdown
+  backendJobHandle = job;
+  try { kernel32.CloseHandle(proc); } catch {}
+}
+
+function terminateWindowsJob(jobHandle: Buffer) {
+  const bindings = loadWinJobBindings();
+  if (!bindings) return;
+  const { kernel32 } = bindings;
+  try { kernel32.TerminateJobObject(jobHandle, 1); } catch {}
+}
+
+function closeWindowsHandle(h: Buffer) {
+  const bindings = loadWinJobBindings();
+  if (!bindings) return;
+  const { kernel32 } = bindings;
+  try { kernel32.CloseHandle(h); } catch {}
 }
 
 async function stopBackend(): Promise<void> {
@@ -302,9 +420,22 @@ async function stopBackend(): Promise<void> {
     
     try {
       if (process.platform === 'win32' && processToKill.pid) {
-        // Ensure entire tree is terminated; fallback to SIGKILL if needed
-        const killer = spawn('taskkill', ['/pid', processToKill.pid.toString(), '/f', '/t']);
-        killer.on('error', () => { try { processToKill.kill(); } catch {} });
+        // Prefer terminating the Job (kills all associated processes)
+        try {
+          if (backendJobHandle) {
+            terminateWindowsJob(backendJobHandle);
+            // Close after termination
+            closeWindowsHandle(backendJobHandle);
+            backendJobHandle = null;
+          }
+        } catch (e) {
+          console.warn('TerminateJobObject failed, falling back to taskkill:', e);
+          // Fallbacks to ensure cleanup
+          const killerTree = spawn('taskkill', ['/pid', processToKill.pid.toString(), '/f', '/t']);
+          killerTree.on('error', () => { try { processToKill.kill(); } catch {} });
+          const killerImage = spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']);
+          killerImage.on('error', () => {});
+        }
       } else {
         try { processToKill.kill('SIGTERM'); } catch {}
         // As a safety, force kill after short grace period if still alive
