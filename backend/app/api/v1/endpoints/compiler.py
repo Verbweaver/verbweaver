@@ -297,8 +297,12 @@ class ContentAggregator:
                                 # fallback from metadata via dotted path
                                 path_expr = (var_def or {}).get('path')
                                 if path_expr and isinstance(metadata, dict):
+                                    # Allow paths beginning with 'metadata.' as declared in docs
+                                    expr = str(path_expr)
+                                    if expr.startswith('metadata.'):
+                                        expr = expr[len('metadata.'):]
                                     cur = metadata
-                                    for part in str(path_expr).split('.'):
+                                    for part in expr.split('.') if expr else []:
                                         if isinstance(cur, dict) and part in cur:
                                             cur = cur[part]
                                         else:
@@ -317,6 +321,15 @@ class ContentAggregator:
                                 val = compute_value(var_def, { 'nodes': [], **node_data })
                                 if val is not None:
                                     resolved_vars[var_name] = val
+
+                    # Apply defaults for boolean/primitive nodeVariables when declared with 'default'
+                    try:
+                        if isinstance(node_schema, dict):
+                            for var_name, var_def in node_schema.items():
+                                if var_name not in resolved_vars and isinstance(var_def, dict) and 'default' in var_def:
+                                    resolved_vars[var_name] = var_def.get('default')
+                    except Exception:
+                        pass
 
                     if resolved_vars:
                         node_data['vars'] = resolved_vars
