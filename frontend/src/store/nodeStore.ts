@@ -73,24 +73,29 @@ interface NodeFilter {
   searchTerm?: string
 }
 
+// Robust frontmatter detection: allow BOM, leading blank lines, and CRLF
+const FRONTMATTER_RE = /^\uFEFF?(?:\s*\r?\n)*---\s*[\r\n]([\s\S]*?)[\r\n]---\s*(?:\r?\n)?([\s\S]*)$/
+
 // Helper function to parse YAML front matter
 function parseMarkdownWithFrontMatter(content: string): { metadata: any, content: string } {
-  const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  const match = content.match(FRONTMATTER_RE)
   if (match) {
     try {
-      const metadata = yaml.load(match[1]) as any;
-      return { metadata, content: match[2] };
+      const metadata = yaml.load(match[1]) as any
+      return { metadata, content: match[2] }
     } catch (e) {
-      console.error('Failed to parse YAML front matter:', e);
+      console.error('Failed to parse YAML front matter:', e)
     }
   }
-  return { metadata: {}, content };
+  return { metadata: {}, content }
 }
 
 // Helper function to stringify content with YAML front matter
 function stringifyMarkdownWithFrontMatter(metadata: any, content: string): string {
-  const yamlStr = yaml.dump(metadata, { indent: 2, lineWidth: -1 });
-  return `---\n${yamlStr}---\n${content}`;
+  // Guard against callers passing content that already contains frontmatter
+  const body = (content || '').replace(FRONTMATTER_RE, '$2')
+  const yamlStr = yaml.dump(metadata, { indent: 2, lineWidth: -1 })
+  return `---\n${yamlStr}---\n${body}`
 }
 
 // Helper to generate a unique ID
