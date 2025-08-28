@@ -6,7 +6,7 @@ import { EXPORT_FORMATS } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
 import { compilerApi } from '../api/compilerApi'
-import NodeSelector from '../components/NodeSelector'
+import NodeSelector, { NodeFilterState } from '../components/NodeSelector'
 import NodeOrderingPanel from '../components/NodeOrderingPanel'
 import { editorApi } from '../api/editorApi'
 import Tooltip from '../components/ui/Tooltip'
@@ -101,6 +101,7 @@ function CompilerView() {
   const [author, setAuthor] = useState('')
   const [selectedNodes, setSelectedNodes] = useState<string[]>([])
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
+  const [filters, setFilters] = useState<NodeFilterState | undefined>(undefined)
   const [dependencies, setDependencies] = useState<Array<{
     name: string;
     available: boolean;
@@ -202,6 +203,7 @@ function CompilerView() {
         if (state.docVars) setDocVars(state.docVars)
         if (state.options) setOptions(prev => ({ ...prev, ...state.options }))
         if (state.expandedDirs) setExpandedDirs(new Set(state.expandedDirs))
+        if ((state as any).filters) setFilters((state as any).filters as NodeFilterState)
         setHasRestoredState(true)
         console.log('[Compiler] State restored, setting hasRestoredState to true')
         
@@ -259,7 +261,8 @@ function CompilerView() {
         nodeVariables,
         docVars,
         options,
-        expandedDirs: Array.from(expandedDirs)
+        expandedDirs: Array.from(expandedDirs),
+        filters
       }
       updateTab(tab.id, {
         metadata: {
@@ -821,6 +824,8 @@ function CompilerView() {
           showFolders={false}
           expandedDirs={expandedDirs}
           onExpandedDirsChange={setExpandedDirs}
+          filters={filters}
+          onFiltersChange={setFilters}
         />
       </div>
 

@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { ChevronRight, ChevronDown, FileText, Folder, Check, CheckSquare } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { editorApi } from '../api/editorApi'
 import clsx from 'clsx'
+import { useNodeStore } from '../store/nodeStore'
+import toast from 'react-hot-toast'
 
 interface FileNode {
   id: string
@@ -19,23 +21,66 @@ interface NodeSelectorProps {
   showFolders?: boolean // Whether to show folders as selectable items
   expandedDirs?: Set<string> // External expanded directories state
   onExpandedDirsChange?: (expandedDirs: Set<string>) => void // Callback for expanded directories changes
+  filters?: NodeFilterState
+  onFiltersChange?: (filters: NodeFilterState) => void
 }
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+
+export interface NodeFilterState {
+  tags: string[]
+  tagsLogic: 'ANY' | 'ALL'
+  nameKeyword: string
+  descriptionKeyword: string
+  startsWith: string
+  endsWith: string
+  startsEndsCaseSensitive: boolean
+  startDateFrom?: string
+  startDateTo?: string
+  dueDateFrom?: string
+  dueDateTo?: string
+  hasAttachments: boolean
+  linkedFromNodeTags: string[] // e.g., ['node-abc', 'node-xyz']
+}
+
+const DEFAULT_FILTERS: NodeFilterState = {
+  tags: [],
+  tagsLogic: 'ANY',
+  nameKeyword: '',
+  descriptionKeyword: '',
+  startsWith: '',
+  endsWith: '',
+  startsEndsCaseSensitive: false,
+  startDateFrom: undefined,
+  startDateTo: undefined,
+  dueDateFrom: undefined,
+  dueDateTo: undefined,
+  hasAttachments: false,
+  linkedFromNodeTags: [],
+}
 
 function NodeSelector({ 
   selectedNodes, 
   onSelectionChange, 
   showFolders = false, 
   expandedDirs: externalExpandedDirs,
-  onExpandedDirsChange 
+  onExpandedDirsChange,
+  filters: externalFilters,
+  onFiltersChange,
 }: NodeSelectorProps) {
   const { currentProject, currentProjectPath } = useProjectStore()
+  const { nodes: nodeMap, loadNodes } = useNodeStore()
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [internalExpandedDirs, setInternalExpandedDirs] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
   const [showNodesOnly, setShowNodesOnly] = useState(true)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const filters = externalFilters || DEFAULT_FILTERS
+  const startFromRef = useRef<HTMLInputElement | null>(null)
+  const startToRef = useRef<HTMLInputElement | null>(null)
+  const dueFromRef = useRef<HTMLInputElement | null>(null)
+  const dueToRef = useRef<HTMLInputElement | null>(null)
   
   // Use external expandedDirs if provided, otherwise use internal state
   const expandedDirs = externalExpandedDirs !== undefined ? externalExpandedDirs : internalExpandedDirs
@@ -96,6 +141,16 @@ function NodeSelector({
       loadFileTree()
     }
   }, [currentProject, currentProjectPath, showNodesOnly])
+
+  // Ensure nodes metadata loaded for filtering
+  useEffect(() => {
+    const ensure = async () => {
+      try {
+        if ((nodeMap?.size || 0) === 0) await loadNodes()
+      } catch {}
+    }
+    ensure()
+  }, [nodeMap?.size, loadNodes])
 
   const loadFileTree = async () => {
     if (!currentProjectPath) return
@@ -397,6 +452,131 @@ function NodeSelector({
       </div>
     )
   }
+  // Build filtered tree based on active filters
+  const filteredTree: FileNode[] = useMemo(() => {
+    const normalizeId = (s: string) => String(s || '').replace(/^node-/, '')
+    const active = filters
+    const usingFilters = (
+      active.tags.length > 0 || active.nameKeyword || active.descriptionKeyword || active.startsWith || active.endsWith ||
+      active.startDateFrom || active.startDateTo || active.dueDateFrom || active.dueDateTo || active.hasAttachments || active.linkedFromNodeTags.length > 0
+    )
+    if (!usingFilters) return fileTree
+
+    // Precompute set of target IDs from linked-from sources
+    const sourceIds = new Set<string>(active.linkedFromNodeTags.map(normalizeId).filter(Boolean))
+    const outgoingTargetIds = new Set<string>()
+    if (sourceIds.size > 0) {
+      for (const n of nodeMap.values()) {
+        const nid = n?.metadata?.id
+        if (nid && sourceIds.has(String(nid))) {
+          const links: string[] = Array.isArray(n?.metadata?.links) ? n.metadata.links : []
+          links.forEach(id => { if (id) outgoingTargetIds.add(String(id)) })
+        }
+      }
+    }
+
+    const matches = (path: string, name: string): boolean => {
+      // Get metadata for path
+      const metaNode = nodeMap.get(path)
+      const meta: any = metaNode?.metadata || {}
+
+      // Title/name
+      const title = String(meta?.title || name || '')
+      // Description
+      const description = String(meta?.description || '')
+      // Tags
+      const tags: string[] = Array.isArray(meta?.tags) ? meta.tags.map(String) : []
+      // Dates
+      const startDate = String(meta?.task?.startDate || '')
+      const dueDate = String(meta?.task?.dueDate || '')
+      // Attachments
+      const files = Array.isArray(meta?.task?.files) ? meta.task.files : []
+      // Node id
+      const nodeId = String(meta?.id || '')
+
+      // If metadata not available and filters require metadata, skip
+      if (!metaNode && (active.tags.length>0 || active.nameKeyword || active.descriptionKeyword || active.startsWith || active.endsWith || active.startDateFrom || active.startDateTo || active.dueDateFrom || active.dueDateTo || active.hasAttachments || active.linkedFromNodeTags.length>0)) {
+        return false
+      }
+
+      // name keyword (case-insensitive)
+      if (active.nameKeyword) {
+        const q = active.nameKeyword.toLowerCase()
+        if (!title.toLowerCase().includes(q)) return false
+      }
+
+      // description keyword (case-insensitive)
+      if (active.descriptionKeyword) {
+        const q = active.descriptionKeyword.toLowerCase()
+        if (!description.toLowerCase().includes(q)) return false
+      }
+
+      // starts/ends with on title with case sensitivity option
+      if (active.startsWith) {
+        if (active.startsEndsCaseSensitive) {
+          if (!title.startsWith(active.startsWith)) return false
+        } else {
+          if (!title.toLowerCase().startsWith(active.startsWith.toLowerCase())) return false
+        }
+      }
+      if (active.endsWith) {
+        if (active.startsEndsCaseSensitive) {
+          if (!title.endsWith(active.endsWith)) return false
+        } else {
+          if (!title.toLowerCase().endsWith(active.endsWith.toLowerCase())) return false
+        }
+      }
+
+      // tags ANY/ALL
+      if (active.tags.length > 0) {
+        const set = new Set(tags.map(t=>t.toLowerCase()))
+        const wanted = active.tags.map(t=>t.toLowerCase())
+        if (active.tagsLogic === 'ANY') {
+          if (!wanted.some(t => set.has(t))) return false
+        } else {
+          if (!wanted.every(t => set.has(t))) return false
+        }
+      }
+
+      // date ranges (inclusive)
+      if (active.startDateFrom && (!startDate || startDate < active.startDateFrom)) return false
+      if (active.startDateTo && (!startDate || startDate > active.startDateTo)) return false
+      if (active.dueDateFrom && (!dueDate || dueDate < active.dueDateFrom)) return false
+      if (active.dueDateTo && (!dueDate || dueDate > active.dueDateTo)) return false
+
+      // attachments
+      if (active.hasAttachments) {
+        if (!Array.isArray(files) || files.length === 0) return false
+      }
+
+      // linked-from sources: include only if this node's id is a target
+      if (sourceIds.size > 0) {
+        if (!nodeId || !outgoingTargetIds.has(nodeId)) return false
+      }
+
+      return true
+    }
+
+    const filterNodes = (nodes: FileNode[]): FileNode[] => {
+      const out: FileNode[] = []
+      for (const n of nodes) {
+        if (n.type === 'file') {
+          if (matches(n.path, n.name)) out.push(n)
+        } else if (n.children) {
+          const kept = filterNodes(n.children)
+          if (kept.length > 0) out.push({ ...n, children: kept })
+        }
+      }
+      return out
+    }
+
+    return filterNodes(fileTree)
+  }, [fileTree, filters, nodeMap])
+
+  const updateFilters = (next: Partial<NodeFilterState>) => {
+    const merged = { ...filters, ...next }
+    onFiltersChange?.(merged)
+  }
 
   const selectAll = () => {
     const allFilePaths = getAllFilePaths(fileTree)
@@ -459,7 +639,13 @@ function NodeSelector({
       </div>
 
       {/* Show Nodes Only Toggle */}
-      <div className="p-2 border-b border-border">
+      <div className="p-2 border-b border-border flex items-center gap-2">
+        <button
+          onClick={() => setFiltersOpen(true)}
+          className="text-xs px-2 py-1 border border-input rounded hover:bg-accent"
+        >
+          Filters
+        </button>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
@@ -470,6 +656,25 @@ function NodeSelector({
           <span className="text-xs">Show Nodes Only</span>
         </label>
       </div>
+      {/* Live filter summary */}
+      {(() => {
+        const parts: string[] = []
+        if (filters.tags.length > 0) parts.push(`tags(${filters.tagsLogic}): ${filters.tags.join(', ')}`)
+        if (filters.nameKeyword) parts.push(`name:"${filters.nameKeyword}"`)
+        if (filters.descriptionKeyword) parts.push(`desc:"${filters.descriptionKeyword}"`)
+        if (filters.startsWith) parts.push(`starts:${filters.startsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
+        if (filters.endsWith) parts.push(`ends:${filters.endsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
+        if (filters.startDateFrom || filters.startDateTo) parts.push(`start:${filters.startDateFrom || ''}..${filters.startDateTo || ''}`)
+        if (filters.dueDateFrom || filters.dueDateTo) parts.push(`due:${filters.dueDateFrom || ''}..${filters.dueDateTo || ''}`)
+        if (filters.hasAttachments) parts.push('attachments')
+        if (filters.linkedFromNodeTags.length > 0) parts.push(`linkedFrom(${filters.linkedFromNodeTags.length})`)
+        if (parts.length === 0) return null
+        return (
+          <div className="px-2 py-1 border-b border-border text-[11px] text-muted-foreground truncate" title={parts.join('  •  ')}>
+            Active filters: {parts.join('  •  ')}
+          </div>
+        )
+      })()}
 
       {/* File Tree */}
       <div className="flex-1 overflow-y-auto scrollbar-thin py-1">
@@ -478,13 +683,85 @@ function NodeSelector({
         ) : fileTree.length === 0 ? (
           <div className="p-4 text-sm text-muted-foreground">No files</div>
         ) : (
-          fileTree.map(node => (
+          filteredTree.map(node => (
             <div key={node.path}>
               {renderNode(node)}
             </div>
           ))
         )}
       </div>
+
+      {filtersOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={()=>setFiltersOpen(false)}>
+          <div className="bg-background border border-border rounded-lg w-[640px] max-w-[95vw] p-4" onClick={(e)=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">Filters</h3>
+              <button className="px-2 py-1 text-xs border rounded" onClick={()=>{ onFiltersChange?.(DEFAULT_FILTERS); }}>Clear</button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="space-y-2">
+                <label className="block text-xs font-medium">Tags (comma-separated)</label>
+                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={filters.tags.join(', ')} onChange={(e)=>updateFilters({ tags: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) })} placeholder="e.g. design, api" />
+                <label className="inline-flex items-center gap-2 text-xs mt-1">
+                  <span>Match:</span>
+                  <select className="px-2 py-1 border border-input rounded bg-background" value={filters.tagsLogic} onChange={(e)=>updateFilters({ tagsLogic: (e.target.value as any) })}>
+                    <option value="ANY">ANY</option>
+                    <option value="ALL">ALL</option>
+                  </select>
+                </label>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs font-medium">Keyword in name (title)</label>
+                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={filters.nameKeyword} onChange={(e)=>updateFilters({ nameKeyword: e.target.value })} placeholder="case-insensitive" />
+                <label className="block text-xs font-medium">Keyword in description</label>
+                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={filters.descriptionKeyword} onChange={(e)=>updateFilters({ descriptionKeyword: e.target.value })} placeholder="case-insensitive" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-medium">Starts with (title)</label>
+                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={filters.startsWith} onChange={(e)=>updateFilters({ startsWith: e.target.value })} />
+                <label className="block text-xs font-medium">Ends with (title)</label>
+                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={filters.endsWith} onChange={(e)=>updateFilters({ endsWith: e.target.value })} />
+                <label className="inline-flex items-center gap-2 text-xs">
+                  <input type="checkbox" className="rounded" checked={filters.startsEndsCaseSensitive} onChange={(e)=>updateFilters({ startsEndsCaseSensitive: e.target.checked })} />
+                  Case sensitive
+                </label>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs font-medium">Start date range (YYYY-MM-DD)</label>
+                <div className="flex gap-2">
+                  <input ref={startFromRef} type="date" className="px-2 py-1 border border-input rounded bg-background w-full" value={filters.startDateFrom || ''} onChange={(e)=>updateFilters({ startDateFrom: e.target.value || undefined })} onFocus={()=>{ try{ (startFromRef.current as any)?.showPicker?.() }catch{}}} onClick={()=>{ try{ (startFromRef.current as any)?.showPicker?.() }catch{}}} />
+                  <input ref={startToRef} type="date" className="px-2 py-1 border border-input rounded bg-background w-full" value={filters.startDateTo || ''} onChange={(e)=>updateFilters({ startDateTo: e.target.value || undefined })} onFocus={()=>{ try{ (startToRef.current as any)?.showPicker?.() }catch{}}} onClick={()=>{ try{ (startToRef.current as any)?.showPicker?.() }catch{}}} />
+                </div>
+                <label className="block text-xs font-medium">Due date range (YYYY-MM-DD)</label>
+                <div className="flex gap-2">
+                  <input ref={dueFromRef} type="date" className="px-2 py-1 border border-input rounded bg-background w-full" value={filters.dueDateFrom || ''} onChange={(e)=>updateFilters({ dueDateFrom: e.target.value || undefined })} onFocus={()=>{ try{ (dueFromRef.current as any)?.showPicker?.() }catch{}}} onClick={()=>{ try{ (dueFromRef.current as any)?.showPicker?.() }catch{}}} />
+                  <input ref={dueToRef} type="date" className="px-2 py-1 border border-input rounded bg-background w-full" value={filters.dueDateTo || ''} onChange={(e)=>updateFilters({ dueDateTo: e.target.value || undefined })} onFocus={()=>{ try{ (dueToRef.current as any)?.showPicker?.() }catch{}}} onClick={()=>{ try{ (dueToRef.current as any)?.showPicker?.() }catch{}}} />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="inline-flex items-center gap-2 text-xs mt-5">
+                  <input type="checkbox" className="rounded" checked={filters.hasAttachments} onChange={(e)=>updateFilters({ hasAttachments: e.target.checked })} />
+                  Has any file attachments
+                </label>
+              </div>
+
+              <div className="space-y-2 col-span-2">
+                <label className="block text-xs font-medium">Linked from node(s) (node ID tags, comma-separated)</label>
+                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={filters.linkedFromNodeTags.join(', ')} onChange={(e)=>updateFilters({ linkedFromNodeTags: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) })} placeholder="e.g. node-123, node-456" />
+                <p className="text-[10px] text-muted-foreground">Includes nodes that are targets of the outgoing links from the specified node(s).</p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button className="px-3 py-1.5 border rounded" onClick={()=>setFiltersOpen(false)}>Cancel</button>
+              <button className="px-3 py-1.5 border rounded bg-primary text-primary-foreground" onClick={()=>setFiltersOpen(false)}>Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
