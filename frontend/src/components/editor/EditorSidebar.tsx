@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical, RefreshCcw, Upload } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical, RefreshCcw, Upload, FolderOpen } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { editorApi } from '../../api/editorApi'
 import { TemplateSelectionDialog } from '../TemplateSelectionDialog'
@@ -476,6 +476,21 @@ Add any additional notes or references here.
           )}
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={async () => {
+              if (!isElectron || !window.electronAPI || !currentProjectPath) return
+              const api: any = window.electronAPI
+              try { if (api?.openPath) { await api.openPath(currentProjectPath); return } } catch {}
+              try { if (api?.openExternal) { const url = `file://${currentProjectPath.replace(/\\/g,'/')}`; await api.openExternal(url); return } } catch {}
+              try { if (api?.showItemInFolder) { await api.showItemInFolder(currentProjectPath); return } } catch {}
+              toast.error('Unable to open folder')
+            }}
+            className="p-1 rounded hover:bg-accent"
+            title={currentProjectPath ? 'Open project folder' : 'No project path'}
+            disabled={!currentProjectPath}
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
           <button
             onClick={loadFileTree}
             className="p-1 rounded hover:bg-accent"
