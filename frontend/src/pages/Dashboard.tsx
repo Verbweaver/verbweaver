@@ -4,12 +4,13 @@ import { FolderOpen, Plus, BarChart3, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import NewProjectDialog from '../components/NewProjectDialog';
 import ProjectList from '../components/ProjectList';
+import toast from 'react-hot-toast';
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
 export default function Dashboard() {
-  const { projects, currentProject, loadProjects, setCurrentProjectPath } = useProjectStore();
+  const { projects, currentProject, loadProjects, setCurrentProjectPath, currentProjectPath } = useProjectStore();
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const navigate = useNavigate();
@@ -74,6 +75,21 @@ export default function Dashboard() {
   const handleNewProject = () => {
     setShowNewProjectDialog(true);
   };
+
+  const handleOpenProjectFolder = async () => {
+    if (!isElectron || !window.electronAPI || !currentProjectPath) return;
+    const api = window.electronAPI as any;
+    try {
+      if (api?.openPath) { await api.openPath(currentProjectPath); return; }
+    } catch {}
+    try {
+      if (api?.openExternal) { const url = `file://${currentProjectPath.replace(/\\/g,'/')}`; await api.openExternal(url); return; }
+    } catch {}
+    try {
+      if (api?.showItemInFolder) { await api.showItemInFolder(currentProjectPath); return; }
+    } catch {}
+    toast.error('Unable to open folder');
+  }
 
   // For web version, show the project list
   if (!isElectron) {
@@ -148,6 +164,14 @@ export default function Dashboard() {
               className="w-full p-3 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
             >
               Open Existing Project
+            </button>
+            <button
+              onClick={handleOpenProjectFolder}
+              disabled={!currentProjectPath}
+              className="w-full p-3 border border-input rounded-md hover:bg-accent transition-colors disabled:opacity-50"
+              title={currentProjectPath || 'No project path'}
+            >
+              <span className="inline-flex items-center gap-2"><FolderOpen className="w-4 h-4"/> Open Project Folder</span>
             </button>
           </div>
         </div>
