@@ -152,7 +152,7 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
       };
       content = parsed.content;
     } else if (!isDirectory) {
-      // Check for .metadata.md file
+      // For non-markdown files (e.g., uploads), only treat as nodes if a .metadata.md exists
       try {
         const metadataContent = await window.electronAPI.readFile(relativeMetadataPath);
         const parsed = parseMarkdownWithFrontMatter(metadataContent);
@@ -164,7 +164,8 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
           ...parsed.metadata 
         };
       } catch (e) {
-        // No metadata file, use defaults
+        // No metadata file: skip exposing this file as a node entirely
+        return null;
       }
     }
   } catch (error) {
