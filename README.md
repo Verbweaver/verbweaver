@@ -214,12 +214,6 @@ verbweaver/
 ├── assets/                          # Static assets bundled with apps
 │   └── templates/
 │       ├── compiler/                # Default compiler templates by format
-│       │   ├── markdown/
-│       │   ├── html/
-│       │   ├── pdf/
-│       │   ├── docx/
-│       │   ├── epub/
-│       │   └── odt/
 │       └── nodes/                   # Default node templates
 ├── backend/                         # FastAPI backend
 │   ├── app/
@@ -229,8 +223,7 @@ verbweaver/
 │   │   ├── models/                  # Database models
 │   │   ├── schemas/                 # Pydantic schemas
 │   │   └── services/                # Business logic (compiler, templates, git)
-│   ├── tests/                       # Backend tests
-│   └── requirements.txt
+│   └── tests/                       # Backend tests
 ├── desktop/                         # Electron desktop app
 │   ├── src/
 │   │   ├── main/                    # Main process
