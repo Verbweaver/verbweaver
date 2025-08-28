@@ -596,34 +596,61 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                      // Find the linked node by ID
                      const linkedNode = Array.from(useNodeStore.getState().nodes.values())
                        .find(n => n.metadata.id === linkId)
-                     
+
+                     const handleCopy = async () => {
+                       const core = String(linkId || '').replace(/^node-/, '')
+                       const tag = `node-${core}`
+                       try {
+                         if ((navigator as any)?.clipboard?.writeText) {
+                           await navigator.clipboard.writeText(tag)
+                         } else {
+                           const ta = document.createElement('textarea')
+                           ta.value = tag
+                           ta.style.position = 'fixed'
+                           ta.style.opacity = '0'
+                           document.body.appendChild(ta)
+                           ta.focus()
+                           ta.select()
+                           try { document.execCommand('copy') } catch {}
+                           document.body.removeChild(ta)
+                         }
+                         toast.success('Copied node ID tag')
+                       } catch {
+                         toast.error('Copy failed')
+                       }
+                     }
+
                      return (
                        <div
                          key={index}
-                         className="p-2 bg-muted rounded-md text-sm cursor-pointer hover:bg-accent flex items-center justify-between"
+                         className="p-2 bg-muted rounded-md text-sm hover:bg-accent flex items-center justify-between"
                          title={linkedNode?.path || linkId}
                        >
-                         <button
-                           onClick={() => {
-                             if (linkedNode) {
-                               console.log('Navigating to task:', linkedNode.path)
-                               console.log('Current URL before navigation:', window.location.href)
-                               onClose()
-                               // Navigate to the related task - use the correct path
-                                const newPath = `/tasks/${encodeURIComponent(linkedNode.path)}`
-                               console.log('Navigating to:', newPath)
-                               navigate(newPath)
-                             }
-                           }}
-                           className="flex-1 text-left"
-                         >
-                           {linkedNode?.metadata.title || linkedNode?.name || linkId}
-                         </button>
+                         <div className="flex-1 flex items-center gap-2 min-w-0">
+                           <button
+                             onClick={() => {
+                               if (linkedNode) {
+                                 onClose()
+                                 const newPath = `/tasks/${encodeURIComponent(linkedNode.path)}`
+                                 navigate(newPath)
+                               }
+                             }}
+                             className="text-left truncate"
+                           >
+                             {linkedNode?.metadata.title || linkedNode?.name || linkId}
+                           </button>
+                           <button
+                             onClick={handleCopy}
+                             className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent text-muted-foreground whitespace-nowrap"
+                             title={`Copy node ID tag (${String(linkId).replace(/^node-/, '')})`}
+                           >
+                             {String(linkId).replace(/^node-/, '')}
+                           </button>
+                         </div>
                          {isEditing && (
                            <button
                              onClick={async () => {
                                if (linkedNode) {
-                                 console.log('Removing link between:', node.path, 'and', linkedNode.path)
                                  try {
                                    await useNodeStore.getState().removeSoftLink(node.path, linkedNode.path)
                                    // Update local node metadata to remove the link so subsequent saves stay consistent
