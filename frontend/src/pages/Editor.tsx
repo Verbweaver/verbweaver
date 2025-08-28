@@ -120,19 +120,19 @@ function EditorView() {
 
   // Resolve linked nodes (soft links) for the current node
   const linkedNodes = useNodeStore((s) => {
-    if (!resolvedNodePath) return [] as Array<{ path: string; name: string; title: string }>
+    if (!resolvedNodePath) return [] as Array<{ path: string; name: string; title: string; id: string }>
     const node = s.nodes.get(resolvedNodePath)
     if (!node) return []
     const linkIds: string[] = Array.isArray(node.metadata?.links) ? node.metadata.links : []
-    const results: Array<{ path: string; name: string; title: string }> = []
+    const results: Array<{ path: string; name: string; title: string; id: string }> = []
     if (linkIds.length === 0) return results
     for (const other of s.nodes.values()) {
       if (!other.isDirectory && linkIds.includes(other.metadata?.id)) {
-        results.push({ path: other.path, name: other.name, title: other.metadata?.title || other.name })
+        results.push({ path: other.path, name: other.name, title: other.metadata?.title || other.name, id: other.metadata?.id })
       }
     }
     // De-duplicate by path
-    const uniq = new Map<string, { path: string; name: string; title: string }>()
+    const uniq = new Map<string, { path: string; name: string; title: string; id: string }>()
     results.forEach(r => uniq.set(r.path, r))
     return Array.from(uniq.values()).sort((a, b) => a.title.localeCompare(b.title))
   })
@@ -745,6 +745,29 @@ function EditorView() {
     )
   }
 
+  const copyNodeIdTag = async (id: string) => {
+    const core = String(id || '').replace(/^node-/, '')
+    const tag = `node-${core}`
+    try {
+      if ((navigator as any)?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(tag)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = tag
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.focus()
+        ta.select()
+        try { document.execCommand('copy') } catch {}
+        document.body.removeChild(ta)
+      }
+      toast.success('Copied node ID tag')
+    } catch {
+      toast.error('Copy failed')
+    }
+  }
+
   const displayFileName = isElectron ? localFileName : currentFile?.name
 
   const handleRequestDelete = useCallback(() => {
@@ -1271,14 +1294,25 @@ function EditorView() {
           <ul className="mt-2 space-y-2">
             {linkedNodes.map((ln) => (
               <li key={ln.path} className="flex items-center justify-between border border-border rounded px-2 py-1 bg-background">
-                <button
-                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                  onClick={() => openEditorForPath(ln.path)}
-                  title={ln.path}
-                >
-                  <LinkIcon className="w-3 h-3" />
-                  {ln.title}
-                </button>
+                <div className="flex-1 flex items-center gap-2 min-w-0">
+                  <button
+                    className="text-xs text-primary hover:underline inline-flex items-center gap-1 min-w-0 truncate"
+                    onClick={() => openEditorForPath(ln.path)}
+                    title={ln.path}
+                  >
+                    <LinkIcon className="w-3 h-3" />
+                    {ln.title}
+                  </button>
+                  {ln.id && (
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent text-muted-foreground whitespace-nowrap"
+                      onClick={() => copyNodeIdTag(ln.id)}
+                      title={`Copy node ID tag (${String(ln.id).replace(/^node-/, '')})`}
+                    >
+                      {String(ln.id).replace(/^node-/, '')}
+                    </button>
+                  )}
+                </div>
                 <div className="ml-2 flex items-center gap-1">
                   <button
                     className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent"
