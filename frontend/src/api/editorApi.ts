@@ -68,4 +68,16 @@ export const editorApi = {
     })
     return response.data
   },
+
+  searchFiles: async (
+    projectId: string,
+    params: { query: string; regex?: boolean; caseSensitive?: boolean }
+  ): Promise<{ results: Array<{ path: string; count: number }>; count: number }> => {
+    const response = await apiClient.post(`/editor/${projectId}/search`, {
+      query: params.query,
+      regex: Boolean(params.regex),
+      case_sensitive: Boolean(params.caseSensitive),
+    })
+    return response.data
+  },
 }
