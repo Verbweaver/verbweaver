@@ -241,7 +241,8 @@ class ContentAggregator:
         if custom_variables:
             data.update(custom_variables)
         
-        # Process each node
+        # Process each selected node
+        id_to_node: Dict[str, Dict[str, Any]] = {}
         for path in node_paths:
             try:
                 full_path = os.path.normpath(os.path.join(self.project_path, path))
@@ -276,6 +277,12 @@ class ContentAggregator:
                         # Process image embeddings in content
                         clean_content = self._process_image_embeddings(clean_content, path, attachments)
                     
+                    node_id = None
+                    try:
+                        node_id = (metadata or {}).get('id')
+                    except Exception:
+                        node_id = None
+
                     node_data = {
                         'title': title,
                         'content': clean_content,
@@ -283,6 +290,8 @@ class ContentAggregator:
                         'attachments': attachments,
                         'path': path
                     }
+                    if node_id:
+                        node_data['id'] = node_id
 
                     # Resolve node-scoped variables: prefer compile-time overrides, fall back to metadata via schema path
                     resolved_vars: Dict[str, Any] = {}
@@ -335,6 +344,8 @@ class ContentAggregator:
                         node_data['vars'] = resolved_vars
                     
                     data['nodes'].append(node_data)
+                    if node_id and isinstance(node_id, str):
+                        id_to_node[node_id] = node_data
                     
             except Exception as e:
                 # Add error node
@@ -452,9 +463,161 @@ class ContentAggregator:
         except Exception:
             pass
 
-        # Process template with data (use original template_content, not final_template_content)
-        # The includes will be processed again during the full template processing
-        return self.template_service.process_template(template_content, data, template_path)
+        # Expose nodesById map and top-level aliases for node-<ID>
+        if id_to_node:
+            try:
+                data['nodesById'] = dict(id_to_node)
+                for nid, nobj in id_to_node.items():
+                    data[str(nid)] = nobj
+            except Exception:
+                pass
+
+        # First-pass full template processing (includes + all normal rules)
+        rendered = self.template_service.process_template(template_content, data, template_path)
+
+        # Multi-pass inline evaluation to support variables/logic inside node bodies and referenced nodes
+        max_passes = int(options.get('maxVariablePasses', 5) or 5)
+        reprocess_nodes = bool(options.get('reprocessNodesInPasses', True))
+        show_markers = bool(options.get('showUnresolvedMarkers', False))
+
+        # Helper to detect referenced node IDs within text
+        def _detect_referenced_node_ids(text: str) -> List[str]:
+            try:
+                import re as _re
+                ids = set(_re.findall(r"node-[A-Za-z0-9_\-]+", text))
+                return [i for i in ids]
+            except Exception:
+                return []
+
+        # Helper to find a node file by metadata.id and build node_data
+        def _load_node_by_id(node_id: str) -> Optional[Dict[str, Any]]:
+            try:
+                # Prefer scanning the standard 'nodes' directory for performance
+                base_dirs = []
+                nd = os.path.join(self.project_path, 'nodes')
+                if os.path.isdir(nd):
+                    base_dirs.append(nd)
+                else:
+                    base_dirs.append(self.project_path)
+
+                for base in base_dirs:
+                    for root_dir, _dirs, files in os.walk(base):
+                        for fname in files:
+                            if not fname.lower().endswith('.md'):
+                                continue
+                            fpath = os.path.join(root_dir, fname)
+                            try:
+                                with open(fpath, 'r', encoding='utf-8') as fp:
+                                    raw = fp.read()
+                                meta = self._extract_metadata(raw)
+                                if isinstance(meta, dict) and meta.get('id') == node_id:
+                                    rel_path = os.path.relpath(fpath, self.project_path).replace('\\', '/')
+                                    # Build node_data equivalent to selected nodes
+                                    fm_title = None
+                                    try:
+                                        fm_title = meta.get('title') if isinstance(meta, dict) else None
+                                    except Exception:
+                                        fm_title = None
+                                    extracted_title = self._extract_title(raw)
+                                    title = (fm_title or extracted_title or os.path.basename(rel_path).replace('.md',''))
+                                    clean_content = self._clean_content(raw, options.get('includeMetadata', True))
+                                    attachments = []
+                                    if options.get('embedUploadedFiles', True):
+                                        attachments = self._get_attachments(raw, rel_path)
+                                        clean_content = self._process_image_embeddings(clean_content, rel_path, attachments)
+                                    node_obj: Dict[str, Any] = {
+                                        'id': node_id,
+                                        'title': title,
+                                        'content': clean_content,
+                                        'metadata': meta,
+                                        'attachments': attachments,
+                                        'path': rel_path
+                                    }
+                                    # Resolve nodeVariables per schema
+                                    try:
+                                        resolved_vars: Dict[str, Any] = {}
+                                        node_schema = (schema or {}).get('nodeVariables', {})
+                                        if isinstance(node_schema, dict):
+                                            for var_name, var_def in node_schema.items():
+                                                # no compile-time overrides for referenced nodes; use metadata path
+                                                path_expr = (var_def or {}).get('path')
+                                                if path_expr and isinstance(meta, dict):
+                                                    expr = str(path_expr)
+                                                    if expr.startswith('metadata.'):
+                                                        expr = expr[len('metadata.'):]
+                                                    cur = meta
+                                                    for part in expr.split('.') if expr else []:
+                                                        if isinstance(cur, dict) and part in cur:
+                                                            cur = cur[part]
+                                                        else:
+                                                            cur = None
+                                                            break
+                                                    if cur is not None:
+                                                        resolved_vars[var_name] = cur
+                                        # computed
+                                        node_schema = (schema or {}).get('nodeVariables', {}) if isinstance(schema, dict) else {}
+                                        if isinstance(node_schema, dict):
+                                            for var_name, var_def in node_schema.items():
+                                                if (resolved_vars.get(var_name) in (None, '')) and var_def and isinstance(var_def, dict) and var_def.get('compute'):
+                                                    val = compute_value(var_def, { 'nodes': [], **node_obj })
+                                                    if val is not None:
+                                                        resolved_vars[var_name] = val
+                                        if resolved_vars:
+                                            node_obj['vars'] = resolved_vars
+                                    except Exception:
+                                        pass
+                                    return node_obj
+                            except Exception:
+                                continue
+                return None
+            except Exception:
+                return None
+
+        # Iterative passes
+        passes_applied = 0
+        while passes_applied < max_passes:
+            passes_applied += 1
+            before = rendered
+
+            # Expand scope with any newly referenced nodes
+            for ref_id in _detect_referenced_node_ids(rendered):
+                if ref_id in id_to_node:
+                    continue
+                node_obj = _load_node_by_id(ref_id)
+                if node_obj:
+                    id_to_node[ref_id] = node_obj
+                    try:
+                        # update data maps and aliases
+                        if 'nodesById' not in data or not isinstance(data.get('nodesById'), dict):
+                            data['nodesById'] = {}
+                        data['nodesById'][ref_id] = node_obj
+                        data[str(ref_id)] = node_obj
+                    except Exception:
+                        pass
+
+            # Evaluate inline, optionally reprocessing $for(nodes)$ using the current nodes array
+            rendered = self.template_service.evaluate_inline(
+                rendered,
+                data,
+                {
+                    'reprocessNodesInPasses': reprocess_nodes,
+                    'showUnresolvedMarkers': show_markers
+                }
+            )
+
+            if rendered == before:
+                break
+
+        # Final cleanup of any leftover control tokens
+        try:
+            import re as _re
+            rendered = _re.sub(r"\$if\([^)]+\)\$", '', rendered)
+            rendered = _re.sub(r"\$ifnot\([^)]+\)\$", '', rendered)
+            rendered = rendered.replace('$endif$', '')
+        except Exception:
+            pass
+
+        return rendered
     
     def _find_default_template(self, format_type: str) -> Optional[str]:
         """Find the default template for a format type"""

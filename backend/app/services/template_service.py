@@ -527,6 +527,159 @@ class TemplateService:
         processed_content = processed_content.replace('$endif$', '')
 
         return processed_content
+
+    def evaluate_inline(self, text: str, data: Dict[str, Any], options: Optional[Dict[str, Any]] = None) -> str:
+        """Re-evaluate variables/conditionals/loops in already-rendered text without processing includes.
+        This supports multi-pass evaluation for variables embedded in node content. It can optionally
+        re-process $for(nodes)$ blocks based on options (defaults to True).
+        """
+        try:
+            import re as _re
+        except Exception:
+            _re = re
+
+        # Normalize newlines for consistent regex behavior
+        processed_content = text.replace('\r\n', '\n').replace('\r', '\n')
+
+        # Replace simple top-level variables first (standalone tokens only)
+        for key, value in data.items():
+            if isinstance(value, (str, bool, int, float)):
+                try:
+                    pattern = re.compile(rf"(?<![A-Za-z0-9_\.])\${re.escape(str(key))}\$")
+                    processed_content = pattern.sub(str(value), processed_content)
+                except Exception:
+                    processed_content = processed_content.replace(f'${key}$', str(value))
+
+        # Helper to resolve dotted path where the first segment may include hyphens (e.g., node-<ID>)
+        def resolve_any_path(expr: str, ctx: Dict[str, Any]) -> Any:
+            try:
+                expr = str(expr).strip()
+                if not expr:
+                    return None
+                # Split first segment (allow '-') and the rest by '.'
+                first, dot, rest = expr.partition('.')
+                cur: Any = ctx.get(first)
+                if not dot:
+                    return cur
+                for part in rest.split('.') if rest else []:
+                    if isinstance(cur, dict) and part in cur:
+                        cur = cur[part]
+                    else:
+                        return None
+                return cur
+            except Exception:
+                return None
+
+        # Conditionals for non-nodes expressions
+        def compute_truthy(value: Any) -> bool:
+            if isinstance(value, list):
+                return len(value) > 0
+            return bool(value)
+
+        def apply_generic_conditionals(text_in: str) -> str:
+            try:
+                if_pat = re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
+                ifnot_pat = re.compile(r"\$ifnot\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
+
+                def if_repl(m):
+                    expr = (m.group(1) or '').strip()
+                    # Leave node-scoped expressions for node processing only (nodes.*)
+                    if expr.startswith('nodes.'):
+                        return m.group(0)
+                    val = resolve_any_path(expr, data)
+                    return m.group(2) if compute_truthy(val) else ''
+
+                def ifnot_repl(m):
+                    expr = (m.group(1) or '').strip()
+                    if expr.startswith('nodes.'):
+                        return m.group(0)
+                    val = resolve_any_path(expr, data)
+                    return m.group(2) if not compute_truthy(val) else ''
+
+                out = if_pat.sub(if_repl, text_in)
+                out = ifnot_pat.sub(ifnot_repl, out)
+                return out
+            except Exception:
+                return text_in
+
+        processed_content = apply_generic_conditionals(processed_content)
+
+        # Generic loops for non-nodes expressions, including node-id based paths like node-<ID>.attachments
+        # Allow first token to contain hyphens
+        loop_pat = re.compile(r"\$for\(([A-Za-z0-9_\-][A-Za-z0-9_\-\.]*?)\)\$(.*?)\$endfor\$", re.DOTALL)
+        pos = 0
+        rebuilt: List[str] = []
+        while True:
+            m = loop_pat.search(processed_content, pos)
+            if not m:
+                rebuilt.append(processed_content[pos:])
+                break
+            expr = m.group(1)
+            inner = m.group(2)
+            # Skip nodes.* here; handle in nodes re-processing below
+            if expr.startswith('nodes'):
+                rebuilt.append(processed_content[pos:m.end()])
+                pos = m.end()
+                continue
+            value = resolve_any_path(expr, data)
+            rendered = ''
+            if isinstance(value, list):
+                items_out: List[str] = []
+                for it in value:
+                    chunk = inner
+                    if isinstance(it, dict):
+                        for k, v in it.items():
+                            chunk = chunk.replace(f'$it.{k}$', str(v))
+                    else:
+                        chunk = chunk.replace('$it$', str(it))
+                    items_out.append(chunk)
+                rendered = '\n'.join(items_out)
+            elif isinstance(value, dict):
+                items_out = []
+                for k, v in value.items():
+                    chunk = inner
+                    chunk = chunk.replace('$it.key$', str(k))
+                    chunk = chunk.replace('$it.value$', str(v))
+                    items_out.append(chunk)
+                rendered = '\n'.join(items_out)
+            else:
+                # Optionally show unresolved marker for non-iterables
+                if options and options.get('showUnresolvedMarkers'):
+                    rendered = f"<!-- unresolved: {expr} -->"
+                else:
+                    rendered = ''
+            rebuilt.append(processed_content[pos:m.start()])
+            rebuilt.append(rendered)
+            pos = m.end()
+        processed_content = ''.join(rebuilt)
+
+        # Replace scalar dotted placeholders that are not node-scoped (skip nodes.*)
+        # Match $something$ where 'something' has no parentheses and is not a control token
+        token_pat = re.compile(r"\$([^$()\n]+?)\$")
+        def replace_token(m):
+            expr = (m.group(1) or '').strip()
+            # Skip control tokens
+            if expr.startswith(('if(', 'ifnot(', 'for(')) or expr in ('endif', 'endfor'):
+                return m.group(0)
+            # Skip nodes.* (processed below if enabled)
+            if expr.startswith('nodes.'):
+                return m.group(0)
+            val = resolve_any_path(expr, data)
+            if isinstance(val, (str, int, float, bool)):
+                return str(val)
+            return f"<!-- unresolved: {expr} -->" if options and options.get('showUnresolvedMarkers') else ''
+        processed_content = token_pat.sub(replace_token, processed_content)
+
+        # Optionally reprocess $for(nodes)$ blocks using current data['nodes']
+        reprocess_nodes = True if options is None else bool(options.get('reprocessNodesInPasses', True))
+        if reprocess_nodes and isinstance(data.get('nodes'), list):
+            prev = None
+            while prev != processed_content:
+                prev = processed_content
+                processed_content = self._process_nodes_array(processed_content, data['nodes'])
+
+        # Do not strip control tokens here; that should be done after all passes
+        return processed_content
     
     def _process_nodes_array(self, template: str, nodes: List[Dict[str, Any]]) -> str:
         """Process all $for(nodes)$ ... $endfor$ loops in the template (zero or more occurrences)."""

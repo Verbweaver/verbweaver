@@ -82,6 +82,10 @@ interface CompileOptions {
   fontSize: 'small' | 'medium' | 'large'
   margins: 'narrow' | 'normal' | 'wide'
   lineSpacing: 'single' | '1.5' | 'double'
+  // Advanced
+  maxVariablePasses?: number
+  reprocessNodesInPasses?: boolean
+  showUnresolvedMarkers?: boolean
 }
 
 interface Template {
@@ -134,7 +138,10 @@ function CompilerView() {
     pageSize: 'A4',
     fontSize: 'medium',
     margins: 'normal',
-    lineSpacing: '1.5'
+    lineSpacing: '1.5',
+    maxVariablePasses: 5,
+    reprocessNodesInPasses: true,
+    showUnresolvedMarkers: false
   })
 
   // Tab store for persistence
@@ -1181,6 +1188,41 @@ function CompilerView() {
               <span className="text-sm">Embed uploaded files (if supported by format)</span>
             </label>
           </div>
+
+          {/* Advanced options */}
+          <details className="space-y-3 border rounded p-3">
+            <summary className="cursor-pointer font-semibold">Advanced</summary>
+            <div className="mt-2 space-y-3">
+              <div className="flex items-center gap-3">
+                <label className="text-sm w-56">Max variable passes</label>
+                <input
+                  type="number"
+                  className="px-2 py-1 border border-input rounded bg-background text-sm w-24"
+                  min={1}
+                  value={options.maxVariablePasses ?? 5}
+                  onChange={(e)=> updateOption('maxVariablePasses', Math.max(1, Number(e.target.value || 5)))}
+                />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="rounded"
+                  checked={options.reprocessNodesInPasses ?? true}
+                  onChange={(e)=> updateOption('reprocessNodesInPasses', e.target.checked)}
+                />
+                <span className="text-sm">Re-evaluate $for(nodes)$ and $nodes.*$ in later passes</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="rounded"
+                  checked={options.showUnresolvedMarkers ?? false}
+                  onChange={(e)=> updateOption('showUnresolvedMarkers', e.target.checked)}
+                />
+                <span className="text-sm">Show inline markers for unresolved references</span>
+              </label>
+            </div>
+          </details>
 
           {/* Compile Button and Progress */}
           <div className="space-y-4">

@@ -613,6 +613,43 @@ $endif$
 $endfor$
 ```
 
+### Using Variables and Logic Inside Node Content
+
+You can reference variables and other nodes directly inside a node’s Markdown body. The compiler evaluates node body content in multiple passes so references introduced by one node can be resolved in subsequent passes.
+
+Scope rules:
+- Selected nodes are rendered via `$for(nodes)$` and `$nodes.*$` during the first pass.
+- Any node referenced by ID (e.g., `$node-<ID>...$`) is added to scope for later passes, but is not added to the `$nodes$` array.
+- All passes have access to the same document variables and options you set in the Compiler.
+
+Basics:
+- Another node’s content: `$node-<ID>.content$`
+- A variable of another node: `$node-<ID>.vars.character_name$`
+- A frontmatter field: `$node-<ID>.metadata.priority$`
+- Conditional on another node: `$if(node-<ID>.vars.ready)$…$endif$`
+- Loop over another node’s attachments:
+  ```markdown
+  $if(node-<ID>.attachments)$
+  ### Related Files
+  $for(node-<ID>.attachments)$
+  - $it.name$ ($it.size$)
+  $endfor$
+  $endif$
+  ```
+
+Chained references:
+- If Node A embeds `$node-B.content$` and Node B embeds `$node-C.vars.foo$`, the compiler resolves them over multiple passes until no further changes occur or the pass limit is reached.
+
+Pass limit and unresolved references:
+- Default max passes: 5 (configurable in the Compiler’s Advanced section).
+- Unresolved references render as empty by default.
+- Optionally enable inline debug markers in the Compiler to emit comments like: `<!-- unresolved: node-abc123.vars.foo -->`.
+
+Notes and limitations:
+- Variables/logic are expanded only in node body content, not in YAML frontmatter.
+- `$for(nodes)$` and `$nodes.*$` may be re-evaluated in later passes (toggle in Advanced settings).
+- `{% include_relative %}` is only for templates; includes inside node bodies are not processed.
+
 ### Conditionals
 ```markdown
 $if(title)$
