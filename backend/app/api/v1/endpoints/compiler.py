@@ -346,6 +346,18 @@ class ContentAggregator:
                     data['nodes'].append(node_data)
                     if node_id and isinstance(node_id, str):
                         id_to_node[node_id] = node_data
+                else:
+                    # If the file path doesn't exist, add a visible placeholder node instead of silently skipping.
+                    try:
+                        data['nodes'].append({
+                            'title': os.path.basename(path).replace('.md', ''),
+                            'content': f"*File not found: {path}*",
+                            'metadata': {},
+                            'attachments': [],
+                            'path': path
+                        })
+                    except Exception:
+                        pass
                     
             except Exception as e:
                 # Add error node
