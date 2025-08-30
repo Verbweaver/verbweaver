@@ -520,11 +520,10 @@ class TemplateService:
                 prev = processed_content
                 processed_content = self._process_nodes_array(processed_content, data['nodes'])
 
-        # Final safety cleanup: strip any leftover control tokens to prevent leaking into output
-        # This only removes the markers; at this point, content should already be correctly included/excluded.
-        processed_content = re.sub(r"\$if\([^)]+\)\$", '', processed_content)
-        processed_content = re.sub(r"\$ifnot\([^)]+\)\$", '', processed_content)
-        processed_content = processed_content.replace('$endif$', '')
+        # Final safety cleanup: only strip leftover NON-node-scoped control tokens here.
+        # Leave node-scoped markers for potential later passes.
+        processed_content = re.sub(r"\$if\((?!nodes\.)[^)]+\)\$", '', processed_content)
+        processed_content = re.sub(r"\$ifnot\((?!nodes\.)[^)]+\)\$", '', processed_content)
 
         return processed_content
 
@@ -664,11 +663,20 @@ class TemplateService:
             # Skip nodes.* (processed below if enabled)
             if expr.startswith('nodes.'):
                 return m.group(0)
+            # Skip loop iterators, which are handled within loops
+            if expr == 'it' or expr.startswith('it.'):
+                return m.group(0)
             val = resolve_any_path(expr, data)
             if isinstance(val, (str, int, float, bool)):
                 return str(val)
             return f"<!-- unresolved: {expr} -->" if options and options.get('showUnresolvedMarkers') else ''
         processed_content = token_pat.sub(replace_token, processed_content)
+
+        # Safety: strip any leftover $for(nodes.vars)$ blocks (should have been expanded/removed earlier)
+        try:
+            processed_content = re.sub(r"\$for\(nodes\.vars\)\$(.*?)\$endfor\$", '', processed_content, flags=re.DOTALL)
+        except Exception:
+            pass
 
         # Optionally reprocess $for(nodes)$ blocks using current data['nodes']
         reprocess_nodes = True if options is None else bool(options.get('reprocessNodesInPasses', True))
@@ -682,13 +690,17 @@ class TemplateService:
         return processed_content
     
     def _process_nodes_array(self, template: str, nodes: List[Dict[str, Any]]) -> str:
-        """Process all $for(nodes)$ ... $endfor$ loops in the template (zero or more occurrences)."""
-        # Use non-greedy matching so multiple $for(nodes)$ blocks are processed independently
-        pattern = re.compile(r'\$for\(nodes\)\$(.*?)\$endfor\$', re.DOTALL)
+        """Process all $for(nodes)$ ... $endfor$ loops in the template (zero or more occurrences).
+        Robust to nested $for(...)$ blocks by scanning and balancing $for/$endfor tokens.
+        """
+        start_pat = re.compile(r'\$for\(nodes\)\$')
+        endfor_pat = re.compile(r'\$endfor\$')
+        any_for_pat = re.compile(r'\$for\([^)]*\)\$')
         out_parts: List[str] = []
         idx = 0
+        text_len = len(template)
         while True:
-            m = pattern.search(template, idx)
+            m = start_pat.search(template, idx)
             if not m:
                 out_parts.append(template[idx:])
                 break
@@ -696,7 +708,27 @@ class TemplateService:
             # Append text before this loop
             out_parts.append(template[idx:m.start()])
 
-            loop_content = m.group(1)
+            # Find matching $endfor$ with nesting awareness
+            pos = m.end()
+            depth = 1
+            while pos < text_len and depth > 0:
+                m_for = any_for_pat.search(template, pos)
+                m_end = endfor_pat.search(template, pos)
+                if not m_end:
+                    # Malformed; bail out and append rest
+                    out_parts.append(template[m.start():])
+                    return ''.join(out_parts)
+                if m_for and m_for.start() < m_end.start():
+                    depth += 1
+                    pos = m_for.end()
+                else:
+                    depth -= 1
+                    pos = m_end.end()
+
+            loop_block_start = m.start()
+            loop_block_end = pos
+            loop_content = template[m.end(): m_end.start()] if depth == 0 else template[m.end():pos]
+
             rendered_nodes: List[str] = []
 
             for node in nodes:
@@ -772,9 +804,15 @@ class TemplateService:
 
                 has_vars = isinstance(node.get('vars'), dict) and len(node.get('vars')) > 0
                 if has_vars:
-                    node_block = re.sub(r"\$if\(nodes\.vars\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
+                    # Keep inner content when vars exist
+                    node_block = re.sub(r"\$if\(\s*nodes\.vars\s*\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
                 else:
-                    node_block = re.sub(r"\$if\(nodes\.vars\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
+                    # Remove guarded block when no vars
+                    node_block = re.sub(r"\$if\(\s*nodes\.vars\s*\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
+                    # Also remove any standalone vars loop blocks as a safety net
+                    node_block = re.sub(r"\$for\(nodes\.vars\)\$(.*?)\$endfor\$", '', node_block, flags=re.DOTALL)
+                    # Remove the exact heading used by default templates if left dangling
+                    node_block = re.sub(r"^###\s+Variables\s*$\n?", '', node_block, flags=re.MULTILINE)
 
                 has_atts = isinstance(node.get('attachments'), list) and len(node.get('attachments')) > 0
                 if has_atts:
@@ -846,7 +884,7 @@ class TemplateService:
                 rendered_nodes.append(node_block)
 
             out_parts.append('\n\n'.join(rendered_nodes))
-            idx = m.end()
+            idx = loop_block_end
 
         return ''.join(out_parts)
 
