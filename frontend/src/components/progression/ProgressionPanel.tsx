@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react'
+import { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallback } from 'react'
 import ProgressionChart, { Series } from './ProgressionChart'
 import NodeSelector, { NodeFilterState } from '../NodeSelector'
 import NodeOrderingPanel from '../NodeOrderingPanel'
@@ -82,6 +82,15 @@ export default function ProgressionPanel(
   const hasLoadedFromTabRef = useRef<boolean>(false)
   const [isRestoring, setIsRestoring] = useState<boolean>(initial.restored)
   const pendingRestoreRef = useRef<boolean>(false)
+
+  // Stable callbacks for manual ordering to avoid hook ordering issues
+  const handleOrderChange = useCallback((ordered: string[]) => {
+    setConfig(c => ({ ...c, orderedNodes: ordered }))
+  }, [])
+
+  const handleRemoveNodes = useCallback((removed: string[]) => {
+    setConfig(c => ({ ...c, selectedNodes: c.selectedNodes.filter(p => !removed.includes(p)) }))
+  }, [])
   // If we had a synchronous initial restore, mark as loaded after first paint
   useEffect(() => {
     if (initialRestoredRef.current) {
@@ -544,10 +553,8 @@ export default function ProgressionPanel(
               <div className="border border-border rounded h-64">
                 <NodeOrderingPanel
                   selectedNodes={config.selectedNodes}
-                  onOrderChange={(ordered) => setConfig(c=>({ ...c, orderedNodes: ordered }))}
-                  onRemoveNodes={(removed)=>{
-                    setConfig(c=>({ ...c, selectedNodes: c.selectedNodes.filter(p=> !removed.includes(p)) }))
-                  }}
+                  onOrderChange={handleOrderChange}
+                  onRemoveNodes={handleRemoveNodes}
                 />
               </div>
             )}
