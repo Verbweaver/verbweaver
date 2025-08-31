@@ -678,13 +678,38 @@ function setupIpcHandlers() {
     return result;
   });
 
-  ipcMain.handle('dialog:saveBinary', async (_event, data: Uint8Array, defaultName?: string) => {
+  ipcMain.handle('dialog:saveJson', async (_event, defaultName: string, jsonText: string) => {
     const result = await dialog.showSaveDialog(mainWindow!, {
-      defaultPath: defaultName || 'export.png',
+      defaultPath: defaultName || 'config.json',
       filters: [
-        { name: 'PNG Image', extensions: ['png'] },
+        { name: 'JSON', extensions: ['json'] },
         { name: 'All Files', extensions: ['*'] }
       ]
+    });
+    if (!result.canceled && result.filePath) {
+      await writeFile(result.filePath, jsonText, 'utf-8');
+    }
+    return result;
+  });
+
+  ipcMain.handle('dialog:saveBinary', async (_event, data: Uint8Array, defaultName?: string) => {
+    const name = defaultName || 'export.bin'
+    const lower = name.toLowerCase()
+    const filters = lower.endsWith('.json')
+      ? [
+          { name: 'JSON', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] },
+        ]
+      : lower.endsWith('.png')
+      ? [
+          { name: 'PNG Image', extensions: ['png'] },
+          { name: 'All Files', extensions: ['*'] },
+        ]
+      : [ { name: 'All Files', extensions: ['*'] } ]
+
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: name,
+      filters,
     });
     if (!result.canceled && result.filePath) {
       await fs.writeFile(result.filePath, Buffer.from(data));

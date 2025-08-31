@@ -441,8 +441,20 @@ export default function ProgressionPanel(
 
   const saveConfigToFile = async () => {
     const json = JSON.stringify(config, null, 2)
-    if (isElectron && (window as any).electronAPI?.saveFile) {
-      await (window as any).electronAPI.saveFile(json)
+    if (isElectron) {
+      // Prefer a binary-aware save channel with JSON filter if exposed
+      const api: any = (window as any).electronAPI
+      if (api?.saveJsonFile) {
+        await api.saveJsonFile('progression-config.json', json)
+      } else if (api?.saveBinaryFile) {
+        const data = new TextEncoder().encode(json)
+        await api.saveBinaryFile(data, 'progression-config.json')
+      } else if (api?.saveFileAsJson) {
+        await api.saveFileAsJson('progression-config.json', json)
+      } else if (api?.saveFile) {
+        // Fallback: generic saveFile, may choose a default type; content is still JSON
+        await api.saveFile(json)
+      }
     } else {
       const blob = new Blob([json], { type: 'application/json' })
       const a = document.createElement('a')
