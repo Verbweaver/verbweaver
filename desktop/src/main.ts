@@ -678,6 +678,20 @@ function setupIpcHandlers() {
     return result;
   });
 
+  ipcMain.handle('dialog:saveBinary', async (_event, data: Uint8Array, defaultName?: string) => {
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: defaultName || 'export.png',
+      filters: [
+        { name: 'PNG Image', extensions: ['png'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+    if (!result.canceled && result.filePath) {
+      await fs.writeFile(result.filePath, Buffer.from(data));
+    }
+    return result;
+  });
+
   ipcMain.handle('fs:readFile', async (_, filePath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
