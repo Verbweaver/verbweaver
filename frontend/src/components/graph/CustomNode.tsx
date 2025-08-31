@@ -12,6 +12,8 @@ interface CustomNodeProps {
     isDirectory?: boolean
     hasTask?: boolean
     locked?: boolean
+    isNodesRoot?: boolean
+    projectTitle?: string
   }
   selected?: boolean
 }
@@ -72,33 +74,54 @@ function CustomNode({ data, selected }: CustomNodeProps) {
         'hover:shadow-lg transition-shadow'
       )}
     >
+      {data.isNodesRoot && data.projectTitle && (
+        <div className="text-base font-bold text-center mb-1">{data.projectTitle}</div>
+      )}
       {data.locked && (
         <div className="absolute -top-2 -right-2">
           <span className="text-red-600 font-bold text-xs" title="Locked">🔒</span>
         </div>
       )}
-      {/* Top Handle */}
+      {/* Top Handles */}
       <Handle
         type="target"
         position={Position.Top}
         className="w-3 h-3 !bg-primary"
-        id="top"
+        id="top-target"
+      />
+      <Handle
+        type="source"
+        position={Position.Top}
+        className="w-3 h-3 !bg-primary"
+        id="top-source"
       />
       
-      {/* Left Handle */}
+      {/* Left Handles */}
       <Handle
         type="target"
         position={Position.Left}
         className="w-3 h-3 !bg-primary"
-        id="left"
+        id="left-target"
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        className="w-3 h-3 !bg-primary"
+        id="left-source"
       />
       
-      {/* Right Handle */}
+      {/* Right Handles */}
       <Handle
         type="source"
         position={Position.Right}
         className="w-3 h-3 !bg-primary"
-        id="right"
+        id="right-source"
+      />
+      <Handle
+        type="target"
+        position={Position.Right}
+        className="w-3 h-3 !bg-primary"
+        id="right-target"
       />
       
       <div className="flex items-center gap-2">
@@ -128,12 +151,18 @@ function CustomNode({ data, selected }: CustomNodeProps) {
         </div>
       )}
       
-      {/* Bottom Handle */}
+      {/* Bottom Handles */}
       <Handle
         type="source"
         position={Position.Bottom}
         className="w-3 h-3 !bg-primary"
-        id="bottom"
+        id="bottom-source"
+      />
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        className="w-3 h-3 !bg-primary"
+        id="bottom-target"
       />
     </div>
   )

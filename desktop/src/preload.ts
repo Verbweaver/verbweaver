@@ -83,6 +83,7 @@ export interface ElectronAPI {
   onMenuNewProject: (callback: () => void) => () => void;
   onMenuOpenProject: (callback: () => void) => () => void;
   onMenuSettings: (callback: () => void) => () => void;
+  onMenuHelpDocumentation: (callback: () => void) => () => void;
   
   // For Help View
   listDocs: () => Promise<DocFile[]>;
@@ -202,6 +203,11 @@ const electronAPI = {
     const handler = () => callback();
     ipcRenderer.on('menu-settings', handler);
     return () => ipcRenderer.removeListener('menu-settings', handler);
+  },
+  onMenuHelpDocumentation: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('menu-help-documentation', handler);
+    return () => ipcRenderer.removeListener('menu-help-documentation', handler);
   },
   
   // For Help View
