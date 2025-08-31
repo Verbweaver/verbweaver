@@ -128,23 +128,29 @@ export default function ProgressionChart({
         return (
           <g key={`series-${si}`}>
             <path d={d} fill="none" stroke={s.color} strokeWidth={2} />
-            {sorted.map((p, pi) => (
+            {sorted.map((p, pi) => {
+              const px = clamp(xScale(p.x), margin.left + 2, margin.left + innerW - 2)
+              const py = yScale(p.y)
+              const nearRight = px > margin.left + innerW - 40
+              const labelX = nearRight ? px - 6 : px + 6
+              const anchor = nearRight ? 'end' : 'start'
+              return (
               <g key={`pt-${si}-${pi}`}>
-                <circle cx={xScale(p.x)} cy={yScale(p.y)} r={3} fill={s.color}>
+                <circle cx={px} cy={py} r={3} fill={s.color}>
                   <title>{`${s.name}: ${p.y} • ${p.title}`}</title>
                 </circle>
                 {showNodeTitles && (
-                  <text x={xScale(p.x) + 6} y={yScale(p.y)} fontSize={10} fill="currentColor" dominantBaseline="middle">{p.title}</text>
+                  <text x={labelX} y={py} textAnchor={anchor as any} fontSize={10} fill="currentColor" dominantBaseline="middle">{p.title}</text>
                 )}
               </g>
-            ))}
+            )})}
           </g>
         )
       })}
 
       {/* Optional X-axis node titles under axis (horizontal, staggered to reduce overlap) */}
       {showXAxisNodeTitles && uniqueXLabelPoints.map((p, i) => {
-        const x = xScale(p.x)
+        const x = clamp(xScale(p.x), margin.left + 2, margin.left + innerW - 2)
         const y = margin.top + innerH + 12 + (i % 2 === 0 ? 0 : 10) // alternate rows
         const anchor = i === 0 ? 'start' : (i === uniqueXLabelPoints.length - 1 ? 'end' : 'middle')
         const MAX = 18
