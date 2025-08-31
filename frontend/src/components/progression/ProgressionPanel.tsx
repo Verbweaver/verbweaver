@@ -489,14 +489,14 @@ export default function ProgressionPanel(
           <button className={clsx('px-2 py-1 text-sm', 'bg-accent rounded')} onClick={()=> onSwitchSubView?.('progression')} disabled><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
         </div>
         <div className="pt-1 border-t border-border" />
-        <div className="flex items-center gap-2">
-          <button className="px-2 py-1 text-sm border rounded" onClick={handleSavePNG}>Save Image</button>
-          <button className="px-2 py-1 text-sm border rounded" onClick={saveConfigToFile}>Save Config</button>
-          <label className="px-2 py-1 text-sm border rounded cursor-pointer">
-            Load Config
+        <div className="grid grid-cols-4 gap-2 items-stretch">
+          <button className="px-2 py-1 text-sm border rounded w-full" onClick={handleSavePNG}>Save Image</button>
+          <button className="px-2 py-1 text-sm border rounded w-full" onClick={saveConfigToFile}>Save Config</button>
+          <label className="px-2 py-1 text-sm border rounded cursor-pointer inline-flex items-center justify-center w-full text-center">
+            <span className="w-full text-center">Load Config</span>
             <input type="file" accept="application/json" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; if(f) onLoadConfig(f) }} />
           </label>
-          <button className="px-2 py-1 text-sm border rounded" onClick={()=> setFiltersOpen(true)}>Filters</button>
+          <button className="px-2 py-1 text-sm border rounded w-full" onClick={()=> setFiltersOpen(true)}>Filters</button>
         </div>
         <div className="pt-1 border-t border-border" />
         <label className="text-xs font-medium">X variable</label>
@@ -523,12 +523,24 @@ export default function ProgressionPanel(
             <button className="text-xs px-2 py-1 border rounded" onClick={()=>{ const nv=[...config.yVars]; nv.splice(i,1); setConfig(c=>({ ...c, yVars: nv })) }}>Remove</button>
           </div>
         ))}
-        <button className="text-xs px-2 py-1 border rounded" onClick={()=> setConfig(c=>({ ...c, yVars: [...c.yVars, { name: '', color: '#3b82f6' }] }))}>Add Y variable</button>
+        <button className="text-xs px-2 py-1 border rounded" onClick={()=> setConfig(c=>{
+          const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#84cc16','#f472b6','#f97316']
+          const color = colors[Math.floor(Math.random()*colors.length)]
+          return { ...c, yVars: [...c.yVars, { name: '', color }] }
+        })}>Add Y variable</button>
         <div className="pt-1 border-t border-border" />
         <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={config.labelAxes} onChange={e=>setConfig(c=>({ ...c, labelAxes: e.target.checked }))}/> Label axes with variable names</label>
         <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={config.showNodeTitles} onChange={e=>setConfig(c=>({ ...c, showNodeTitles: e.target.checked }))}/> Show node titles at points</label>
         <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={config.showXAxisNodeTitles} onChange={e=>setConfig(c=>({ ...c, showXAxisNodeTitles: e.target.checked }))}/> Show node titles along X axis</label>
-        <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={config.background==='white'} onChange={e=>setConfig(c=>({ ...c, background: e.target.checked ? 'white':'transparent' }))}/> Solid background (in exported image)</label>
+        <div className="flex items-center gap-2 text-xs">
+          <label className="inline-flex items-center gap-2">
+            <input type="checkbox" checked={config.background!=='transparent'} onChange={e=>setConfig(c=>({ ...c, background: e.target.checked ? 'white' : 'transparent' }))} />
+            <span>Solid background (in exported image)</span>
+          </label>
+          {config.background !== 'transparent' && (
+            <input type="color" value={config.background === 'white' ? '#ffffff' : '#ffffff'} onChange={e=> setConfig(c=>({ ...c, background: 'white' }))} />
+          )}
+        </div>
         <div className="pt-1 border-t border-border" />
         <label className="text-xs font-medium">Max nodes</label>
         <input type="number" min={1} max={isElectron ? 9999 : 50} className="px-2 py-1 border rounded bg-background" value={config.maxNodes} onChange={e=> setConfig(c=>({ ...c, maxNodes: Math.max(1, Math.min((isElectron?9999:50), Number(e.target.value)||1)) }))} />
@@ -550,7 +562,7 @@ export default function ProgressionPanel(
             </div>
             <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={config.manualOrdering} onChange={e=> setConfig(c=>({ ...c, manualOrdering: e.target.checked }))}/> Use manual ordering</label>
             {config.manualOrdering && (
-              <div className="border border-border rounded h-64">
+              <div className="border border-border rounded max-h-[60vh] flex flex-col">
                 <NodeOrderingPanel
                   selectedNodes={config.selectedNodes}
                   onOrderChange={handleOrderChange}

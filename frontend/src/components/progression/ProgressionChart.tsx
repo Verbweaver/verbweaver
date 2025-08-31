@@ -28,7 +28,7 @@ interface ProgressionChartProps {
   yAxis?: AxisConfig
   showNodeTitles?: boolean
   showXAxisNodeTitles?: boolean
-  background?: 'transparent' | 'white'
+  background?: 'transparent' | string
 }
 
 function clamp(n: number, min: number, max: number): number {
@@ -57,6 +57,14 @@ export default function ProgressionChart({
   const yScale = (y: number) => margin.top + (1 - (y - yMin) / (yMax - yMin || 1)) * innerH
 
   const allPoints = useMemo(() => series.flatMap(s => s.points), [series])
+  // Unique points per node for X-axis labels (avoid duplicates across multiple series)
+  const uniqueXLabelPoints = useMemo(() => {
+    const byNode = new Map<string, DataPoint>()
+    for (const p of allPoints) {
+      if (!byNode.has(p.nodeId)) byNode.set(p.nodeId, p)
+    }
+    return Array.from(byNode.values()).sort((a, b) => a.x - b.x)
+  }, [allPoints])
   const xTickValues = useMemo(() => {
     // Choose up to ~10 ticks
     const count = 10
@@ -73,8 +81,8 @@ export default function ProgressionChart({
     return arr
   }, [yMin, yMax])
 
-  const backgroundRect = background === 'white' ? (
-    <rect x={0} y={0} width={width} height={height} fill="#ffffff" />
+  const backgroundRect = background !== 'transparent' ? (
+    <rect x={0} y={0} width={width} height={height} fill={background} />
   ) : null
 
   return (
@@ -107,7 +115,7 @@ export default function ProgressionChart({
 
       {/* Axis labels */}
       {xAxis?.label && (
-        <text x={margin.left + innerW / 2} y={margin.top + innerH + 28} textAnchor="middle" fontSize={12} fill="currentColor">{xAxis.label}</text>
+        <text x={margin.left + innerW / 2} y={margin.top + innerH + 38} textAnchor="middle" fontSize={12} fill="currentColor">{xAxis.label}</text>
       )}
       {yAxis?.label && (
         <text x={margin.left - 36} y={margin.top + innerH / 2} textAnchor="middle" fontSize={12} fill="currentColor" transform={`rotate(-90 ${margin.left - 36} ${margin.top + innerH / 2})`}>{yAxis.label}</text>
@@ -134,10 +142,20 @@ export default function ProgressionChart({
         )
       })}
 
-      {/* Optional X-axis node titles under axis */}
-      {showXAxisNodeTitles && allPoints.map((p, i) => (
-        <text key={`xlabel-${i}`} x={xScale(p.x)} y={margin.top + innerH + 10} transform={`rotate(-90 ${xScale(p.x)} ${margin.top + innerH + 10})`} textAnchor="end" fontSize={9} fill="currentColor">{p.title}</text>
-      ))}
+      {/* Optional X-axis node titles under axis (horizontal, staggered to reduce overlap) */}
+      {showXAxisNodeTitles && uniqueXLabelPoints.map((p, i) => {
+        const x = xScale(p.x)
+        const y = margin.top + innerH + 12 + (i % 2 === 0 ? 0 : 10) // alternate rows
+        const anchor = i === 0 ? 'start' : (i === uniqueXLabelPoints.length - 1 ? 'end' : 'middle')
+        const MAX = 18
+        const text = p.title.length > MAX ? (p.title.slice(0, MAX - 1) + '…') : p.title
+        return (
+          <text key={`xlabel-${i}`} x={x} y={y} textAnchor={anchor as any} fontSize={10} fill="currentColor">
+            <title>{p.title}</title>
+            {text}
+          </text>
+        )
+      })}
     </svg>
   )
 }

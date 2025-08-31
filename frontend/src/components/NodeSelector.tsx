@@ -76,7 +76,10 @@ function NodeSelector({
   const [isLoading, setIsLoading] = useState(true)
   const [showNodesOnly, setShowNodesOnly] = useState(true)
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const filters = externalFilters || DEFAULT_FILTERS
+  const filters = useMemo(() => ({
+    ...DEFAULT_FILTERS,
+    ...(externalFilters || {})
+  }), [externalFilters])
   const startFromRef = useRef<HTMLInputElement | null>(null)
   const startToRef = useRef<HTMLInputElement | null>(null)
   const dueFromRef = useRef<HTMLInputElement | null>(null)
@@ -479,13 +482,13 @@ function NodeSelector({
     const normalizeId = (s: string) => String(s || '').replace(/^node-/, '')
     const active = filters
     const usingFilters = (
-      active.tags.length > 0 || active.nameKeyword || active.descriptionKeyword || active.startsWith || active.endsWith ||
-      active.startDateFrom || active.startDateTo || active.dueDateFrom || active.dueDateTo || active.hasAttachments || active.linkedFromNodeTags.length > 0
+      (active.tags || []).length > 0 || active.nameKeyword || active.descriptionKeyword || active.startsWith || active.endsWith ||
+      active.startDateFrom || active.startDateTo || active.dueDateFrom || active.dueDateTo || active.hasAttachments || (active.linkedFromNodeTags || []).length > 0
     )
     if (!usingFilters) return fileTree
 
     // Precompute set of target IDs from linked-from sources
-    const sourceIds = new Set<string>(active.linkedFromNodeTags.map(normalizeId).filter(Boolean))
+    const sourceIds = new Set<string>((active.linkedFromNodeTags || []).map(normalizeId).filter(Boolean))
     const outgoingTargetIds = new Set<string>()
     if (sourceIds.size > 0) {
       for (const n of nodeMap.values()) {
@@ -550,9 +553,9 @@ function NodeSelector({
       }
 
       // tags ANY/ALL
-      if (active.tags.length > 0) {
+      if ((active.tags || []).length > 0) {
         const set = new Set(tags.map(t=>t.toLowerCase()))
-        const wanted = active.tags.map(t=>t.toLowerCase())
+        const wanted = (active.tags || []).map(t=>t.toLowerCase())
         if (active.tagsLogic === 'ANY') {
           if (!wanted.some(t => set.has(t))) return false
         } else {
