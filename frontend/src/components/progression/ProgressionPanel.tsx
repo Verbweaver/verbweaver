@@ -472,7 +472,7 @@ export default function ProgressionPanel(
         />
       </div>
       {/* Controls on the right */}
-      <div className="w-72 border-l border-border p-2 flex flex-col gap-2">
+      <div className="w-72 border-l border-border p-2 flex flex-col gap-2 overflow-y-auto">
         {/* Integrated sub-view switcher */}
         <div className="flex flex-col gap-2 items-stretch">
           <button className={clsx('px-2 py-1 text-sm', 'border rounded')} onClick={()=> onSwitchSubView?.('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
@@ -535,8 +535,6 @@ export default function ProgressionPanel(
                 selectedNodes={config.selectedNodes}
                 onSelectionChange={(sel)=> setConfig(c=>({ ...c, selectedNodes: sel }))}
                 showFolders={false}
-                expandedDirs={new Set<string>()}
-                onExpandedDirsChange={()=>{}}
                 filters={config.filters}
                 onFiltersChange={(f)=> setConfig(c=>({ ...c, filters: f }))}
               />
