@@ -103,6 +103,8 @@ function GraphView() {
 
   // Persisted per-project positions for folders (and optionally special nodes)
   const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({})
+  // Flag to trigger initial rebuild after positions are loaded
+  const [positionsReady, setPositionsReady] = useState<boolean>(false)
 
   // Outline subview state
   type GraphSubView = 'mindmap' | 'outline'
@@ -131,6 +133,8 @@ function GraphView() {
             if (settings && typeof settings.graphPositions === 'object') {
               setGraphPositions(settings.graphPositions as Record<string, { x: number; y: number }>)
             }
+            // Ensure positionsReady flips even if no positions exist
+            setPositionsReady(true)
             return
           }
           // No outline in settings; start empty without hitting file API in web mode
@@ -143,13 +147,16 @@ function GraphView() {
               const parsed: any = yaml.load(content || '') || {}
               if (parsed && typeof parsed === 'object') setOutlineOrder(parsed.outline || {})
               if (parsed && typeof parsed.graph_positions === 'object') setGraphPositions(parsed.graph_positions)
+              setPositionsReady(true)
             } catch {}
           }
         }
       } catch {}
+      // If web and settings didn’t contain outlineMap, still mark ready to avoid blocking
+      setPositionsReady(true)
     }
     loadOutline()
-  }, [currentProject?.id])
+  }, [currentProject?.id, currentProjectPath])
 
   // Initialize subview from active tab metadata
   useEffect(() => {
@@ -334,7 +341,7 @@ function GraphView() {
 
   // Load and convert nodes when project changes or nodes update
   useEffect(() => {
-    if (currentProject) {
+    if (currentProject && positionsReady) {
       // Convert VerbweaverNodes to React Flow nodes and edges
       const flowNodes: Node[] = []
       const flowEdges: Edge[] = []
@@ -509,7 +516,7 @@ function GraphView() {
       setNodes(flowNodes)
       setEdges(flowEdges)
     }
-  }, [currentProject, verbweaverNodes, setNodes, setEdges, hideUploads])
+  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
