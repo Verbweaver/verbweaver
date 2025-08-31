@@ -101,6 +101,9 @@ function GraphView() {
     }
   })
 
+  // Persisted per-project positions for folders (and optionally special nodes)
+  const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({})
+
   // Outline subview state
   type GraphSubView = 'mindmap' | 'outline'
   const { getActiveTab, updateTab } = useTabStore()
@@ -125,6 +128,9 @@ function GraphView() {
           const settings = await projectsApi.getProjectSettings(currentProject.id)
           if (settings && settings.outlineMap && typeof settings.outlineMap === 'object') {
             setOutlineOrder(settings.outlineMap as Record<string, string[]>)
+            if (settings && typeof settings.graphPositions === 'object') {
+              setGraphPositions(settings.graphPositions as Record<string, { x: number; y: number }>)
+            }
             return
           }
           // No outline in settings; start empty without hitting file API in web mode
@@ -136,6 +142,7 @@ function GraphView() {
               const content = await window.electronAPI.readFile(abs)
               const parsed: any = yaml.load(content || '') || {}
               if (parsed && typeof parsed === 'object') setOutlineOrder(parsed.outline || {})
+              if (parsed && typeof parsed.graph_positions === 'object') setGraphPositions(parsed.graph_positions)
             } catch {}
           }
         }
@@ -165,7 +172,7 @@ function GraphView() {
     if (!isElectron) {
       try {
         const settings = await projectsApi.getProjectSettings(currentProject.id)
-        const next = { ...(settings || {}), outlineMap: map }
+        const next = { ...(settings || {}), outlineMap: map, graphPositions }
         await projectsApi.updateProjectSettings(currentProject.id, next)
       } catch (e) {
         console.warn('Failed to save outline in project settings', e)
@@ -174,7 +181,7 @@ function GraphView() {
     }
     // Electron: persist to file alongside project
     try {
-      const content = yaml.dump({ outline: map })
+      const content = yaml.dump({ outline: map, graph_positions: graphPositions })
       if (window.electronAPI && currentProjectPath) {
         const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
         await window.electronAPI.writeFile(abs, content)
@@ -354,7 +361,13 @@ function GraphView() {
         // Compute position
         const position = (() => {
           if (node.path === 'nodes') {
-            return { x: 0, y: 0 }
+            const persisted = graphPositions['nodes']
+            return persisted || { x: 0, y: 0 }
+          }
+          // Prefer persisted per-project positions for folders
+          if (node.isDirectory) {
+            const persisted = graphPositions[node.path]
+            if (persisted && typeof persisted.x === 'number' && typeof persisted.y === 'number') return persisted
           }
           const saved = node.metadata.position
           if (rigidMode && saved && typeof saved.x === 'number' && typeof saved.y === 'number') {
@@ -397,7 +410,7 @@ function GraphView() {
         flowNodes.push({
           id: 'nodes',
           type: 'custom',
-          position: { x: 0, y: 0 },
+          position: graphPositions['nodes'] || { x: 0, y: 0 },
           data: {
             label: 'nodes',
             type: 'folder',
@@ -508,6 +521,11 @@ function GraphView() {
       }).catch(() => {
         toast.error('Failed to save node position')
       })
+      // Persist per-project position for folders and nodes root
+      const isFolder = (node.data as any)?.isDirectory || (node.data as any)?.type === 'folder' || node.id === 'nodes'
+      if (isFolder) {
+        setGraphPositions(prev => ({ ...prev, [node.id]: { x: node.position.x, y: node.position.y } }))
+      }
       // After moving, recompute edge handles to ensure closest-side attachments
       setEdges(prev => {
         const nodePositions = new Map(nodes.map(n => [n.id, n.id === node.id ? node.position : n.position]))
@@ -938,6 +956,39 @@ function GraphView() {
       toast.error('Failed to save layout positions')
     })
   }, [nodes, edges, setNodes, setEdges, updateNode, chooseHandleIds])
+
+  // Persist positions when they change (dragging or layout applied)
+  useEffect(() => {
+    if (!currentProject?.id) return
+    // Build a map of folder positions plus special 'nodes'
+    const folderPositions: Record<string, { x: number; y: number }> = {}
+    nodes.forEach(n => {
+      const isFolder = (n.data as any)?.isDirectory || (n.data as any)?.type === 'folder' || n.id === 'nodes'
+      if (isFolder && n.position) folderPositions[n.id] = { x: n.position.x, y: n.position.y }
+    })
+    setGraphPositions(folderPositions)
+    // Save merged into project settings or outline.yaml without blocking UI
+    ;(async () => {
+      try {
+        if (!isElectron) {
+          const settings = await projectsApi.getProjectSettings(currentProject.id)
+          const next = { ...(settings || {}), graphPositions: folderPositions }
+          await projectsApi.updateProjectSettings(currentProject.id, next)
+        } else if (window.electronAPI && currentProjectPath) {
+          const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
+          let parsed: any = {}
+          try {
+            const content = await window.electronAPI.readFile(abs)
+            parsed = yaml.load(content || '') || {}
+          } catch {}
+          parsed.outline = parsed.outline || outlineOrder
+          parsed.graph_positions = folderPositions
+          const content = yaml.dump(parsed)
+          await window.electronAPI.writeFile(abs, content)
+        }
+      } catch {}
+    })()
+  }, [nodes, currentProject?.id])
 
   // -------- Outline helpers --------
   const [draggingId, setDraggingId] = useState<string | null>(null)
