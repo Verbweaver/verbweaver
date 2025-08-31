@@ -501,7 +501,7 @@ export default function ProgressionPanel(
           <button className={clsx('px-2 py-1 text-sm', 'bg-accent rounded')} onClick={()=> onSwitchSubView?.('progression')} disabled><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
         </div>
         <div className="pt-1 border-t border-border" />
-        <div className="grid grid-cols-4 gap-2 items-stretch">
+        <div className="grid grid-cols-5 gap-2 items-stretch">
           <button className="px-2 py-1 text-sm border rounded w-full" onClick={handleSavePNG}>Save Image</button>
           <button className="px-2 py-1 text-sm border rounded w-full" onClick={saveConfigToFile}>Save Config</button>
           <label className="px-2 py-1 text-sm border rounded cursor-pointer inline-flex items-center justify-center w-full text-center">
@@ -509,6 +509,7 @@ export default function ProgressionPanel(
             <input type="file" accept="application/json" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; if(f) onLoadConfig(f) }} />
           </label>
           <button className="px-2 py-1 text-sm border rounded w-full" onClick={()=> setFiltersOpen(true)}>Filters</button>
+          <button className="px-2 py-1 text-sm border rounded w-full" onClick={()=>{ try{ window.open('#/help?doc=graph-view.md','_self') }catch{ location.hash = '/help?doc=graph-view.md' } }}>Help</button>
         </div>
         <div className="pt-1 border-t border-border" />
         <label className="text-xs font-medium">X variable</label>
