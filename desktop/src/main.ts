@@ -869,13 +869,11 @@ function setupIpcHandlers() {
       
       // Create Verbweaver project structure
       const verbweaverDir = join(projectPath, '.verbweaver');
-      const docsDir = join(projectPath, 'docs');
       const templatesDir = join(projectPath, 'templates');
       const nodesDir = join(projectPath, 'nodes');
       // const tasksDir = join(projectPath, 'tasks'); // REMOVED
       
       await mkdir(verbweaverDir, { recursive: true });
-      await mkdir(docsDir, { recursive: true });
       await mkdir(templatesDir, { recursive: true }); // Ensure templatesDir is created
       await mkdir(nodesDir, { recursive: true }); // Ensure nodesDir is created
       // await mkdir(tasksDir, { recursive: true }); // REMOVED
@@ -920,7 +918,6 @@ Verbweaver organizes ideas and tasks as Markdown files under the \`nodes/\` fold
 - \`nodes/\` — all content nodes and tasks (Markdown)
 - \`uploads/\` — files you attach to nodes (keeps original filenames)
 - \`templates/\` — templates for new nodes and compiler
-- \`docs/\` — optional documentation
 - \`.verbweaver/\` — project settings and internal data
 
 ### Views
