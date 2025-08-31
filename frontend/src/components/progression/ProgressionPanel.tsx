@@ -21,7 +21,7 @@ interface ProgressionConfig {
   labelAxes: boolean
   showNodeTitles: boolean
   showXAxisNodeTitles: boolean
-  background: 'transparent' | 'white'
+  background: 'transparent' | string
   maxNodes: number
   manualOrdering: boolean
   orderedNodes: string[]
@@ -534,11 +534,11 @@ export default function ProgressionPanel(
         <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={config.showXAxisNodeTitles} onChange={e=>setConfig(c=>({ ...c, showXAxisNodeTitles: e.target.checked }))}/> Show node titles along X axis</label>
         <div className="flex items-center gap-2 text-xs">
           <label className="inline-flex items-center gap-2">
-            <input type="checkbox" checked={config.background!=='transparent'} onChange={e=>setConfig(c=>({ ...c, background: e.target.checked ? 'white' : 'transparent' }))} />
+            <input type="checkbox" checked={config.background!=='transparent'} onChange={e=>setConfig(c=>({ ...c, background: e.target.checked ? (typeof c.background==='string' && c.background!=='transparent' ? c.background : '#ffffff') : 'transparent' }))} />
             <span>Solid background (in exported image)</span>
           </label>
           {config.background !== 'transparent' && (
-            <input type="color" value={config.background === 'white' ? '#ffffff' : '#ffffff'} onChange={e=> setConfig(c=>({ ...c, background: 'white' }))} />
+            <input type="color" value={typeof config.background==='string' ? config.background : '#ffffff'} onChange={e=> setConfig(c=>({ ...c, background: e.target.value || '#ffffff' }))} />
           )}
         </div>
         <div className="pt-1 border-t border-border" />
