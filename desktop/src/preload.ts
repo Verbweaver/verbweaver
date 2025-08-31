@@ -13,6 +13,7 @@ export interface ElectronAPI {
   openFile: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   openDirectory: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   saveFile: (content: string) => Promise<{ canceled: boolean; filePath?: string }>;
+  saveJsonFile: (defaultName: string, jsonText: string) => Promise<{ canceled: boolean; filePath?: string }>;
   readFile: (filePath: string) => Promise<string>;
   readFileBinary: (filePath: string) => Promise<Buffer>;
   writeFile: (filePath: string, content: string) => Promise<void>;
@@ -109,6 +110,7 @@ const electronAPI = {
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
   saveFile: (content: string) => ipcRenderer.invoke('dialog:saveFile', content),
+  saveJsonFile: (defaultName: string, jsonText: string) => ipcRenderer.invoke('dialog:saveJson', defaultName, jsonText),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
   readFileBinary: (filePath: string) => ipcRenderer.invoke('fs:readFileBinary', filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
