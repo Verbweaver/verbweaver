@@ -26,7 +26,7 @@ import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
-import { Paperclip, Filter, ListTree } from 'lucide-react'
+import { Paperclip, Filter, ListTree, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
 import { STORAGE_KEYS } from '@verbweaver/shared'
 import LayoutControls from '../components/graph/LayoutControls'
@@ -1254,6 +1254,17 @@ function GraphView() {
           <p className="text-muted-foreground">
             Please select or create a project to view the graph
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!positionsReady) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-background">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Loading graph positions…</span>
         </div>
       </div>
     )
