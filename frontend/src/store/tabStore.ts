@@ -43,13 +43,16 @@ export interface Tab {
 interface TabState {
   tabs: Tab[]
   activeTabId: string | null
+  hasHydrated: boolean
   
   addTab: (tab: Omit<Tab, 'id'>) => string
   addEditorTab: (filePath: string, fileName: string) => string
   removeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
   updateTab: (tabId: string, updates: Partial<Tab>) => void
+  updateTabMetadata: (tabId: string, updater: (prev?: Tab['metadata']) => Tab['metadata']) => void
   getActiveTab: () => Tab | null
+  getTabById: (tabId: string) => Tab | undefined
   findEditorTab: (filePath: string) => Tab | undefined
   setTabs: (tabs: Tab[], activeTabId?: string | null) => void
 }
@@ -66,6 +69,7 @@ export const useTabStore = create<TabState>()(
         }
       ],
       activeTabId: 'default-dashboard',
+      hasHydrated: false,
       
       addTab: (tabData) => {
         const id = `tab-${Date.now()}`
@@ -156,10 +160,30 @@ export const useTabStore = create<TabState>()(
           )
         }))
       },
+
+      updateTabMetadata: (tabId, updater) => {
+        set(state => {
+          const nextTabs = state.tabs.map(tab => {
+            if (tab.id !== tabId) return tab
+            const prevMeta = tab.metadata
+            const nextMeta = updater(prevMeta)
+            try {
+              console.log('[TabStore] updateTabMetadata', { tabId, prevMeta, nextMeta })
+            } catch {}
+            return { ...tab, metadata: nextMeta }
+          })
+          return { tabs: nextTabs }
+        })
+      },
       
       getActiveTab: () => {
         const state = get()
         return state.tabs.find(tab => tab.id === state.activeTabId) || null
+      },
+
+      getTabById: (tabId: string) => {
+        const state = get()
+        return state.tabs.find(t => t.id === tabId)
       },
       
       findEditorTab: (filePath: string) => {
@@ -172,6 +196,14 @@ export const useTabStore = create<TabState>()(
     {
       name: 'verbweaver-tabs',
       version: 2,
+      onRehydrateStorage: () => (state, error) => {
+        // Called after hydration
+        try {
+          console.log('[TabStore] Rehydrated tabs state')
+        } catch {}
+        get().setTabs(get().tabs, get().activeTabId) // ensure structure
+        set({ hasHydrated: true })
+      },
       migrate: (persistedState: any, version: number) => {
         // Map legacy 'threads' tabs to 'tasks' and update paths
         if (!persistedState || !persistedState.tabs) return persistedState

@@ -24,6 +24,7 @@ export interface ElectronAPI {
   moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean }>;
   readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
   pathExists: (somePath: string) => Promise<boolean>;
+  saveBinaryFile: (data: Uint8Array, defaultName?: string) => Promise<{ canceled: boolean; filePath?: string }>;
   
   // Project operations
   createProject: (name: string, path: string) => Promise<string>;
@@ -120,6 +121,7 @@ const electronAPI = {
   readProjectFiles: (projectPath: string) => ipcRenderer.invoke('fs:readProjectFiles', projectPath),
   // Utils
   pathExists: (somePath: string) => ipcRenderer.invoke('fs:pathExists', somePath),
+  saveBinaryFile: (data: Uint8Array, defaultName?: string) => ipcRenderer.invoke('dialog:saveBinary', data, defaultName),
   
   // Project operations
   createProject: (name: string, path: string): Promise<string> => ipcRenderer.invoke('project:create', name, path),
@@ -245,5 +247,5 @@ if (process.contextIsolated) {
 } else {
   // For environments where contextIsolation is false (less secure, not recommended)
   // @ts-ignore
-  window.electronAPI = electronAPI;
+  (window as any).electronAPI = electronAPI;
 } 

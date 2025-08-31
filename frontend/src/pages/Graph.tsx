@@ -26,7 +26,7 @@ import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
-import { Paperclip, Filter, ListTree, Loader2 } from 'lucide-react'
+import { Paperclip, Filter, ListTree, Loader2, LineChart, Network } from 'lucide-react'
 import clsx from 'clsx'
 import { STORAGE_KEYS } from '@verbweaver/shared'
 import LayoutControls from '../components/graph/LayoutControls'
@@ -37,6 +37,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { NODE_TYPES } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { createNodeFromTemplateDesktop } from '../api/desktop-templates';
+import ProgressionPanel from '../components/progression/ProgressionPanel'
 // DnD for Outline
 import {
   DndContext,
@@ -107,9 +108,22 @@ function GraphView() {
   const [positionsReady, setPositionsReady] = useState<boolean>(false)
 
   // Outline subview state
-  type GraphSubView = 'mindmap' | 'outline'
-  const { getActiveTab, updateTab } = useTabStore()
-  const [subView, setSubView] = useState<GraphSubView>('mindmap')
+  type GraphSubView = 'mindmap' | 'outline' | 'progression'
+  const { getActiveTab, updateTab, updateTabMetadata } = useTabStore()
+  const { activeTabId, tabs } = useTabStore((s) => ({ activeTabId: s.activeTabId, tabs: s.tabs }))
+  const activeGraphTabId = useMemo(() => {
+    const t = tabs.find(t => t.id === activeTabId)
+    return t && t.type === 'graph' ? t.id : undefined
+  }, [activeTabId, tabs])
+  const [subView, setSubView] = useState<GraphSubView>(() => {
+    try {
+      const tab = useTabStore.getState().getActiveTab()
+      const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
+      if (saved === 'outline' || saved === 'mindmap' || saved === 'progression') return saved
+    } catch {}
+    return 'mindmap'
+  })
+  const subViewLoadedRef = useRef(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['nodes']))
   const [outlineOrder, setOutlineOrder] = useState<Record<string, string[]>>({}) // parent -> ordered child ids
   const outlineFilePath = '.verbweaver/outline.yaml'
@@ -152,7 +166,7 @@ function GraphView() {
           }
         }
       } catch {}
-      // If web and settings didn’t contain outlineMap, still mark ready to avoid blocking
+      // If web and settings didn't contain outlineMap, still mark ready to avoid blocking
       setPositionsReady(true)
     }
     loadOutline()
@@ -162,15 +176,27 @@ function GraphView() {
   useEffect(() => {
     const tab = getActiveTab()
     const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
-    if (saved === 'outline' || saved === 'mindmap') setSubView(saved)
+    if (saved === 'outline' || saved === 'mindmap' || saved === 'progression') setSubView(saved)
+    subViewLoadedRef.current = true
   }, [getActiveTab])
 
-  // Persist subview per tab
+  // Persist subview per tab (after initial load)
   useEffect(() => {
+    if (!subViewLoadedRef.current) return
     const tab = getActiveTab()
     if (tab) {
-      updateTab(tab.id, { metadata: { ...(tab.metadata||{}), graphSubView: subView } as any })
+      console.log('[Graph] Persisting subView to tab metadata', { tabId: tab.id, subView })
+      updateTabMetadata(tab.id, (prev) => ({ ...(prev || {}), graphSubView: subView } as any))
     }
+  }, [subView, getActiveTab, updateTab])
+
+  // Update tab title based on active subview
+  useEffect(() => {
+    const tab = getActiveTab()
+    if (!tab) return
+    const title = subView === 'mindmap' ? 'Graph - Mind Map' : subView === 'outline' ? 'Graph - Outline' : 'Graph - Progression'
+    console.log('[Graph] Updating tab title', { tabId: tab.id, title })
+    updateTab(tab.id, { title })
   }, [subView, getActiveTab, updateTab])
 
   const saveOutline = async (map: Record<string, string[]>) => {
@@ -1363,8 +1389,9 @@ function GraphView() {
         {/* Mind Map right-side panel */}
         <div className="absolute top-2 right-2 z-30 pointer-events-auto">
           <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-44">
-            <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('mindmap')}>Mind Map</button>
+            <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')} title="Outline"><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
+            <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')} title="Progression"><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
             <div className="pt-1 border-t border-border" />
             <div className="flex flex-col gap-2">
               <label className="text-xs font-medium">Layout</label>
@@ -1433,8 +1460,9 @@ function GraphView() {
           {/* Outline right-side panel */}
           <div className="absolute top-2 right-2 z-30 pointer-events-auto">
             <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-56">
-              <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('outline')} disabled>Outline</button>
-              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('mindmap')}>Mind Map</button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
+              <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('outline')} disabled><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')}><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
               <div className="pt-1 border-t border-border" />
               <label className="inline-flex items-center gap-2 text-xs" title="Hide files inside the uploads/ directory from the Outline.">
                 <input
@@ -1503,6 +1531,11 @@ function GraphView() {
           <div className="pr-64">
             {renderOutlineTree('nodes', 0)}
           </div>
+        </div>
+      )}
+      {subView === 'progression' && (
+        <div className="h-full w-full relative">
+          <ProgressionPanel onSwitchSubView={(v)=> setSubView(v)} tabId={activeGraphTabId} />
         </div>
       )}
       
