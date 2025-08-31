@@ -14,6 +14,8 @@ declare global {
       openFile: () => Promise<{ canceled: boolean; filePaths: string[] }>;
       openDirectory: () => Promise<{ canceled: boolean; filePaths: string[] }>;
       saveFile: (content: string) => Promise<{ canceled: boolean; filePath?: string }>;
+      saveJsonFile?: (defaultName: string, jsonText: string) => Promise<{ canceled: boolean; filePath?: string }>;
+      saveBinaryFile?: (data: Uint8Array, defaultName?: string) => Promise<{ canceled: boolean; filePath?: string }>;
       readFile: (filePath: string) => Promise<string>;
       readFileBinary: (filePath: string) => Promise<Buffer>;
       writeFile: (filePath: string, content: string) => Promise<void>;
@@ -88,6 +90,7 @@ declare global {
       onMenuNewProject: (callback: () => void) => () => void;
       onMenuOpenProject: (callback: () => void) => () => void;
       onMenuSettings: (callback: () => void) => () => void;
+      onMenuHelpDocumentation?: (callback: () => void) => () => void;
 
       // For Help View (ensure these match preload.ts ElectronAPI interface)
       listDocs?: () => Promise<DocFile[]>;
