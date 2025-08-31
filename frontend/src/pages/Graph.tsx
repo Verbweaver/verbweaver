@@ -516,15 +516,18 @@ function GraphView() {
     (_: any, node: Node) => {
       // Prevent drag persistence when locked
       if ((node.data as any)?.locked) return
-      updateNode(node.id, {
-        metadata: { position: node.position }
-      }).catch(() => {
-        toast.error('Failed to save node position')
-      })
-      // Persist per-project position for folders and nodes root
-      const isFolder = (node.data as any)?.isDirectory || (node.data as any)?.type === 'folder' || node.id === 'nodes'
-      if (isFolder) {
-        setGraphPositions(prev => ({ ...prev, [node.id]: { x: node.position.x, y: node.position.y } }))
+      // Only persist when rigid mode is ON
+      if (rigidMode) {
+        updateNode(node.id, {
+          metadata: { position: node.position }
+        }).catch(() => {
+          toast.error('Failed to save node position')
+        })
+        // Persist per-project position for folders and nodes root
+        const isFolder = (node.data as any)?.isDirectory || (node.data as any)?.type === 'folder' || node.id === 'nodes'
+        if (isFolder) {
+          setGraphPositions(prev => ({ ...prev, [node.id]: { x: node.position.x, y: node.position.y } }))
+        }
       }
       // After moving, recompute edge handles to ensure closest-side attachments
       setEdges(prev => {
@@ -547,7 +550,7 @@ function GraphView() {
         })
       })
     },
-    [updateNode, nodes, setEdges]
+    [updateNode, nodes, setEdges, rigidMode]
   )
 
   // Handle new connections
@@ -970,11 +973,11 @@ function GraphView() {
     // Save merged into project settings or outline.yaml without blocking UI
     ;(async () => {
       try {
-        if (!isElectron) {
+        if (rigidMode && !isElectron) {
           const settings = await projectsApi.getProjectSettings(currentProject.id)
           const next = { ...(settings || {}), graphPositions: folderPositions }
           await projectsApi.updateProjectSettings(currentProject.id, next)
-        } else if (window.electronAPI && currentProjectPath) {
+        } else if (rigidMode && window.electronAPI && currentProjectPath) {
           const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
           let parsed: any = {}
           try {
@@ -988,7 +991,7 @@ function GraphView() {
         }
       } catch {}
     })()
-  }, [nodes, currentProject?.id])
+  }, [nodes, currentProject?.id, rigidMode])
 
   // -------- Outline helpers --------
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -1365,7 +1368,7 @@ function GraphView() {
             />
             Hide uploads
           </label>
-          <label className="inline-flex items-center gap-2 text-sm" title="Rigid mode keeps positions fixed and prevents drag/sort in Mind Map and Outline.">
+          <label className="inline-flex items-center gap-2 text-sm" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
             <input
               type="checkbox"
               checked={rigidMode}
@@ -1427,7 +1430,7 @@ function GraphView() {
                 />
                 Hide uploads
               </label>
-              <label className="inline-flex items-center gap-2 text-xs" title="Rigid mode prevents dragging/sorting; positions remain fixed until disabled.">
+              <label className="inline-flex items-center gap-2 text-xs" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
                 <input
                   type="checkbox"
                   checked={rigidMode}
