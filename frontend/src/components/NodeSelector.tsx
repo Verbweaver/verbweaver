@@ -152,6 +152,21 @@ function NodeSelector({
     ensure()
   }, [nodeMap?.size, loadNodes])
 
+  const normalizeToProjectRelative = (p: string): string => {
+    const root = String(currentProjectPath || '').replace(/\\/g, '/').replace(/\/\/$/, '')
+    const inPath = String(p || '').replace(/\\/g, '/').replace(/\/\/$/, '')
+    if (root && inPath.toLowerCase().startsWith(root.toLowerCase())) {
+      const rel = inPath.slice(root.length).replace(/^\//, '')
+      return rel || ''
+    }
+    return inPath
+  }
+
+  const joinProjectRelative = (base: string, name: string): string => {
+    const b = base.replace(/\\/g, '/').replace(/\/$/, '')
+    return `${b}/${name}`.replace(/\\/g, '/').replace(/\/\/+/, '/')
+  }
+
   const loadFileTree = async () => {
     if (!currentProjectPath) return
 
@@ -160,6 +175,11 @@ function NodeSelector({
       if (isElectron && window.electronAPI) {
         // Use Electron API for file system access
         let files = await window.electronAPI.readDirectory(currentProjectPath)
+        // Normalize to project-relative paths for consistent filtering/rendering
+        files = files.map((f: any) => ({
+          ...f,
+          path: normalizeToProjectRelative(f.path)
+        }))
         
         // Filter to only show nodes directory if showNodesOnly is true
         if (showNodesOnly) {
@@ -250,18 +270,20 @@ function NodeSelector({
 
     try {
       if (isElectron && window.electronAPI) {
-        let files = await window.electronAPI.readDirectory(node.path)
+        // Ensure we pass an absolute path to the Electron bridge
+        const abs = node.path.match(/^([a-zA-Z]:\\|\/+)/) ? node.path : `${String(currentProjectPath).replace(/\\/g,'/')}/${node.path}`
+        let files = await window.electronAPI.readDirectory(abs)
         
-        // Convert relative paths to absolute paths for proper tree building
-        const absoluteFiles = files.map(file => ({
+        // Convert returned paths to project-relative for consistency
+        const projectRelative = files.map((file: any) => ({
           ...file,
-          path: file.path.startsWith('/') ? file.path : `${node.path}/${file.name}`
+          path: file.path ? normalizeToProjectRelative(file.path) : joinProjectRelative(node.path, file.name)
         }))
         
         // Filter to only show nodes directory if showNodesOnly is true
         if (showNodesOnly) {
           // Show the nodes directory and all its contents
-          const filteredFiles = absoluteFiles.filter(file => {
+          const filteredFiles = projectRelative.filter(file => {
             // Include the nodes directory itself
             if (file.path === 'nodes') return true
             // Include all files and subdirectories within nodes
@@ -272,7 +294,7 @@ function NodeSelector({
           const children = buildFileTree(filteredFiles)
           node.children = children
         } else {
-          const children = buildFileTree(absoluteFiles)
+          const children = buildFileTree(projectRelative)
           node.children = children
         }
         
@@ -572,6 +594,14 @@ function NodeSelector({
 
     return filterNodes(fileTree)
   }, [fileTree, filters, nodeMap])
+
+  // Auto-select all files in scope when no explicit selection has been made
+  useEffect(() => {
+    if (!isLoading && selectedNodes.length === 0) {
+      const allFilePaths = getAllFilePaths(filteredTree)
+      if (allFilePaths.length > 0) onSelectionChange(allFilePaths)
+    }
+  }, [isLoading, filteredTree, selectedNodes.length, onSelectionChange])
 
   const updateFilters = (next: Partial<NodeFilterState>) => {
     const merged = { ...filters, ...next }
