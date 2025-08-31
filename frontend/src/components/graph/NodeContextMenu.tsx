@@ -102,7 +102,7 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
   return (
     <div
       ref={menuRef}
-      className="fixed bg-popover border border-border rounded-md shadow-lg py-1 z-50 min-w-[150px]"
+      className="fixed bg-popover border border-border rounded-md shadow-lg py-1 z-50 min-w-[150px] vw-node-context-menu"
       style={{ left: x, top: y }}
     >
       {!nodeId && (
@@ -176,25 +176,37 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
         </>
       ) : nodeId ? (
         <>
-          {isFolder && onCreateChildNode && (
+          {isFolder && (
             <>
-              <button
-                onClick={() => onCreateChildNode(nodeId)}
-                className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-              >
-                <Plus className="w-3 h-3" />
-                Create Node in Folder
-              </button>
-              <button
-                onClick={() => {
-                  // Open the folder creation dialog scoped to this folder
-                  onCreateChildFolder && onCreateChildFolder(nodeId)
-                }}
-                className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-              >
-                <FolderPlus className="w-3 h-3" />
-                Create Folder in Folder
-              </button>
+              {onCreateChildNode && (
+                <button
+                  onClick={() => onCreateChildNode(nodeId)}
+                  className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                >
+                  <Plus className="w-3 h-3" />
+                  Create Node in Folder
+                </button>
+              )}
+              {onCreateChildFolder && (
+                <button
+                  onClick={() => {
+                    onCreateChildFolder && onCreateChildFolder(nodeId)
+                  }}
+                  className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                >
+                  <FolderPlus className="w-3 h-3" />
+                  Create Folder in Folder
+                </button>
+              )}
+              {onToggleLock && (
+                <button
+                  onClick={() => { if (nodeId) onToggleLock(nodeId); onClose() }}
+                  className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                >
+                  {isLocked ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                  {isLocked ? 'Unlock position' : 'Lock position'}
+                </button>
+              )}
             </>
           )}
           
@@ -276,14 +288,24 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
           )}
           
           <div className="h-px bg-border my-1" />
-          
-          <button
-            onClick={() => onDeleteNode(nodeId)}
-            className="w-full px-3 py-1.5 text-sm text-left hover:bg-destructive hover:text-destructive-foreground flex items-center gap-2"
-          >
-            <Trash2 className="w-3 h-3" />
-            Delete
-          </button>
+          {nodeId === 'nodes' ? (
+            <button
+              disabled
+              title="The nodes folder is not deletable"
+              className="w-full px-3 py-1.5 text-sm text-left opacity-50 cursor-not-allowed flex items-center gap-2"
+            >
+              <Trash2 className="w-3 h-3" />
+              Delete
+            </button>
+          ) : (
+            <button
+              onClick={() => onDeleteNode(nodeId)}
+              className="w-full px-3 py-1.5 text-sm text-left hover:bg-destructive hover:text-destructive-foreground flex items-center gap-2"
+            >
+              <Trash2 className="w-3 h-3" />
+              Delete
+            </button>
+          )}
         </>
       ) : null}
     </div>

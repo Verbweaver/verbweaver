@@ -259,17 +259,29 @@ function GraphView() {
       
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeIds.size > 0) {
         e.preventDefault()
+        const hasNodes = selectedNodeIds.has('nodes')
         if (selectedNodeIds.size === 1) {
           const only = Array.from(selectedNodeIds)[0]
+          if (only === 'nodes') {
+            toast.error('The nodes folder is not deletable')
+            return
+          }
           const isFolder = !!verbweaverNodes.get(only)?.isDirectory
           if (isFolder) {
-            // Show bulk dialog for folder so contents are listed
             setMultiDeleteOpen(true)
           } else {
             const name = only.split('/').pop() || only
             setConfirmState({ open: true, nodeId: only, nodeName: name })
           }
         } else {
+          // Multi-delete: silently ignore nodes root by removing it from selection if present
+          if (hasNodes) {
+            setSelectedNodeIds(prev => {
+              const next = new Set(prev)
+              next.delete('nodes')
+              return next
+            })
+          }
           setMultiDeleteOpen(true)
         }
       }
@@ -320,16 +332,26 @@ function GraphView() {
       const flowNodes: Node[] = []
       const flowEdges: Edge[] = []
       
-      // First pass: Create all nodes (always exclude uploads/nodes/*; optionally hide all uploads/*)
+      // First pass: Create all nodes we want on the graph
       verbweaverNodes.forEach((node) => {
-        const normPath = node.path.replace(/\\/g, '/');
-        if (normPath.startsWith('uploads/nodes/')) {
-          return; // always exclude uploads/nodes
-        }
-        if (hideUploads && normPath.startsWith('uploads/')) {
-          return;
-        }
-        // Create flow node for all nodes, including 'nodes' folder if it exists
+        const normPath = node.path.replace(/\\/g, '/')
+
+        // Only include nodes/* and uploads/* (uploads optional), ignore everything else at root
+        const isNodesRoot = normPath === 'nodes'
+        const isUnderNodes = normPath.startsWith('nodes/')
+        const isUploadsRoot = normPath === 'uploads'
+        const isUnderUploads = normPath.startsWith('uploads/')
+
+        // Always exclude uploads/nodes/*
+        if (normPath.startsWith('uploads/nodes/')) return
+
+        // Respect hide uploads toggle
+        if (hideUploads && (isUploadsRoot || isUnderUploads)) return
+
+        // Filter by allowed roots
+        if (!(isNodesRoot || isUnderNodes || isUploadsRoot || isUnderUploads)) return
+
+        // Compute position
         const position = (() => {
           if (node.path === 'nodes') {
             return { x: 0, y: 0 }
@@ -341,6 +363,10 @@ function GraphView() {
           return saved || { x: Math.random() * 500, y: Math.random() * 500 }
         })()
 
+        // Determine locked state: nodes root defaults to locked unless explicitly unlocked
+        const isNodes = node.path === 'nodes'
+        const locked = isNodes ? (node.metadata?.locked !== false) : !!node.metadata?.locked
+
         flowNodes.push({
           id: node.path,
           type: 'custom',
@@ -349,13 +375,15 @@ function GraphView() {
             label: node.metadata.title || node.name,
             type: node.isDirectory ? 'folder' : (node.metadata.type || 'document'),
             metadata: node.metadata,
-              hasTask: node.hasTask,
+            hasTask: node.hasTask,
             taskStatus: node.taskStatus,
             isDirectory: node.isDirectory,
             isMarkdown: node.isMarkdown,
-            locked: !!node.metadata?.locked,
+            locked,
+            isNodesRoot: isNodes,
+            projectTitle: isNodes ? (currentProject?.name || 'Project') : undefined,
           },
-          draggable: !node.metadata?.locked,
+          draggable: !locked,
         })
       })
       
@@ -378,10 +406,30 @@ function GraphView() {
             taskStatus: undefined,
             isDirectory: true,
             isMarkdown: false,
+            locked: true,
+            isNodesRoot: true,
+            projectTitle: currentProject?.name || 'Project',
           },
+          draggable: false,
         })
       }
       
+      // Build a quick lookup of positions for handle direction calculations
+      const positionOf = new Map<string, { x: number; y: number }>()
+      flowNodes.forEach(n => positionOf.set(n.id, n.position))
+
+      const chooseHandleIds = (sourcePos: { x: number; y: number }, targetPos: { x: number; y: number }) => {
+        const dx = targetPos.x - sourcePos.x
+        const dy = targetPos.y - sourcePos.y
+        if (Math.abs(dy) >= Math.abs(dx)) {
+          if (dy > 0) return { sourceHandle: 'bottom', targetHandle: 'top' }
+          return { sourceHandle: 'top', targetHandle: 'bottom' }
+        } else {
+          if (dx > 0) return { sourceHandle: 'right', targetHandle: 'left' }
+          return { sourceHandle: 'left', targetHandle: 'right' }
+        }
+      }
+
       // Now create edges for all nodes that survived filtering
       const includedPaths = new Set(flowNodes.map(n => n.id))
       verbweaverNodes.forEach((node) => {
@@ -396,6 +444,11 @@ function GraphView() {
         }
         
         if (parentPath && includedPaths.has(parentPath) && includedPaths.has(node.path)) {
+          const s = positionOf.get(parentPath) || { x: 0, y: 0 }
+          const t = positionOf.get(node.path) || { x: 0, y: 0 }
+          const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
+          const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+          const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
           flowEdges.push({
             id: `hard-${parentPath}-${node.path}`,
             source: parentPath,
@@ -406,6 +459,8 @@ function GraphView() {
               type: MarkerType.ArrowClosed,
             },
             label: 'contains',
+            sourceHandle: outMap[sourceHandle],
+            targetHandle: inMap[targetHandle],
           })
         }
         
@@ -417,6 +472,11 @@ function GraphView() {
             // Only create edge if source ID is lexicographically smaller than target ID
             // This ensures we only create one edge per pair of linked nodes
             if (node.metadata.id < targetNode.metadata.id) {
+              const s = positionOf.get(node.path) || { x: 0, y: 0 }
+              const t = positionOf.get(targetNode.path) || { x: 0, y: 0 }
+              const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
+              const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+              const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
               flowEdges.push({
                 id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
                 source: node.path,
@@ -425,6 +485,8 @@ function GraphView() {
                 animated: true,
                 style: { stroke: '#3b82f6', strokeWidth: 2 },
                 // Remove arrows since links are bidirectional
+                sourceHandle: outMap[sourceHandle],
+                targetHandle: inMap[targetHandle],
               })
             }
           }
@@ -446,8 +508,28 @@ function GraphView() {
       }).catch(() => {
         toast.error('Failed to save node position')
       })
+      // After moving, recompute edge handles to ensure closest-side attachments
+      setEdges(prev => {
+        const nodePositions = new Map(nodes.map(n => [n.id, n.id === node.id ? node.position : n.position]))
+        const choose = (s: { x: number; y: number }, t: { x: number; y: number }) => {
+          const dx = t.x - s.x; const dy = t.y - s.y
+          if (Math.abs(dy) >= Math.abs(dx)) return dy > 0 ? { sourceHandle: 'bottom', targetHandle: 'top' } : { sourceHandle: 'top', targetHandle: 'bottom' }
+          return dx > 0 ? { sourceHandle: 'right', targetHandle: 'left' } : { sourceHandle: 'left', targetHandle: 'right' }
+        }
+        return prev.map(e => {
+          const sp = nodePositions.get(e.source)
+          const tp = nodePositions.get(e.target)
+          if (sp && tp) {
+            const { sourceHandle, targetHandle } = choose(sp, tp)
+            const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+            const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
+            return { ...e, sourceHandle: outMap[sourceHandle], targetHandle: inMap[targetHandle] }
+          }
+          return e
+        })
+      })
     },
-    [updateNode]
+    [updateNode, nodes, setEdges]
   )
 
   // Handle new connections
@@ -500,6 +582,19 @@ function GraphView() {
     },
     []
   )
+
+  // Global close for context menu on outside left-click
+  useEffect(() => {
+    const handleGlobalMouseDown = (e: MouseEvent) => {
+      if (!contextMenu) return
+      if (e.button !== 0) return // only left click
+      const target = e.target as HTMLElement
+      const insideMenu = target.closest('.vw-node-context-menu')
+      if (!insideMenu) setContextMenu(null)
+    }
+    document.addEventListener('mousedown', handleGlobalMouseDown, true)
+    return () => document.removeEventListener('mousedown', handleGlobalMouseDown, true)
+  }, [contextMenu])
 
   // Handle edge context menu
   const onEdgeContextMenu = useCallback(
@@ -711,6 +806,11 @@ function GraphView() {
 
   // Handle deleting node
   const handleDeleteNode = useCallback((nodeId: string) => {
+    if (nodeId === 'nodes') {
+      toast.error('The nodes folder is not deletable')
+      setContextMenu(null)
+      return
+    }
     const nodeName = nodeId.split('/').pop() || nodeId
     setConfirmState({ open: true, nodeId, nodeName })
     setContextMenu(null)
@@ -776,6 +876,19 @@ function GraphView() {
   }, [])
 
   // Handle graph layout
+  // Choose edge handle IDs based on relative positions
+  const chooseHandleIds = useCallback((sourcePos: { x: number; y: number }, targetPos: { x: number; y: number }) => {
+    const dx = targetPos.x - sourcePos.x
+    const dy = targetPos.y - sourcePos.y
+    if (Math.abs(dy) >= Math.abs(dx)) {
+      if (dy > 0) return { sourceHandle: 'bottom', targetHandle: 'top' }
+      return { sourceHandle: 'top', targetHandle: 'bottom' }
+    } else {
+      if (dx > 0) return { sourceHandle: 'right', targetHandle: 'left' }
+      return { sourceHandle: 'left', targetHandle: 'right' }
+    }
+  }, [])
+
   const handleLayout = useCallback((direction: LayoutDirection | 'expanded') => {
     let layoutedNodes: Node[]
     
@@ -787,18 +900,44 @@ function GraphView() {
       layoutedNodes = result.nodes
     }
     
-    // Update node positions in the store
+    // Keep 'nodes' anchored at origin if it exists and is locked
+    layoutedNodes = layoutedNodes.map(n => {
+      if (n.id === 'nodes') {
+        const locked = (n.data as any)?.locked !== false
+        return { ...n, position: locked ? { x: 0, y: 0 } : n.position }
+      }
+      return n
+    })
+
+    // Recompute edge handle directions based on positions
+    const nodePos = new Map(layoutedNodes.map(n => [n.id, n.position]))
+    const updatedEdges = edges.map(e => {
+      const s = nodePos.get(e.source)
+      const t = nodePos.get(e.target)
+      if (s && t) {
+        const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
+        const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+        const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
+        return { ...e, sourceHandle: outMap[sourceHandle], targetHandle: inMap[targetHandle] }
+      }
+      return { ...e }
+    })
+
+    // Update node positions in the store, but never move locked nodes
     Promise.all(
-      layoutedNodes.map(node => 
-        updateNode(node.id, { metadata: { position: node.position } })
-      )
+      layoutedNodes.map(node => {
+        const locked = (node.data as any)?.locked
+        if (locked) return Promise.resolve()
+        return updateNode(node.id, { metadata: { position: node.position } })
+      })
     ).then(() => {
       setNodes(layoutedNodes)
+      setEdges(updatedEdges)
       toast.success('Layout applied')
     }).catch(() => {
       toast.error('Failed to save layout positions')
     })
-  }, [nodes, edges, setNodes, updateNode])
+  }, [nodes, edges, setNodes, setEdges, updateNode, chooseHandleIds])
 
   // -------- Outline helpers --------
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -1328,7 +1467,8 @@ function GraphView() {
             try {
               const node = useNodeStore.getState().nodes.get(nodeId)
               if (!node) return
-              const nextLocked = !(node.metadata?.locked)
+              const currentLocked = nodeId === 'nodes' ? (node.metadata?.locked !== false) : !!node.metadata?.locked
+              const nextLocked = !currentLocked
               await updateNode(nodeId, { metadata: { locked: nextLocked } as any })
               toast.success(nextLocked ? 'Node locked' : 'Node unlocked')
             } catch (e) {
@@ -1336,8 +1476,10 @@ function GraphView() {
             }
           }}
           isLocked={(() => {
-            const n = verbweaverNodes.get(contextMenu.nodeId || '')
-            return !!n?.metadata?.locked
+            const id = contextMenu.nodeId || ''
+            const n = verbweaverNodes.get(id)
+            if (!n) return false
+            return id === 'nodes' ? (n.metadata?.locked !== false) : !!n.metadata?.locked
           })()}
           onUploadFiles={() => {
             const input = document.getElementById('graph-canvas-upload-input') as HTMLInputElement | null

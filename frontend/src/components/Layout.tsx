@@ -68,11 +68,17 @@ function Layout() {
       navigate('/settings')
     })
 
+    const unsubscribeHelpDocumentation = window.electronAPI.onMenuHelpDocumentation?.(() => {
+      console.log('Help Documentation menu clicked')
+      navigate('/help')
+    })
+
     // Cleanup
     return () => {
       unsubscribeNewProject?.()
       unsubscribeOpenProject?.()
       unsubscribeSettings?.()
+      unsubscribeHelpDocumentation?.()
     }
   }, [navigate])
 

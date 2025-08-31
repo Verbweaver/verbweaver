@@ -560,7 +560,7 @@ function createMenu() {
         {
           label: 'Documentation',
           click: () => {
-            shell.openExternal('https://github.com/yourusername/verbweaver/tree/main/docs');
+            mainWindow?.webContents.send('menu-help-documentation');
           }
         },
         {
