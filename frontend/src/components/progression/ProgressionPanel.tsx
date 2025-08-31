@@ -405,8 +405,8 @@ export default function ProgressionPanel(
       canvas.width = Math.floor(size.w * scale)
       canvas.height = Math.floor(size.h * scale)
       const ctx = canvas.getContext('2d')!
-      if (config.background === 'white') {
-        ctx.fillStyle = '#ffffff'
+      if (config.background !== 'transparent') {
+        ctx.fillStyle = String(config.background || '#ffffff')
         ctx.fillRect(0, 0, canvas.width, canvas.height)
       }
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
@@ -481,7 +481,7 @@ export default function ProgressionPanel(
         />
       </div>
       {/* Controls on the right */}
-      <div className="w-72 border-l border-border p-2 flex flex-col gap-2 overflow-y-auto">
+      <div className="w-80 border-l border-border p-2 flex flex-col gap-2 overflow-y-auto">
         {/* Integrated sub-view switcher */}
         <div className="flex flex-col gap-2 items-stretch">
           <button className={clsx('px-2 py-1 text-sm', 'border rounded')} onClick={()=> onSwitchSubView?.('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
@@ -519,7 +519,7 @@ export default function ProgressionPanel(
             <input className="flex-1 px-2 py-1 border rounded bg-background" value={v.name} onChange={e=>{
               const nv = [...config.yVars]; nv[i] = { ...nv[i], name: e.target.value }; setConfig(c=>({ ...c, yVars: nv }))
             }} placeholder="e.g. tension" />
-            <input type="color" value={v.color} onChange={e=>{ const nv=[...config.yVars]; nv[i] = { ...nv[i], color: e.target.value }; setConfig(c=>({ ...c, yVars: nv })) }} />
+            <input type="color" className="w-20 h-8 p-0 rounded border" value={v.color} onChange={e=>{ const nv=[...config.yVars]; nv[i] = { ...nv[i], color: e.target.value }; setConfig(c=>({ ...c, yVars: nv })) }} />
             <button className="text-xs px-2 py-1 border rounded" onClick={()=>{ const nv=[...config.yVars]; nv.splice(i,1); setConfig(c=>({ ...c, yVars: nv })) }}>Remove</button>
           </div>
         ))}
@@ -538,7 +538,7 @@ export default function ProgressionPanel(
             <span>Solid background (in exported image)</span>
           </label>
           {config.background !== 'transparent' && (
-            <input type="color" value={typeof config.background==='string' ? config.background : '#ffffff'} onChange={e=> setConfig(c=>({ ...c, background: e.target.value || '#ffffff' }))} />
+            <input type="color" className="w-20 h-8 p-0 rounded border" value={typeof config.background==='string' ? config.background : '#ffffff'} onChange={e=> setConfig(c=>({ ...c, background: e.target.value || '#ffffff' }))} />
           )}
         </div>
         <div className="pt-1 border-t border-border" />
