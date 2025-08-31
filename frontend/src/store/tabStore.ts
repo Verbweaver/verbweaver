@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { persist } from 'zustand/middleware'
 
 export interface CompilerState {
@@ -43,7 +44,6 @@ export interface Tab {
 interface TabState {
   tabs: Tab[]
   activeTabId: string | null
-  hasHydrated: boolean
   
   addTab: (tab: Omit<Tab, 'id'>) => string
   addEditorTab: (filePath: string, fileName: string) => string
@@ -58,8 +58,8 @@ interface TabState {
 }
 
 export const useTabStore = create<TabState>()(
-  persist(
-    (set, get) => ({
+  persist<TabState>(
+    (set: any, get: any) => ({
       tabs: [
         {
           id: 'default-dashboard',
@@ -69,16 +69,15 @@ export const useTabStore = create<TabState>()(
         }
       ],
       activeTabId: 'default-dashboard',
-      hasHydrated: false,
       
-      addTab: (tabData) => {
+      addTab: (tabData: Omit<Tab, 'id'>) => {
         const id = `tab-${Date.now()}`
         const newTab: Tab = {
           ...tabData,
           id
         }
         
-        set(state => ({
+        set((state: TabState) => ({
           tabs: [...state.tabs, newTab],
           activeTabId: id
         }))
@@ -88,7 +87,7 @@ export const useTabStore = create<TabState>()(
       
       addEditorTab: (filePath: string, fileName: string) => {
         // Check if tab already exists
-        const existingTab = get().tabs.find(tab => 
+        const existingTab = get().tabs.find((tab: Tab) => 
           tab.type === 'editor' && tab.metadata?.filePath === filePath
         )
         
@@ -110,7 +109,7 @@ export const useTabStore = create<TabState>()(
           }
         }
         
-        set(state => ({
+        set((state: TabState) => ({
           tabs: [...state.tabs, newTab],
           activeTabId: id
         }))
@@ -118,8 +117,8 @@ export const useTabStore = create<TabState>()(
         return id
       },
       
-      removeTab: (tabId) => {
-        set(state => {
+      removeTab: (tabId: string) => {
+        set((state: TabState) => {
           const newTabs = state.tabs.filter(tab => tab.id !== tabId)
           let newActiveId = state.activeTabId
           
@@ -149,21 +148,21 @@ export const useTabStore = create<TabState>()(
         }))
       },
       
-      setActiveTab: (tabId) => {
+      setActiveTab: (tabId: string) => {
         set({ activeTabId: tabId })
       },
       
-      updateTab: (tabId, updates) => {
-        set(state => ({
-          tabs: state.tabs.map(tab => 
+      updateTab: (tabId: string, updates: Partial<Tab>) => {
+        set((state: TabState) => ({
+          tabs: state.tabs.map((tab: Tab) => 
             tab.id === tabId ? { ...tab, ...updates } : tab
           )
         }))
       },
 
-      updateTabMetadata: (tabId, updater) => {
-        set(state => {
-          const nextTabs = state.tabs.map(tab => {
+      updateTabMetadata: (tabId: string, updater: (prev?: Tab['metadata']) => Tab['metadata']) => {
+        set((state: TabState) => {
+          const nextTabs = state.tabs.map((tab: Tab) => {
             if (tab.id !== tabId) return tab
             const prevMeta = tab.metadata
             const nextMeta = updater(prevMeta)
@@ -177,18 +176,18 @@ export const useTabStore = create<TabState>()(
       },
       
       getActiveTab: () => {
-        const state = get()
+        const state: TabState = get()
         return state.tabs.find(tab => tab.id === state.activeTabId) || null
       },
 
       getTabById: (tabId: string) => {
-        const state = get()
-        return state.tabs.find(t => t.id === tabId)
+        const state: TabState = get()
+        return state.tabs.find((t: Tab) => t.id === tabId)
       },
       
       findEditorTab: (filePath: string) => {
-        const state = get()
-        return state.tabs.find(tab => 
+        const state: TabState = get()
+        return state.tabs.find((tab: Tab) => 
           tab.type === 'editor' && tab.metadata?.filePath === filePath
         )
       }
@@ -196,14 +195,6 @@ export const useTabStore = create<TabState>()(
     {
       name: 'verbweaver-tabs',
       version: 2,
-      onRehydrateStorage: () => (state, error) => {
-        // Called after hydration
-        try {
-          console.log('[TabStore] Rehydrated tabs state')
-        } catch {}
-        get().setTabs(get().tabs, get().activeTabId) // ensure structure
-        set({ hasHydrated: true })
-      },
       migrate: (persistedState: any, version: number) => {
         // Map legacy 'threads' tabs to 'tasks' and update paths
         if (!persistedState || !persistedState.tabs) return persistedState
