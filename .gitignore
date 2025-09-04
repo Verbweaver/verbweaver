@@ -130,6 +130,7 @@ tsconfig.tsbuildinfo
 ehthumbs.db
 Thumbs.db
 desktop.ini
+.vite-cache
 
 # Package lock files (if using only one package manager)
 # Uncomment the ones you don't use:

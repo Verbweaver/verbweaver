@@ -294,7 +294,7 @@ nodeVariables:
 ```
 
 Field options:
-- `type`: string | number | boolean | array
+- `type`: string | number | boolean | array | table
 - `label`: human-friendly label (optional)
 - `description`: helper text (optional)
 - `required`: boolean (document scope only for now)
@@ -304,6 +304,66 @@ Field options:
 - `path`: for `nodeVariables`, dotted path into node frontmatter to prefill (e.g., `metadata.cvss`)
 - `item`: when `type: array`, item schema (supports `type: object` with `fields`)
 - `compute`: computed value (see below)
+
+#### Table Variables (type: table)
+
+Schema shape (document scope only):
+
+```yaml
+variables:
+  myTable:
+    type: table
+    columnsDefault: ["Task", "Status"]              # optional; defaults to ["Task"]
+    columnTypes:                           # optional per-column type defaults
+      Task: { type: string }
+      Status: { type: enum, enum: [todo, doing, done] }
+```
+
+Runtime value (what users edit in the Compiler UI):
+
+```json
+{
+  "columns": ["Task", "Alice", "Bob"],
+  "types": { "Task": { "type": "string" }, "Alice": { "type": "enum", "enum": ["", "R", "A", "C", "I"] } },
+  "rows": [ { "Task": "Kickoff", "Alice": "R" } ]
+}
+```
+
+Rendering options provided by the compiler:
+
+- A) Full table as Markdown:
+  - Nested: `$myTable.markdown$`
+  - Top-level convenience: `$myTable_markdown$`
+
+- B) Structured pieces for custom layouts:
+  - Headers: `$for(myTable.columns)$ ... $endfor$` or `$for(myTable_columns)$ ... $endfor$`
+  - Separator: `${myTable.headerSeparator}` or `$myTable_headerSeparator$`
+  - Rows: `$for(myTable.rows)$ $it.line$ $endfor$` or `$for(myTable_rows)$ $it.line$ $endfor$`
+  - Each row has `cells` (aligned to current columns) and a prebuilt `line` string.
+
+UI behavior:
+- Add/remove/rename/reorder columns, per-column type (string/number/boolean/enum), CSV import/export
+- Web limits: ≤ 256 columns, ≤ 2000 characters per cell (blocked with validation message)
+- Desktop: no limits
+
+Example (RACI, Option A):
+```markdown
+## RACI Matrix
+
+$raci_markdown$
+```
+
+Example (RACI, Option B):
+
+```markdown
+## RACI Matrix
+
+| $for(raci_columns)$ $it$ |$endfor$
+$raci_headerSeparator$
+$for(raci_rows)$
+$it.line$
+$endfor$
+```
 
 ## Computed Fields
 
@@ -553,6 +613,43 @@ $endif$
 $endfor$
 ```
 
+### Using Variables and Logic Inside Node Content
+
+You can reference variables and other nodes directly inside a node’s Markdown body. The compiler evaluates node body content in multiple passes so references introduced by one node can be resolved in subsequent passes.
+
+Scope rules:
+- Selected nodes are rendered via `$for(nodes)$` and `$nodes.*$` during the first pass.
+- Any node referenced by ID (e.g., `$node-<ID>...$`) is added to scope for later passes, but is not added to the `$nodes$` array.
+- All passes have access to the same document variables and options you set in the Compiler.
+
+Basics:
+- Another node’s content: `$node-<ID>.content$`
+- A variable of another node: `$node-<ID>.vars.character_name$`
+- A frontmatter field: `$node-<ID>.metadata.priority$`
+- Conditional on another node: `$if(node-<ID>.vars.ready)$…$endif$`
+- Loop over another node’s attachments:
+  ```markdown
+  $if(node-<ID>.attachments)$
+  ### Related Files
+  $for(node-<ID>.attachments)$
+  - $it.name$ ($it.size$)
+  $endfor$
+  $endif$
+  ```
+
+Chained references:
+- If Node A embeds `$node-B.content$` and Node B embeds `$node-C.vars.foo$`, the compiler resolves them over multiple passes until no further changes occur or the pass limit is reached.
+
+Pass limit and unresolved references:
+- Default max passes: 5 (configurable in the Compiler’s Advanced section).
+- Unresolved references render as empty by default.
+- Optionally enable inline debug markers in the Compiler to emit comments like: `<!-- unresolved: node-abc123.vars.foo -->`.
+
+Notes and limitations:
+- Variables/logic are expanded only in node body content, not in YAML frontmatter.
+- `$for(nodes)$` and `$nodes.*$` may be re-evaluated in later passes (toggle in Advanced settings).
+- `{% include_relative %}` is only for templates; includes inside node bodies are not processed.
+
 ### Conditionals
 ```markdown
 $if(title)$
@@ -737,12 +834,12 @@ $for(stakeholders)$
 | $it.name$ | $it.role$ | $it.contact$ |
 $endfor$
 
-## RACI Matrix
+## RACI Matrix (table variables)
 
-| Task | R | A | C | I |
-|------|---|---|---|---|
-$for(raci)$
-| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |
+| $for(raci_columns)$ $it$ |$endfor$
+$raci_headerSeparator$
+$for(raci_rows)$
+$it.line$
 $endfor$
 
 $for(nodes)$
@@ -781,19 +878,19 @@ Notes:
 
 ### Get Available Templates
 ```
-GET /api/v1/projects/{project_id}/compiler/templates?format={format}
+GET /api/v1/compiler/{project_id}/templates?format_type={format}
 ```
 Returns a list of available templates for the specified format.
 
 ### Get Template Content
 ```
-GET /api/v1/projects/{project_id}/compiler/templates/{template_path}
+GET /api/v1/compiler/{project_id}/templates/{template_path}
 ```
 Returns the template content, validation status, and detected custom variables.
 
 ### Compile Document
 ```
-POST /api/v1/projects/{project_id}/compiler/compile
+POST /api/v1/compiler/{project_id}/compile
 ```
 Compiles a document using the specified template and custom variables.
 

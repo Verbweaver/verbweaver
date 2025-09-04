@@ -6,10 +6,11 @@ import { EXPORT_FORMATS } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
 import { compilerApi } from '../api/compilerApi'
-import NodeSelector from '../components/NodeSelector'
+import NodeSelector, { NodeFilterState } from '../components/NodeSelector'
 import NodeOrderingPanel from '../components/NodeOrderingPanel'
 import { editorApi } from '../api/editorApi'
 import Tooltip from '../components/ui/Tooltip'
+import TableEditorDialog from '../components/TableEditorDialog'
 
 interface ExportFormat {
   id: string
@@ -81,6 +82,10 @@ interface CompileOptions {
   fontSize: 'small' | 'medium' | 'large'
   margins: 'narrow' | 'normal' | 'wide'
   lineSpacing: 'single' | '1.5' | 'double'
+  // Advanced
+  maxVariablePasses?: number
+  reprocessNodesInPasses?: boolean
+  showUnresolvedMarkers?: boolean
 }
 
 interface Template {
@@ -100,6 +105,7 @@ function CompilerView() {
   const [author, setAuthor] = useState('')
   const [selectedNodes, setSelectedNodes] = useState<string[]>([])
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
+  const [filters, setFilters] = useState<NodeFilterState | undefined>(undefined)
   const [dependencies, setDependencies] = useState<Array<{
     name: string;
     available: boolean;
@@ -119,6 +125,7 @@ function CompilerView() {
   const [isPrefillingNodeVars, setIsPrefillingNodeVars] = useState<boolean>(false)
   const [docVars, setDocVars] = useState<Record<string, any>>({})
   const [docVarErrors, setDocVarErrors] = useState<Record<string, string>>({})
+  const [openTableVar, setOpenTableVar] = useState<string | null>(null)
   const [templateMessages, setTemplateMessages] = useState<string[]>([])
   const [isCompiling, setIsCompiling] = useState(false)
   const [compileProgress, setCompileProgress] = useState(0)
@@ -131,7 +138,10 @@ function CompilerView() {
     pageSize: 'A4',
     fontSize: 'medium',
     margins: 'normal',
-    lineSpacing: '1.5'
+    lineSpacing: '1.5',
+    maxVariablePasses: 5,
+    reprocessNodesInPasses: true,
+    showUnresolvedMarkers: false
   })
 
   // Tab store for persistence
@@ -170,9 +180,12 @@ function CompilerView() {
     console.log('[Compiler] Attempting to restore state from tab metadata')
     const restoreState = () => {
       const tab = getActiveTab()
-      console.log('[Compiler] Checking for saved state in tab:', tab?.type, tab?.metadata?.compilerState ? 'found' : 'not found')
-      if (tab?.type === 'compiler' && tab.metadata?.compilerState) {
-        const state = tab.metadata.compilerState
+      const stateMap: any = tab?.metadata?.compilerStateByProject
+      const legacy = (tab?.metadata as any)?.compilerState
+      const projId = currentProject?.id
+      const state = (projId && stateMap && stateMap[projId]) || (legacy && legacy.projectId && legacy.projectId === projId ? legacy : null)
+      console.log('[Compiler] Checking for saved state (by project):', tab?.type, state ? 'found' : 'not found', 'for project', projId)
+      if (tab?.type === 'compiler' && state) {
         console.log('[Compiler] Restoring state from tab:', {
           title: state.title,
           author: state.author,
@@ -197,6 +210,7 @@ function CompilerView() {
         if (state.docVars) setDocVars(state.docVars)
         if (state.options) setOptions(prev => ({ ...prev, ...state.options }))
         if (state.expandedDirs) setExpandedDirs(new Set(state.expandedDirs))
+        if ((state as any).filters) setFilters((state as any).filters as NodeFilterState)
         setHasRestoredState(true)
         console.log('[Compiler] State restored, setting hasRestoredState to true')
         
@@ -217,7 +231,7 @@ function CompilerView() {
     // Small delay to ensure component is fully mounted
     const timeoutId = setTimeout(restoreState, 0)
     return () => clearTimeout(timeoutId)
-  }, [getActiveTab]) // Run when active tab changes only
+  }, [getActiveTab, currentProject?.id]) // Run when active tab or project changes
 
   // Save compiler state to tab metadata whenever state changes
   useEffect(() => {
@@ -229,38 +243,47 @@ function CompilerView() {
 
     
     const tab = getActiveTab()
-    if (tab?.type === 'compiler') {
-             console.log('[Compiler] Saving state to tab:', {
-         title,
-         author,
-         selectedNodes: selectedNodes.length,
-         orderedNodes: orderedNodes.length,
-         selectedFormat,
-         selectedTemplate,
-         expandedDirs: Array.from(expandedDirs)
-       })
-       updateTab(tab.id, {
-         metadata: {
-           ...tab.metadata,
-           compilerState: {
-             title,
-             author,
-             selectedNodes,
-             orderedNodes,
-             selectedFormat,
-             selectedTemplate,
-             customVariables,
-             nodeVariables,
-             docVars,
-             options,
-             expandedDirs: Array.from(expandedDirs)
-           }
-         }
-       })
+    const projectId = currentProject?.id
+    if (tab?.type === 'compiler' && projectId) {
+      console.log('[Compiler] Saving state to tab (per project):', {
+        projectId,
+        title,
+        author,
+        selectedNodes: selectedNodes.length,
+        orderedNodes: orderedNodes.length,
+        selectedFormat,
+        selectedTemplate,
+        expandedDirs: Array.from(expandedDirs)
+      })
+      const existing = (tab.metadata as any)?.compilerStateByProject || {}
+      const nextForProject = {
+        projectId,
+        title,
+        author,
+        selectedNodes,
+        orderedNodes,
+        selectedFormat,
+        selectedTemplate,
+        customVariables,
+        nodeVariables,
+        docVars,
+        options,
+        expandedDirs: Array.from(expandedDirs),
+        filters
+      }
+      updateTab(tab.id, {
+        metadata: {
+          ...tab.metadata,
+          compilerStateByProject: {
+            ...existing,
+            [projectId]: nextForProject
+          }
+        }
+      })
     }
   }, [
     title, author, selectedNodes, orderedNodes, selectedFormat, selectedTemplate,
-    customVariables, nodeVariables, docVars, options, expandedDirs, isRestoring, hasInitialized
+    customVariables, nodeVariables, docVars, options, expandedDirs, isRestoring, hasInitialized, currentProject?.id
   ])
 
   // Load templates when format changes
@@ -326,40 +349,7 @@ function CompilerView() {
     
     if (templatePath && currentProject) {
       try {
-        const templateContent: any = await compilerApi.getTemplateContent(currentProject.id, templatePath)
-        const schema = (templateContent && (templateContent as any).schema) || null
-        setTemplateSchema(schema)
-        setTemplateMessages(Array.isArray((templateContent as any).messages) ? (templateContent as any).messages : [])
-        if (templateContent.custom_variables.length > 0) {
-          setCustomVariables(
-            templateContent.custom_variables.map((name: string) => ({ name, value: '' }))
-          )
-        } else {
-          setCustomVariables([])
-        }
-        // Initialize docVars from schema.variables
-        if (schema && schema.variables) {
-          const initDocVars: Record<string, any> = {}
-          Object.keys(schema.variables).forEach((k) => {
-            const def = schema.variables[k] || {}
-            if (def.type === 'array') initDocVars[k] = Array.isArray(def.default) ? [...def.default] : []
-            else if (def.type === 'number') initDocVars[k] = typeof def.default === 'number' ? def.default : ''
-            else if (def.type === 'boolean') initDocVars[k] = typeof def.default === 'boolean' ? def.default : false
-            else initDocVars[k] = def.default ?? ''
-          })
-          setDocVars(initDocVars)
-        } else {
-          setDocVars({})
-        }
-        // Initialize nodeVariables grid from schema.nodeVariables if present
-        const nv = ((templateContent as any).schema && (templateContent as any).schema.nodeVariables) || {}
-        if (Object.keys(nv).length > 0 && orderedNodes.length > 0) {
-          const init: Record<string, Record<string, any>> = {}
-          for (const p of orderedNodes) init[p] = {}
-          setNodeVariables(init)
-        } else {
-          setNodeVariables({})
-        }
+        await fetchTemplateSchema(templatePath, false)
       } catch (error) {
         console.error('Failed to load template content:', error)
         setCustomVariables([])
@@ -373,6 +363,75 @@ function CompilerView() {
       setDocVars({})
     }
   }
+
+  // Fetch and apply template schema; when preserveExisting is true, do not clobber existing values.
+  const fetchTemplateSchema = async (templatePath: string, preserveExisting: boolean) => {
+    if (!currentProject || !templatePath) return
+    const templateContent: any = await compilerApi.getTemplateContent(currentProject.id, templatePath)
+    const schema = (templateContent && (templateContent as any).schema) || null
+    setTemplateSchema(schema)
+    setTemplateMessages(Array.isArray((templateContent as any).messages) ? (templateContent as any).messages : [])
+
+    // Merge/initialize custom variables by name
+    const names: string[] = (templateContent.custom_variables || []).filter((name: string) => !(name === 'it' || String(name).startsWith('it.')))
+    if (names.length > 0) {
+      if (preserveExisting) {
+        const byName = new Map(customVariables.map(cv => [cv.name, cv.value]))
+        setCustomVariables(names.map(n => ({ name: n, value: (byName.get(n) ?? '') as string })))
+      } else {
+        setCustomVariables(names.map((name: string) => ({ name, value: '' })))
+      }
+    } else if (!preserveExisting) {
+      setCustomVariables([])
+    }
+
+    // Initialize or merge document variables from schema
+    if (schema && schema.variables) {
+      const initDocVars: Record<string, any> = {}
+      Object.keys(schema.variables).forEach((k) => {
+        const def = schema.variables[k] || {}
+        if (def.type === 'table') {
+          const cols = Array.isArray(def.columnsDefault) ? [...def.columnsDefault] : ['Task']
+          const types = def.columnTypes && typeof def.columnTypes === 'object' ? { ...def.columnTypes } : {}
+          const d = (def.default && typeof def.default === 'object') ? def.default : {}
+          const rows = Array.isArray((d as any).rows) ? (d as any).rows : []
+          initDocVars[k] = { columns: cols, types, rows }
+        }
+        else if (def.type === 'array') initDocVars[k] = Array.isArray(def.default) ? [...def.default] : []
+        else if (def.type === 'number') initDocVars[k] = typeof def.default === 'number' ? def.default : ''
+        else if (def.type === 'boolean') initDocVars[k] = typeof def.default === 'boolean' ? def.default : false
+        else initDocVars[k] = def.default ?? ''
+      })
+      if (preserveExisting) {
+        // Keep existing values; backfill only missing keys
+        const merged: Record<string, any> = { ...initDocVars, ...(docVars || {}) }
+        setDocVars(merged)
+      } else {
+        setDocVars(initDocVars)
+      }
+    } else if (!preserveExisting) {
+      setDocVars({})
+    }
+
+    // Node variables grid: only initialize when not preserving (to avoid clobber)
+    const nv = ((templateContent as any).schema && (templateContent as any).schema.nodeVariables) || {}
+    if (!preserveExisting) {
+      if (Object.keys(nv).length > 0 && orderedNodes.length > 0) {
+        const init: Record<string, Record<string, any>> = {}
+        for (const p of orderedNodes) init[p] = {}
+        setNodeVariables(init)
+      } else {
+        setNodeVariables({})
+      }
+    }
+  }
+
+  // When a template is already selected (e.g., returning to tab) but schema is not loaded, fetch it without clobbering values
+  useEffect(() => {
+    if (currentProject && selectedTemplate && !templateSchema) {
+      fetchTemplateSchema(selectedTemplate, true).catch(() => {})
+    }
+  }, [currentProject?.id, selectedTemplate])
 
   // Prefill nodeVariables from node frontmatter based on schema.nodeVariables.path
   useEffect(() => {
@@ -708,6 +767,8 @@ function CompilerView() {
         options: {
           title,
           author,
+          // Ensure backend aggregator has access to output format in options
+          format: selectedFormat,
           ...options
         }
       }, {
@@ -770,6 +831,8 @@ function CompilerView() {
           showFolders={false}
           expandedDirs={expandedDirs}
           onExpandedDirsChange={setExpandedDirs}
+          filters={filters}
+          onFiltersChange={setFilters}
         />
       </div>
 
@@ -978,6 +1041,24 @@ function CompilerView() {
                             </div>
                             {docVarErrors[key] && <div className="text-[10px] text-destructive mt-1 px-2">{docVarErrors[key]}</div>}
                           </div>
+                        ) : def?.type === 'table' ? (
+                          <div className="border rounded p-2">
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs text-muted-foreground">
+                                {Array.isArray(docVars[key]?.columns) ? `${docVars[key].columns.length} columns` : '0 columns'} · {Array.isArray(docVars[key]?.rows) ? `${docVars[key].rows.length} rows` : '0 rows'}
+                              </div>
+                              <button className="px-2 py-1 border rounded text-xs" onClick={()=>setOpenTableVar(key)}>Edit Table…</button>
+                            </div>
+                            <TableEditorDialog
+                              isOpen={openTableVar === key}
+                              title={def?.label || key}
+                              varName={key}
+                              value={docVars[key] || { columns: Array.isArray(def?.columnsDefault)? def.columnsDefault : ['Task'], rows: [] }}
+                              onChange={(val)=>setDocVars(prev=>({ ...prev, [key]: val }))}
+                              onClose={()=>setOpenTableVar(null)}
+                              isElectron={typeof window !== 'undefined' && (window as any).electronAPI !== undefined}
+                            />
+                          </div>
                         ) : (
                           <div>
                             {Array.isArray(def?.enum) ? (
@@ -1108,8 +1189,166 @@ function CompilerView() {
             </label>
           </div>
 
+          {/* Advanced options */}
+          <details className="space-y-3 border rounded p-3">
+            <summary className="cursor-pointer font-semibold">Advanced</summary>
+            <div className="mt-2 space-y-3">
+              <div className="flex items-center gap-3">
+                <label className="text-sm w-56">Max variable passes</label>
+                <input
+                  type="number"
+                  className="px-2 py-1 border border-input rounded bg-background text-sm w-24"
+                  min={1}
+                  value={options.maxVariablePasses ?? 5}
+                  onChange={(e)=> updateOption('maxVariablePasses', Math.max(1, Number(e.target.value || 5)))}
+                />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="rounded"
+                  checked={options.reprocessNodesInPasses ?? true}
+                  onChange={(e)=> updateOption('reprocessNodesInPasses', e.target.checked)}
+                />
+                <span className="text-sm">Re-evaluate $for(nodes)$ and $nodes.*$ in later passes</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="rounded"
+                  checked={options.showUnresolvedMarkers ?? false}
+                  onChange={(e)=> updateOption('showUnresolvedMarkers', e.target.checked)}
+                />
+                <span className="text-sm">Show inline markers for unresolved references</span>
+              </label>
+            </div>
+          </details>
+
           {/* Compile Button and Progress */}
           <div className="space-y-4">
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const payload = {
+                    title,
+                    author,
+                    selectedNodes,
+                    orderedNodes,
+                    selectedFormat,
+                    selectedTemplate,
+                    customVariables,
+                    nodeVariables,
+                    docVars,
+                    options
+                  }
+                  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = 'compiler-config.json'
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  URL.revokeObjectURL(url)
+                }}
+                className="px-3 py-2 border border-input rounded-md"
+              >
+                Save Configuration
+              </button>
+              <label className="px-3 py-2 border border-input rounded-md cursor-pointer">
+                Load Configuration
+                <input type="file" accept="application/json,.json" className="hidden" onChange={(e)=>{
+                  const inputEl = e.currentTarget
+                  const file = inputEl.files?.[0]
+                  if (!file) return
+                  ;(async () => {
+                    try {
+                      const text = await file.text()
+                      const cfg = JSON.parse(text)
+                      const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined
+
+                      // Normalize template path separators
+                      let normalizedTemplate = typeof cfg.selectedTemplate === 'string' ? String(cfg.selectedTemplate).replace(/\\/g, '/') : undefined
+
+                      // Validate and filter node paths against project tree (best-effort)
+                      let safeSelectedNodes: string[] | undefined = undefined
+                      let safeOrderedNodes: string[] | undefined = undefined
+                      try {
+                        if (currentProject && Array.isArray(cfg.selectedNodes)) {
+                          const tree = await editorApi.getFileTree(currentProject.id, 'nodes')
+                          const flatten = (items: any[], prefix: string): string[] => {
+                            const out: string[] = []
+                            for (const it of items || []) {
+                              const rel = prefix ? `${prefix}/${it.name}` : it.name
+                              if (it.type === 'directory') out.push(...flatten(it.children || [], rel))
+                              else if (it.type === 'file') out.push(rel)
+                            }
+                            return out
+                          }
+                          const all = flatten(tree, '').map(p => `nodes/${p}`.replace(/\\/g, '/'))
+                          const exist = new Set(all)
+                          safeSelectedNodes = (cfg.selectedNodes || []).map((p: string) => String(p).replace(/\\/g,'/')).filter((p: string) => exist.has(p))
+                          if (Array.isArray(cfg.orderedNodes)) {
+                            const orderedNorm = (cfg.orderedNodes || []).map((p: string) => String(p).replace(/\\/g,'/'))
+                            safeOrderedNodes = orderedNorm.filter((p: string) => exist.has(p) && safeSelectedNodes!.includes(p))
+                          }
+                        }
+                      } catch {}
+
+                      // Validate docVars: enforce table constraints and web limits
+                      let safeDocVars = (cfg.docVars && typeof cfg.docVars === 'object') ? { ...cfg.docVars } : undefined
+                      try {
+                        if (safeDocVars) {
+                          const isWebLimited = !isElectron
+                          const MAX_WEB_COLUMNS = 256
+                          const MAX_WEB_CELL_LEN = 2000
+                          Object.keys(safeDocVars).forEach((k) => {
+                            const v: any = (safeDocVars as any)[k]
+                            if (v && typeof v === 'object' && Array.isArray(v.columns) && Array.isArray(v.rows)) {
+                              // Treat as table
+                              let cols = v.columns.map((c: any) => String(c || '').trim()).filter((c: string) => !!c)
+                              // unique preserve order
+                              const seen = new Set<string>()
+                              cols = cols.filter((c: string) => (seen.has(c) ? false : (seen.add(c), true)))
+                              if (isWebLimited && cols.length > MAX_WEB_COLUMNS) cols = cols.slice(0, MAX_WEB_COLUMNS)
+                              const rows = Array.isArray(v.rows) ? v.rows : []
+                              const normRows = rows.map((r: any) => {
+                                const obj: any = {}
+                                cols.forEach((c: string) => {
+                                  let cell = r && typeof r === 'object' ? r[c] : ''
+                                  if (cell === null || cell === undefined) cell = ''
+                                  if (typeof cell !== 'string') cell = String(cell)
+                                  if (isWebLimited && cell.length > MAX_WEB_CELL_LEN) cell = cell.slice(0, MAX_WEB_CELL_LEN)
+                                  obj[c] = cell
+                                })
+                                return obj
+                              })
+                              ;(safeDocVars as any)[k] = { columns: cols, types: (v.types && typeof v.types==='object') ? v.types : {}, rows: normRows }
+                            }
+                          })
+                        }
+                      } catch {}
+
+                      if (cfg.title !== undefined) setTitle(cfg.title)
+                      if (cfg.author !== undefined) setAuthor(cfg.author)
+                      if (Array.isArray(cfg.selectedNodes)) setSelectedNodes(safeSelectedNodes ?? cfg.selectedNodes.map((p: any)=>String(p).replace(/\\/g,'/')))
+                      if (Array.isArray(cfg.orderedNodes)) setOrderedNodes(safeOrderedNodes ?? cfg.orderedNodes.map((p: any)=>String(p).replace(/\\/g,'/')))
+                      if (typeof cfg.selectedFormat === 'string') setSelectedFormat(cfg.selectedFormat)
+                      if (typeof normalizedTemplate === 'string') setSelectedTemplate(normalizedTemplate)
+                      if (Array.isArray(cfg.customVariables)) setCustomVariables(cfg.customVariables)
+                      if (cfg.nodeVariables && typeof cfg.nodeVariables === 'object') setNodeVariables(cfg.nodeVariables)
+                      if (safeDocVars) setDocVars(safeDocVars)
+                      if (cfg.options && typeof cfg.options === 'object') setOptions(prev => ({ ...prev, ...cfg.options }))
+                    } catch (err) {
+                      console.error('Failed to load configuration', err)
+                      toast.error('Invalid configuration file')
+                    } finally {
+                      try { inputEl.value = '' } catch {}
+                    }
+                  })()
+                }} />
+              </label>
+            </div>
             <button
               onClick={handleCompile}
               disabled={isCompiling || orderedNodes.length === 0}

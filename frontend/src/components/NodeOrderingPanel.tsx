@@ -16,6 +16,7 @@ interface OrderedNode {
   path: string
   name: string
   title?: string
+  tags?: string[]
   isSelected?: boolean
 }
 
@@ -103,6 +104,7 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes }: Node
               path: node.path,
               name: node.name,
               title: node.metadata?.title || node.name,
+              tags: Array.isArray(node.metadata?.tags) ? node.metadata.tags : [],
               isSelected: false
             })
           } else {
@@ -469,6 +471,15 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes }: Node
               <div className="text-xs text-muted-foreground truncate">
                 {node.path}
               </div>
+              {Array.isArray(node.tags) && node.tags.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {node.tags.map((t) => (
+                    <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-accent-foreground border border-border">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Order Number */}

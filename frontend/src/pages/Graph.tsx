@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import ReactFlow, {
   Node,
   Edge,
@@ -13,6 +13,7 @@ import ReactFlow, {
   NodeTypes,
   MarkerType,
   ReactFlowProvider,
+  useReactFlow,
 } from 'react-flow-renderer'
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
@@ -25,7 +26,7 @@ import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
-import { Paperclip, Filter, ListTree } from 'lucide-react'
+import { Paperclip, Filter, ListTree, Loader2, LineChart, Network } from 'lucide-react'
 import clsx from 'clsx'
 import { STORAGE_KEYS } from '@verbweaver/shared'
 import LayoutControls from '../components/graph/LayoutControls'
@@ -36,6 +37,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { NODE_TYPES } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { createNodeFromTemplateDesktop } from '../api/desktop-templates';
+import ProgressionPanel from '../components/progression/ProgressionPanel'
 // DnD for Outline
 import {
   DndContext,
@@ -59,6 +61,9 @@ const isElectron = typeof window !== 'undefined' && window.electronAPI !== undef
 
 function GraphView() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const reactFlow = useReactFlow()
+  const focusAppliedRef = useRef<string | null>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const { nodes: verbweaverNodes, loadNodes, updateNode, createNode, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
   const { addEditorTab } = useTabStore()
@@ -97,10 +102,28 @@ function GraphView() {
     }
   })
 
+  // Persisted per-project positions for folders (and optionally special nodes)
+  const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({})
+  // Flag to trigger initial rebuild after positions are loaded
+  const [positionsReady, setPositionsReady] = useState<boolean>(false)
+
   // Outline subview state
-  type GraphSubView = 'mindmap' | 'outline'
-  const { getActiveTab, updateTab } = useTabStore()
-  const [subView, setSubView] = useState<GraphSubView>('mindmap')
+  type GraphSubView = 'mindmap' | 'outline' | 'progression'
+  const { getActiveTab, updateTab, updateTabMetadata } = useTabStore()
+  const { activeTabId, tabs } = useTabStore((s) => ({ activeTabId: s.activeTabId, tabs: s.tabs }))
+  const activeGraphTabId = useMemo(() => {
+    const t = tabs.find(t => t.id === activeTabId)
+    return t && t.type === 'graph' ? t.id : undefined
+  }, [activeTabId, tabs])
+  const [subView, setSubView] = useState<GraphSubView>(() => {
+    try {
+      const tab = useTabStore.getState().getActiveTab()
+      const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
+      if (saved === 'outline' || saved === 'mindmap' || saved === 'progression') return saved
+    } catch {}
+    return 'mindmap'
+  })
+  const subViewLoadedRef = useRef(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['nodes']))
   const [outlineOrder, setOutlineOrder] = useState<Record<string, string[]>>({}) // parent -> ordered child ids
   const outlineFilePath = '.verbweaver/outline.yaml'
@@ -121,6 +144,11 @@ function GraphView() {
           const settings = await projectsApi.getProjectSettings(currentProject.id)
           if (settings && settings.outlineMap && typeof settings.outlineMap === 'object') {
             setOutlineOrder(settings.outlineMap as Record<string, string[]>)
+            if (settings && typeof settings.graphPositions === 'object') {
+              setGraphPositions(settings.graphPositions as Record<string, { x: number; y: number }>)
+            }
+            // Ensure positionsReady flips even if no positions exist
+            setPositionsReady(true)
             return
           }
           // No outline in settings; start empty without hitting file API in web mode
@@ -132,27 +160,43 @@ function GraphView() {
               const content = await window.electronAPI.readFile(abs)
               const parsed: any = yaml.load(content || '') || {}
               if (parsed && typeof parsed === 'object') setOutlineOrder(parsed.outline || {})
+              if (parsed && typeof parsed.graph_positions === 'object') setGraphPositions(parsed.graph_positions)
+              setPositionsReady(true)
             } catch {}
           }
         }
       } catch {}
+      // If web and settings didn't contain outlineMap, still mark ready to avoid blocking
+      setPositionsReady(true)
     }
     loadOutline()
-  }, [currentProject?.id])
+  }, [currentProject?.id, currentProjectPath])
 
   // Initialize subview from active tab metadata
   useEffect(() => {
     const tab = getActiveTab()
     const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
-    if (saved === 'outline' || saved === 'mindmap') setSubView(saved)
+    if (saved === 'outline' || saved === 'mindmap' || saved === 'progression') setSubView(saved)
+    subViewLoadedRef.current = true
   }, [getActiveTab])
 
-  // Persist subview per tab
+  // Persist subview per tab (after initial load)
   useEffect(() => {
+    if (!subViewLoadedRef.current) return
     const tab = getActiveTab()
     if (tab) {
-      updateTab(tab.id, { metadata: { ...(tab.metadata||{}), graphSubView: subView } as any })
+      console.log('[Graph] Persisting subView to tab metadata', { tabId: tab.id, subView })
+      updateTabMetadata(tab.id, (prev) => ({ ...(prev || {}), graphSubView: subView } as any))
     }
+  }, [subView, getActiveTab, updateTab])
+
+  // Update tab title based on active subview
+  useEffect(() => {
+    const tab = getActiveTab()
+    if (!tab) return
+    const title = subView === 'mindmap' ? 'Graph - Mind Map' : subView === 'outline' ? 'Graph - Outline' : 'Graph - Progression'
+    console.log('[Graph] Updating tab title', { tabId: tab.id, title })
+    updateTab(tab.id, { title })
   }, [subView, getActiveTab, updateTab])
 
   const saveOutline = async (map: Record<string, string[]>) => {
@@ -161,7 +205,7 @@ function GraphView() {
     if (!isElectron) {
       try {
         const settings = await projectsApi.getProjectSettings(currentProject.id)
-        const next = { ...(settings || {}), outlineMap: map }
+        const next = { ...(settings || {}), outlineMap: map, graphPositions }
         await projectsApi.updateProjectSettings(currentProject.id, next)
       } catch (e) {
         console.warn('Failed to save outline in project settings', e)
@@ -170,7 +214,7 @@ function GraphView() {
     }
     // Electron: persist to file alongside project
     try {
-      const content = yaml.dump({ outline: map })
+      const content = yaml.dump({ outline: map, graph_positions: graphPositions })
       if (window.electronAPI && currentProjectPath) {
         const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
         await window.electronAPI.writeFile(abs, content)
@@ -255,17 +299,29 @@ function GraphView() {
       
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeIds.size > 0) {
         e.preventDefault()
+        const hasNodes = selectedNodeIds.has('nodes')
         if (selectedNodeIds.size === 1) {
           const only = Array.from(selectedNodeIds)[0]
+          if (only === 'nodes') {
+            toast.error('The nodes folder is not deletable')
+            return
+          }
           const isFolder = !!verbweaverNodes.get(only)?.isDirectory
           if (isFolder) {
-            // Show bulk dialog for folder so contents are listed
             setMultiDeleteOpen(true)
           } else {
             const name = only.split('/').pop() || only
             setConfirmState({ open: true, nodeId: only, nodeName: name })
           }
         } else {
+          // Multi-delete: silently ignore nodes root by removing it from selection if present
+          if (hasNodes) {
+            setSelectedNodeIds(prev => {
+              const next = new Set(prev)
+              next.delete('nodes')
+              return next
+            })
+          }
           setMultiDeleteOpen(true)
         }
       }
@@ -311,24 +367,40 @@ function GraphView() {
 
   // Load and convert nodes when project changes or nodes update
   useEffect(() => {
-    if (currentProject) {
+    if (currentProject && positionsReady) {
       // Convert VerbweaverNodes to React Flow nodes and edges
       const flowNodes: Node[] = []
       const flowEdges: Edge[] = []
       
-      // First pass: Create all nodes (always exclude uploads/nodes/*; optionally hide all uploads/*)
+      // First pass: Create all nodes we want on the graph
       verbweaverNodes.forEach((node) => {
-        const normPath = node.path.replace(/\\/g, '/');
-        if (normPath.startsWith('uploads/nodes/')) {
-          return; // always exclude uploads/nodes
-        }
-        if (hideUploads && normPath.startsWith('uploads/')) {
-          return;
-        }
-        // Create flow node for all nodes, including 'nodes' folder if it exists
+        const normPath = node.path.replace(/\\/g, '/')
+
+        // Only include nodes/* and uploads/* (uploads optional), ignore everything else at root
+        const isNodesRoot = normPath === 'nodes'
+        const isUnderNodes = normPath.startsWith('nodes/')
+        const isUploadsRoot = normPath === 'uploads'
+        const isUnderUploads = normPath.startsWith('uploads/')
+
+        // Always exclude uploads/nodes/*
+        if (normPath.startsWith('uploads/nodes/')) return
+
+        // Respect hide uploads toggle
+        if (hideUploads && (isUploadsRoot || isUnderUploads)) return
+
+        // Filter by allowed roots
+        if (!(isNodesRoot || isUnderNodes || isUploadsRoot || isUnderUploads)) return
+
+        // Compute position
         const position = (() => {
           if (node.path === 'nodes') {
-            return { x: 0, y: 0 }
+            const persisted = graphPositions['nodes']
+            return persisted || { x: 0, y: 0 }
+          }
+          // Prefer persisted per-project positions for folders
+          if (node.isDirectory) {
+            const persisted = graphPositions[node.path]
+            if (persisted && typeof persisted.x === 'number' && typeof persisted.y === 'number') return persisted
           }
           const saved = node.metadata.position
           if (rigidMode && saved && typeof saved.x === 'number' && typeof saved.y === 'number') {
@@ -336,6 +408,10 @@ function GraphView() {
           }
           return saved || { x: Math.random() * 500, y: Math.random() * 500 }
         })()
+
+        // Determine locked state: nodes root defaults to locked unless explicitly unlocked
+        const isNodes = node.path === 'nodes'
+        const locked = isNodes ? (node.metadata?.locked !== false) : !!node.metadata?.locked
 
         flowNodes.push({
           id: node.path,
@@ -345,13 +421,15 @@ function GraphView() {
             label: node.metadata.title || node.name,
             type: node.isDirectory ? 'folder' : (node.metadata.type || 'document'),
             metadata: node.metadata,
-              hasTask: node.hasTask,
+            hasTask: node.hasTask,
             taskStatus: node.taskStatus,
             isDirectory: node.isDirectory,
             isMarkdown: node.isMarkdown,
-            locked: !!node.metadata?.locked,
+            locked,
+            isNodesRoot: isNodes,
+            projectTitle: isNodes ? (currentProject?.name || 'Project') : undefined,
           },
-          draggable: !node.metadata?.locked,
+          draggable: !locked,
         })
       })
       
@@ -365,7 +443,7 @@ function GraphView() {
         flowNodes.push({
           id: 'nodes',
           type: 'custom',
-          position: { x: 0, y: 0 },
+          position: graphPositions['nodes'] || { x: 0, y: 0 },
           data: {
             label: 'nodes',
             type: 'folder',
@@ -374,10 +452,30 @@ function GraphView() {
             taskStatus: undefined,
             isDirectory: true,
             isMarkdown: false,
+            locked: true,
+            isNodesRoot: true,
+            projectTitle: currentProject?.name || 'Project',
           },
+          draggable: false,
         })
       }
       
+      // Build a quick lookup of positions for handle direction calculations
+      const positionOf = new Map<string, { x: number; y: number }>()
+      flowNodes.forEach(n => positionOf.set(n.id, n.position))
+
+      const chooseHandleIds = (sourcePos: { x: number; y: number }, targetPos: { x: number; y: number }) => {
+        const dx = targetPos.x - sourcePos.x
+        const dy = targetPos.y - sourcePos.y
+        if (Math.abs(dy) >= Math.abs(dx)) {
+          if (dy > 0) return { sourceHandle: 'bottom', targetHandle: 'top' }
+          return { sourceHandle: 'top', targetHandle: 'bottom' }
+        } else {
+          if (dx > 0) return { sourceHandle: 'right', targetHandle: 'left' }
+          return { sourceHandle: 'left', targetHandle: 'right' }
+        }
+      }
+
       // Now create edges for all nodes that survived filtering
       const includedPaths = new Set(flowNodes.map(n => n.id))
       verbweaverNodes.forEach((node) => {
@@ -392,6 +490,11 @@ function GraphView() {
         }
         
         if (parentPath && includedPaths.has(parentPath) && includedPaths.has(node.path)) {
+          const s = positionOf.get(parentPath) || { x: 0, y: 0 }
+          const t = positionOf.get(node.path) || { x: 0, y: 0 }
+          const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
+          const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+          const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
           flowEdges.push({
             id: `hard-${parentPath}-${node.path}`,
             source: parentPath,
@@ -402,6 +505,8 @@ function GraphView() {
               type: MarkerType.ArrowClosed,
             },
             label: 'contains',
+            sourceHandle: outMap[sourceHandle],
+            targetHandle: inMap[targetHandle],
           })
         }
         
@@ -413,6 +518,11 @@ function GraphView() {
             // Only create edge if source ID is lexicographically smaller than target ID
             // This ensures we only create one edge per pair of linked nodes
             if (node.metadata.id < targetNode.metadata.id) {
+              const s = positionOf.get(node.path) || { x: 0, y: 0 }
+              const t = positionOf.get(targetNode.path) || { x: 0, y: 0 }
+              const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
+              const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+              const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
               flowEdges.push({
                 id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
                 source: node.path,
@@ -421,6 +531,8 @@ function GraphView() {
                 animated: true,
                 style: { stroke: '#3b82f6', strokeWidth: 2 },
                 // Remove arrows since links are bidirectional
+                sourceHandle: outMap[sourceHandle],
+                targetHandle: inMap[targetHandle],
               })
             }
           }
@@ -430,20 +542,48 @@ function GraphView() {
       setNodes(flowNodes)
       setEdges(flowEdges)
     }
-  }, [currentProject, verbweaverNodes, setNodes, setEdges, hideUploads])
+  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
     (_: any, node: Node) => {
       // Prevent drag persistence when locked
       if ((node.data as any)?.locked) return
-      updateNode(node.id, {
-        metadata: { position: node.position }
-      }).catch(() => {
-        toast.error('Failed to save node position')
+      // Only persist when rigid mode is ON
+      if (rigidMode) {
+        updateNode(node.id, {
+          metadata: { position: node.position }
+        }).catch(() => {
+          toast.error('Failed to save node position')
+        })
+        // Persist per-project position for folders and nodes root
+        const isFolder = (node.data as any)?.isDirectory || (node.data as any)?.type === 'folder' || node.id === 'nodes'
+        if (isFolder) {
+          setGraphPositions(prev => ({ ...prev, [node.id]: { x: node.position.x, y: node.position.y } }))
+        }
+      }
+      // After moving, recompute edge handles to ensure closest-side attachments
+      setEdges(prev => {
+        const nodePositions = new Map(nodes.map(n => [n.id, n.id === node.id ? node.position : n.position]))
+        const choose = (s: { x: number; y: number }, t: { x: number; y: number }) => {
+          const dx = t.x - s.x; const dy = t.y - s.y
+          if (Math.abs(dy) >= Math.abs(dx)) return dy > 0 ? { sourceHandle: 'bottom', targetHandle: 'top' } : { sourceHandle: 'top', targetHandle: 'bottom' }
+          return dx > 0 ? { sourceHandle: 'right', targetHandle: 'left' } : { sourceHandle: 'left', targetHandle: 'right' }
+        }
+        return prev.map(e => {
+          const sp = nodePositions.get(e.source)
+          const tp = nodePositions.get(e.target)
+          if (sp && tp) {
+            const { sourceHandle, targetHandle } = choose(sp, tp)
+            const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+            const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
+            return { ...e, sourceHandle: outMap[sourceHandle], targetHandle: inMap[targetHandle] }
+          }
+          return e
+        })
       })
     },
-    [updateNode]
+    [updateNode, nodes, setEdges, rigidMode]
   )
 
   // Handle new connections
@@ -496,6 +636,19 @@ function GraphView() {
     },
     []
   )
+
+  // Global close for context menu on outside left-click
+  useEffect(() => {
+    const handleGlobalMouseDown = (e: MouseEvent) => {
+      if (!contextMenu) return
+      if (e.button !== 0) return // only left click
+      const target = e.target as HTMLElement
+      const insideMenu = target.closest('.vw-node-context-menu')
+      if (!insideMenu) setContextMenu(null)
+    }
+    document.addEventListener('mousedown', handleGlobalMouseDown, true)
+    return () => document.removeEventListener('mousedown', handleGlobalMouseDown, true)
+  }, [contextMenu])
 
   // Handle edge context menu
   const onEdgeContextMenu = useCallback(
@@ -707,6 +860,11 @@ function GraphView() {
 
   // Handle deleting node
   const handleDeleteNode = useCallback((nodeId: string) => {
+    if (nodeId === 'nodes') {
+      toast.error('The nodes folder is not deletable')
+      setContextMenu(null)
+      return
+    }
     const nodeName = nodeId.split('/').pop() || nodeId
     setConfirmState({ open: true, nodeId, nodeName })
     setContextMenu(null)
@@ -772,6 +930,19 @@ function GraphView() {
   }, [])
 
   // Handle graph layout
+  // Choose edge handle IDs based on relative positions
+  const chooseHandleIds = useCallback((sourcePos: { x: number; y: number }, targetPos: { x: number; y: number }) => {
+    const dx = targetPos.x - sourcePos.x
+    const dy = targetPos.y - sourcePos.y
+    if (Math.abs(dy) >= Math.abs(dx)) {
+      if (dy > 0) return { sourceHandle: 'bottom', targetHandle: 'top' }
+      return { sourceHandle: 'top', targetHandle: 'bottom' }
+    } else {
+      if (dx > 0) return { sourceHandle: 'right', targetHandle: 'left' }
+      return { sourceHandle: 'left', targetHandle: 'right' }
+    }
+  }, [])
+
   const handleLayout = useCallback((direction: LayoutDirection | 'expanded') => {
     let layoutedNodes: Node[]
     
@@ -783,18 +954,77 @@ function GraphView() {
       layoutedNodes = result.nodes
     }
     
-    // Update node positions in the store
+    // Keep 'nodes' anchored at origin if it exists and is locked
+    layoutedNodes = layoutedNodes.map(n => {
+      if (n.id === 'nodes') {
+        const locked = (n.data as any)?.locked !== false
+        return { ...n, position: locked ? { x: 0, y: 0 } : n.position }
+      }
+      return n
+    })
+
+    // Recompute edge handle directions based on positions
+    const nodePos = new Map(layoutedNodes.map(n => [n.id, n.position]))
+    const updatedEdges = edges.map(e => {
+      const s = nodePos.get(e.source)
+      const t = nodePos.get(e.target)
+      if (s && t) {
+        const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
+        const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+        const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
+        return { ...e, sourceHandle: outMap[sourceHandle], targetHandle: inMap[targetHandle] }
+      }
+      return { ...e }
+    })
+
+    // Update node positions in the store, but never move locked nodes
     Promise.all(
-      layoutedNodes.map(node => 
-        updateNode(node.id, { metadata: { position: node.position } })
-      )
+      layoutedNodes.map(node => {
+        const locked = (node.data as any)?.locked
+        if (locked) return Promise.resolve()
+        return updateNode(node.id, { metadata: { position: node.position } })
+      })
     ).then(() => {
       setNodes(layoutedNodes)
+      setEdges(updatedEdges)
       toast.success('Layout applied')
     }).catch(() => {
       toast.error('Failed to save layout positions')
     })
-  }, [nodes, edges, setNodes, updateNode])
+  }, [nodes, edges, setNodes, setEdges, updateNode, chooseHandleIds])
+
+  // Persist positions when they change (dragging or layout applied)
+  useEffect(() => {
+    if (!currentProject?.id) return
+    // Build a map of folder positions plus special 'nodes'
+    const folderPositions: Record<string, { x: number; y: number }> = {}
+    nodes.forEach(n => {
+      const isFolder = (n.data as any)?.isDirectory || (n.data as any)?.type === 'folder' || n.id === 'nodes'
+      if (isFolder && n.position) folderPositions[n.id] = { x: n.position.x, y: n.position.y }
+    })
+    setGraphPositions(folderPositions)
+    // Save merged into project settings or outline.yaml without blocking UI
+    ;(async () => {
+      try {
+        if (rigidMode && !isElectron) {
+          const settings = await projectsApi.getProjectSettings(currentProject.id)
+          const next = { ...(settings || {}), graphPositions: folderPositions }
+          await projectsApi.updateProjectSettings(currentProject.id, next)
+        } else if (rigidMode && window.electronAPI && currentProjectPath) {
+          const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
+          let parsed: any = {}
+          try {
+            const content = await window.electronAPI.readFile(abs)
+            parsed = yaml.load(content || '') || {}
+          } catch {}
+          parsed.outline = parsed.outline || outlineOrder
+          parsed.graph_positions = folderPositions
+          const content = yaml.dump(parsed)
+          await window.electronAPI.writeFile(abs, content)
+        }
+      } catch {}
+    })()
+  }, [nodes, currentProject?.id, rigidMode])
 
   // -------- Outline helpers --------
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -1055,6 +1285,17 @@ function GraphView() {
     )
   }
 
+  if (!positionsReady) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-background">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Loading graph positions…</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className="h-full w-full"
@@ -1127,13 +1368,30 @@ function GraphView() {
         fitView
         className="bg-background relative z-10"
       >
+        {/* Auto-focus target node if focus query param is present */}
+        {(() => {
+          const params = new URLSearchParams(location.search)
+          const targetPath = params.get('focus')
+          if (targetPath && focusAppliedRef.current !== targetPath) {
+            const target = nodes.find(n => n.id === targetPath)
+            if (target) {
+              focusAppliedRef.current = targetPath
+              setSelectedNodeIds(new Set([targetPath]))
+              setNodes(prev => prev.map(n => ({ ...n, selected: n.id === targetPath })))
+              const { x, y } = target.position || { x: 0, y: 0 }
+              try { reactFlow.setCenter(x, y, { zoom: 1.5, duration: 600 }) } catch {}
+            }
+          }
+          return null
+        })()}
         <Background />
         <Controls />
         {/* Mind Map right-side panel */}
         <div className="absolute top-2 right-2 z-30 pointer-events-auto">
           <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-44">
-            <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('mindmap')}>Mind Map</button>
+            <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')} title="Outline"><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
+            <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')} title="Progression"><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
             <div className="pt-1 border-t border-border" />
             <div className="flex flex-col gap-2">
               <label className="text-xs font-medium">Layout</label>
@@ -1155,7 +1413,7 @@ function GraphView() {
             />
             Hide uploads
           </label>
-          <label className="inline-flex items-center gap-2 text-sm" title="Rigid mode keeps positions fixed and prevents drag/sort in Mind Map and Outline.">
+          <label className="inline-flex items-center gap-2 text-sm" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
             <input
               type="checkbox"
               checked={rigidMode}
@@ -1202,8 +1460,9 @@ function GraphView() {
           {/* Outline right-side panel */}
           <div className="absolute top-2 right-2 z-30 pointer-events-auto">
             <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-56">
-              <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('outline')} disabled>Outline</button>
-              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('mindmap')}>Mind Map</button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
+              <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('outline')} disabled><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')}><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
               <div className="pt-1 border-t border-border" />
               <label className="inline-flex items-center gap-2 text-xs" title="Hide files inside the uploads/ directory from the Outline.">
                 <input
@@ -1217,7 +1476,7 @@ function GraphView() {
                 />
                 Hide uploads
               </label>
-              <label className="inline-flex items-center gap-2 text-xs" title="Rigid mode prevents dragging/sorting; positions remain fixed until disabled.">
+              <label className="inline-flex items-center gap-2 text-xs" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
                 <input
                   type="checkbox"
                   checked={rigidMode}
@@ -1274,6 +1533,11 @@ function GraphView() {
           </div>
         </div>
       )}
+      {subView === 'progression' && (
+        <div className="h-full w-full relative">
+          <ProgressionPanel onSwitchSubView={(v)=> setSubView(v)} tabId={activeGraphTabId} />
+        </div>
+      )}
       
       {contextMenu && (
         <NodeContextMenu
@@ -1308,7 +1572,8 @@ function GraphView() {
             try {
               const node = useNodeStore.getState().nodes.get(nodeId)
               if (!node) return
-              const nextLocked = !(node.metadata?.locked)
+              const currentLocked = nodeId === 'nodes' ? (node.metadata?.locked !== false) : !!node.metadata?.locked
+              const nextLocked = !currentLocked
               await updateNode(nodeId, { metadata: { locked: nextLocked } as any })
               toast.success(nextLocked ? 'Node locked' : 'Node unlocked')
             } catch (e) {
@@ -1316,8 +1581,10 @@ function GraphView() {
             }
           }}
           isLocked={(() => {
-            const n = verbweaverNodes.get(contextMenu.nodeId || '')
-            return !!n?.metadata?.locked
+            const id = contextMenu.nodeId || ''
+            const n = verbweaverNodes.get(id)
+            if (!n) return false
+            return id === 'nodes' ? (n.metadata?.locked !== false) : !!n.metadata?.locked
           })()}
           onUploadFiles={() => {
             const input = document.getElementById('graph-canvas-upload-input') as HTMLInputElement | null

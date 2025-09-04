@@ -25,15 +25,8 @@ variables:
         role: { type: string }
         contact: { type: string }
   raci:
-    type: array
-    item:
-      type: object
-      fields:
-        task: { type: string }
-        r: { type: string }
-        a: { type: string }
-        c: { type: string }
-        i: { type: string }
+    type: table
+    columnsDefault: ["Task"]
 nodeVariables:
   appendix:
     type: boolean
@@ -55,7 +48,9 @@ nodeVariables:
 
 ## Executive Summary
 
+$if(summary)$
 $summary$
+$endif$
 
 ## Document Changelog
 
@@ -75,11 +70,7 @@ $endfor$
 
 ## RACI Matrix
 
-| Task | R | A | C | I |
-|------|---|---|---|---|
-$for(raci)$
-| $it.task$ | $it.r$ | $it.a$ | $it.c$ | $it.i$ |
-$endfor$
+$raci_markdown$
 
 $for(nodes)$
 $ifnot(nodes.vars.appendix)$

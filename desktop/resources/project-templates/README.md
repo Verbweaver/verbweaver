@@ -11,7 +11,6 @@ Verbweaver organizes ideas and tasks as Markdown files under the `nodes/` folder
 - `nodes/` — all content nodes and tasks (Markdown)
 - `uploads/` — files you attach to nodes (original filenames preserved; referenced in Markdown)
 - `templates/` — templates for new nodes and compiler exports
-- `docs/` — optional documentation for your project
 - `.verbweaver/` — project settings and internal data
 
 ### Views

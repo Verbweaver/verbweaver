@@ -10,13 +10,14 @@ import {
 import { join } from 'path';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, execFile } from 'child_process';
 import { autoUpdater } from 'electron-updater';
 import Store from 'electron-store';
 import * as net from 'net';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import matter from 'gray-matter';
+// For Windows Job Objects, we'll lazy-load ffi bindings only on win32
 
 // Helper function to generate a slug for filenames (simple version)
 function slugify(text: string): string {
@@ -46,6 +47,10 @@ const store = new Store({
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
 let backendPort: number | null = null;
+// Track uvicorn child pid if printed ("Started server process [PID]") so we can kill it explicitly
+let backendServerPid: number | null = null;
+// Windows Job object handle to ensure backend and its children die together
+// Note: previous Job-object approach removed due to build issues
 
 // Configuration
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -170,6 +175,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
         throw new Error(`Bundled backend binary not found at ${binaryPath}`);
       }
 
+      // Spawn bundled backend directly (no shell) so we track the real PID and can terminate it reliably
       backendProcess = spawn(binaryPath, [], {
         env: {
           ...process.env,
@@ -186,7 +192,9 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
             'file://'
           ])
         },
-        shell: process.platform === 'win32'
+        shell: false,
+        windowsHide: true,
+        detached: false
       });
     } else {
       // Development: try to use a local Python + uvicorn
@@ -244,12 +252,18 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     currentProcess.stdout?.on('data', (data) => {
       console.log(`Backend: ${data}`);
       mainWindow?.webContents.send('backend:log', data.toString());
+      try {
+        const m = /Started server process \[(\d+)\]/.exec(String(data));
+        if (m && m[1]) backendServerPid = parseInt(m[1], 10);
+      } catch {}
       
       if (data.toString().includes('Uvicorn running on')) {
         // Add a small delay to ensure the server is fully started
         setTimeout(() => {
           clearTimeout(timeout);
           backendPort = port;
+          // On Windows, place backend into a Job so all children terminate with it
+          
           resolve({ port, pid: currentProcess.pid! });
         }, 1000);
       }
@@ -258,6 +272,10 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     currentProcess.stderr?.on('data', (data) => {
       console.error(`Backend Error: ${data}`);
       mainWindow?.webContents.send('backend:log', `ERROR: ${data}`);
+      try {
+        const m = /Started server process \[(\d+)\]/.exec(String(data));
+        if (m && m[1]) backendServerPid = parseInt(m[1], 10);
+      } catch {}
       
       // Also check stderr for the startup message
       if (data.toString().includes('Uvicorn running on')) {
@@ -265,6 +283,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
         setTimeout(() => {
           clearTimeout(timeout);
           backendPort = port;
+          
           resolve({ port, pid: currentProcess.pid! });
         }, 1000);
       }
@@ -279,9 +298,12 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       console.log(`Backend process exited with code ${code}`);
       backendProcess = null;
       backendPort = null;
+      backendServerPid = null;
     });
   });
 }
+
+// Windows Job helpers were removed due to packaging issues; using taskkill strategy instead
 
 async function stopBackend(): Promise<void> {
   if (!backendProcess) {
@@ -294,14 +316,27 @@ async function stopBackend(): Promise<void> {
     processToKill.on('exit', () => {
       backendProcess = null;
       backendPort = null;
+      backendServerPid = null;
       resolve();
     });
     
     try {
       if (process.platform === 'win32' && processToKill.pid) {
-        spawn('taskkill', ['/pid', processToKill.pid.toString(), '/f', '/t']);
+        // Ensure entire tree is terminated by PID and image name
+        const killerTree = spawn('taskkill', ['/pid', processToKill.pid.toString(), '/f', '/t']);
+        killerTree.on('error', () => { try { processToKill.kill(); } catch {} });
+        const killerImage = spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']);
+        killerImage.on('error', () => {});
+        // If we discovered the uvicorn child pid, kill that explicitly as well
+        if (backendServerPid) {
+          try { spawn('taskkill', ['/pid', String(backendServerPid), '/f']); } catch {}
+        }
+        // Enumerate any remaining processes by name/command line and kill them
+        killAllBackendsWindows().finally(() => {});
       } else {
-        processToKill.kill('SIGTERM');
+        try { processToKill.kill('SIGTERM'); } catch {}
+        // As a safety, force kill after short grace period if still alive
+        setTimeout(() => { try { processToKill.kill('SIGKILL'); } catch {} }, 3000);
       }
     } catch (error) {
       console.error('Error stopping backend:', error);
@@ -327,12 +362,21 @@ function createWindow() {
     icon: join(__dirname, '../../resources/icon.png'),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     frame: process.platform !== 'darwin',
-    show: false // Don't show until ready
+    show: true // Show window immediately; still show again on ready-to-show
   });
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+  });
+
+  // Extra visibility/logging for troubleshooting renderer load
+  mainWindow.webContents.on('did-finish-load', () => {
+    try { mainWindow?.show(); } catch {}
+  });
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('Renderer failed to load:', { errorCode, errorDescription, validatedURL });
+    try { mainWindow?.show(); } catch {}
   });
 
   // Load the frontend
@@ -516,7 +560,7 @@ function createMenu() {
         {
           label: 'Documentation',
           click: () => {
-            shell.openExternal('https://github.com/yourusername/verbweaver/tree/main/docs');
+            mainWindow?.webContents.send('menu-help-documentation');
           }
         },
         {
@@ -631,6 +675,45 @@ function setupIpcHandlers() {
       await writeFile(result.filePath, content, 'utf-8');
     }
     
+    return result;
+  });
+
+  ipcMain.handle('dialog:saveJson', async (_event, defaultName: string, jsonText: string) => {
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: defaultName || 'config.json',
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+    if (!result.canceled && result.filePath) {
+      await writeFile(result.filePath, jsonText, 'utf-8');
+    }
+    return result;
+  });
+
+  ipcMain.handle('dialog:saveBinary', async (_event, data: Uint8Array, defaultName?: string) => {
+    const name = defaultName || 'export.bin'
+    const lower = name.toLowerCase()
+    const filters = lower.endsWith('.json')
+      ? [
+          { name: 'JSON', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] },
+        ]
+      : lower.endsWith('.png')
+      ? [
+          { name: 'PNG Image', extensions: ['png'] },
+          { name: 'All Files', extensions: ['*'] },
+        ]
+      : [ { name: 'All Files', extensions: ['*'] } ]
+
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: name,
+      filters,
+    });
+    if (!result.canceled && result.filePath) {
+      await fs.writeFile(result.filePath, Buffer.from(data));
+    }
     return result;
   });
 
@@ -825,13 +908,11 @@ function setupIpcHandlers() {
       
       // Create Verbweaver project structure
       const verbweaverDir = join(projectPath, '.verbweaver');
-      const docsDir = join(projectPath, 'docs');
       const templatesDir = join(projectPath, 'templates');
       const nodesDir = join(projectPath, 'nodes');
       // const tasksDir = join(projectPath, 'tasks'); // REMOVED
       
       await mkdir(verbweaverDir, { recursive: true });
-      await mkdir(docsDir, { recursive: true });
       await mkdir(templatesDir, { recursive: true }); // Ensure templatesDir is created
       await mkdir(nodesDir, { recursive: true }); // Ensure nodesDir is created
       // await mkdir(tasksDir, { recursive: true }); // REMOVED
@@ -876,7 +957,6 @@ Verbweaver organizes ideas and tasks as Markdown files under the \`nodes/\` fold
 - \`nodes/\` — all content nodes and tasks (Markdown)
 - \`uploads/\` — files you attach to nodes (keeps original filenames)
 - \`templates/\` — templates for new nodes and compiler
-- \`docs/\` — optional documentation
 - \`.verbweaver/\` — project settings and internal data
 
 ### Views
@@ -2183,19 +2263,18 @@ Start your content here.
     const { spawn } = require('child_process');
     
     return new Promise((resolve, reject) => {
-      // Use double quotes for Windows compatibility
-      const formatString = process.platform === 'win32' 
-        ? '"%H|%an|%ae|%ad|%s"'
-        : '%H|%an|%ae|%ad|%s';
-      
+      // Keep pipes inside a single argument. Avoid shell on non‑Windows so '|' isn't treated as a pipeline.
+      const isWin = process.platform === 'win32';
+      const formatString = isWin ? '"%H|%an|%ae|%ad|%s"' : '%H|%an|%ae|%ad|%s';
+
       const git = spawn('git', [
-        'log', 
+        'log',
         `--max-count=${limit}`,
         `--pretty=format:${formatString}`,
         '--date=iso'
-      ], { 
+      ], {
         cwd: projectPath,
-        shell: true 
+        shell: isWin
       });
       
       let output = '';
@@ -2474,9 +2553,18 @@ Start your content here.
       const docsPath = path.join(app.getAppPath(), '..', 'docs');
       console.log(`Listing docs from: ${docsPath}`);
       
-      const result = await listDocsRecursive(docsPath);
-      console.log(`Found ${JSON.stringify(result, null, 2)} docs`);
-      return result;
+      const all = await listDocsRecursive(docsPath);
+      console.log(`Found ${JSON.stringify(all, null, 2)} docs`);
+      // Flatten only top-level files; filter out directories for the left list UI
+      const filesOnly: Array<{ name: string; path: string; type: 'file' }> = [];
+      const walk = (nodes: DocFile[]) => {
+        for (const n of nodes) {
+          if (n.type === 'file') filesOnly.push({ name: n.name, path: n.path, type: 'file' });
+          if (n.children && n.children.length) walk(n.children);
+        }
+      };
+      walk(all as any);
+      return filesOnly;
     } catch (error) {
       console.error('Failed to list docs:', error);
       throw error;
@@ -2489,6 +2577,12 @@ Start your content here.
       const docsPath = path.join(app.getAppPath(), '..', 'docs');
       const filePath = path.join(docsPath, fileName);
       console.log(`[main] Reading doc file: ${filePath}`);
+      
+      // Guard against directories
+      const stat = await fs.stat(filePath);
+      if (stat.isDirectory()) {
+        throw new Error('Requested path is a directory.');
+      }
       
       const content = await fs.readFile(filePath, 'utf-8');
       return content;
@@ -2576,26 +2670,55 @@ app.on('window-all-closed', () => {
 
 // Ensure backend process is stopped when the app is quitting
 app.on('before-quit', () => {
-  // Fire and forget; stopBackend handles platform-specific termination
-  void stopBackend();
+  // Attempt graceful shutdown; prevent default quit until we signal cleanup started
+  // but don't block indefinitely. We'll allow Electron to proceed immediately after triggering stop.
+  try { void stopBackend(); } catch {}
+  // Extra safety on Windows: issue image-based kill a moment later
+  if (process.platform === 'win32') {
+    try { setTimeout(() => { try { spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']); } catch {} }, 500); } catch {}
+    try { setTimeout(() => { try { spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']); } catch {} }, 1500); } catch {}
+    // Also kill by discovered server pid if present
+    if (backendServerPid) {
+      try { setTimeout(() => { try { spawn('taskkill', ['/pid', String(backendServerPid), '/f']); } catch {} }, 700); } catch {}
+    }
+    try { setTimeout(() => { killAllBackendsWindows().catch(()=>{}); }, 1200); } catch {}
+  }
 });
 
-app.on('will-quit', () => {
-  void stopBackend();
+app.on('will-quit', () => { try { void stopBackend(); } catch {} });
+app.on('quit', () => {
+  if (process.platform === 'win32') {
+    try { spawn('taskkill', ['/im', 'verbweaver-backend.exe', '/f']); } catch {}
+    try { killAllBackendsWindows().catch(()=>{}); } catch {}
+  }
 });
+
+// Enumerate all PIDs of verbweaver-backend.exe (and any with command line containing it) and kill them
+async function killAllBackendsWindows(): Promise<void> {
+  if (process.platform !== 'win32') return;
+  const ps = 'Get-CimInstance Win32_Process | Where-Object { $_.Name -eq "verbweaver-backend.exe" -or ($_.CommandLine -like "*verbweaver-backend*") } | Select-Object -ExpandProperty ProcessId';
+  const getPids = (): Promise<number[]> => new Promise((resolve) => {
+    try {
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true }, (err, stdout) => {
+        if (err) { resolve([]); return; }
+        const lines = String(stdout || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        const ids = lines.map(s => parseInt(s, 10)).filter(n => Number.isFinite(n));
+        resolve(Array.from(new Set(ids)));
+      });
+    } catch { resolve([]); }
+  });
+
+  const pids = await getPids();
+  if (!pids.length) return;
+  for (const pid of pids) {
+    try { spawn('taskkill', ['/pid', String(pid), '/f']); } catch {}
+  }
+}
 
 // Extra safety: stop backend on process exit or termination signals
-process.on('exit', () => {
-  void stopBackend();
-});
-process.on('SIGINT', () => {
-  void stopBackend();
-  process.exit(0);
-});
-process.on('SIGTERM', () => {
-  void stopBackend();
-  process.exit(0);
-});
+process.on('exit', () => { try { void stopBackend(); } catch {} });
+process.on('SIGINT', () => { try { void stopBackend(); } catch {} process.exit(0); });
+process.on('SIGTERM', () => { try { void stopBackend(); } catch {} process.exit(0); });
 
 // Dependency checker service
 interface DependencyCheck {
@@ -2648,6 +2771,52 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
       available: false,
       installUrl: 'https://pandoc.org/installing.html',
       installInstructions: getPandocInstallInstructions()
+    });
+  }
+  
+  // Check LaTeX engines for PDF support
+  try {
+    const checkEngine = async (cmd: string) => {
+      return await new Promise<{ success: boolean; version?: string }>((resolve) => {
+        const child = require('child_process').spawn(cmd, ['--version'], {
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+        let output = '';
+        child.stdout.on('data', (data: Buffer) => { output += data.toString(); });
+        child.on('close', (code: number) => {
+          if (code === 0) {
+            const ver = (output.split('\n')[0] || '').trim();
+            resolve({ success: true, version: ver });
+          } else {
+            resolve({ success: false });
+          }
+        });
+        child.on('error', () => resolve({ success: false }));
+      });
+    };
+    const xe = await checkEngine('xelatex');
+    const pdf = xe.success ? xe : await checkEngine('pdflatex');
+    dependencies.push({
+      name: 'LaTeX (xelatex/pdflatex)',
+      available: pdf.success,
+      version: pdf.version,
+      installUrl: 'https://www.tug.org/texlive/',
+      installInstructions: process.platform === 'linux'
+        ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
+        : (process.platform === 'darwin'
+          ? 'Install MacTeX (brew install --cask mactex)'
+          : 'Install MiKTeX or TeX Live on Windows')
+    });
+  } catch {
+    dependencies.push({
+      name: 'LaTeX (xelatex/pdflatex)',
+      available: false,
+      installUrl: 'https://www.tug.org/texlive/',
+      installInstructions: process.platform === 'linux'
+        ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
+        : (process.platform === 'darwin'
+          ? 'Install MacTeX (brew install --cask mactex)'
+          : 'Install MiKTeX or TeX Live on Windows')
     });
   }
   

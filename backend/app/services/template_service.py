@@ -130,6 +130,10 @@ class TemplateService:
                 # Skip if it's a control variable
                 if clean_var in control_vars:
                     continue
+
+                # Skip loop iterator variables like it.* (any property name)
+                if clean_var == 'it' or clean_var.startswith('it.'):
+                    continue
                 
                 # Skip if it starts with control keywords (handles cases like 'fornodes', 'ifnodes.vars')
                 if clean_var.startswith(('for', 'if', 'endif', 'endfor')):
@@ -139,6 +143,15 @@ class TemplateService:
                 if any(keyword in clean_var for keyword in ['for', 'if', 'endif', 'endfor']):
                     continue
                 
+                # Skip precomputed helper/convenience variables for table types
+                try:
+                    if re.match(r'^[A-Za-z_]\w*_(markdown|headerSeparator|headerLine|rows|columns)$', clean_var):
+                        continue
+                    if re.match(r'^[A-Za-z_]\w*\.(markdown|headerSeparator|headerLine|rows|columns)$', clean_var):
+                        continue
+                except Exception:
+                    pass
+
                 # Add to custom variables if not already present
                 if clean_var not in custom_variables:
                     custom_variables.append(clean_var)
@@ -214,8 +227,8 @@ class TemplateService:
                     errors.append(f"{scope}.{k} must be an object")
                     return
                 t = defn.get('type')
-                if t not in ('string','number','boolean','array'):
-                    errors.append(f"{scope}.{k}.type must be one of string|number|boolean|array")
+                if t not in ('string','number','boolean','array','table'):
+                    errors.append(f"{scope}.{k}.type must be one of string|number|boolean|array|table")
                 if t == 'array':
                     item = defn.get('item')
                     if not isinstance(item, dict):
@@ -235,6 +248,27 @@ class TemplateService:
                             # primitive array
                             if not _is_primitive_type(item.get('type','string')):
                                 errors.append(f"{scope}.{k}.item.type must be string|number|boolean")
+                if t == 'table':
+                    # Optional defaults for columns/types
+                    cols_def = defn.get('columnsDefault')
+                    if cols_def is not None and not (isinstance(cols_def, list) and all(isinstance(x, (str, int, float, bool)) or x is None for x in cols_def)):
+                        errors.append(f"{scope}.{k}.columnsDefault must be an array of strings (column names)")
+                    types_def = defn.get('columnTypes')
+                    if types_def is not None:
+                        if not isinstance(types_def, dict):
+                            errors.append(f"{scope}.{k}.columnTypes must be an object when provided")
+                        else:
+                            for ck, ct in types_def.items():
+                                if not isinstance(ct, dict):
+                                    errors.append(f"{scope}.{k}.columnTypes.{ck} must be an object")
+                                    continue
+                                ctype = ct.get('type', 'string')
+                                if ctype not in ('string','number','boolean','enum'):
+                                    errors.append(f"{scope}.{k}.columnTypes.{ck}.type must be string|number|boolean|enum")
+                                if ctype == 'enum':
+                                    enum_vals = ct.get('enum')
+                                    if not (isinstance(enum_vals, list) and all(isinstance(ev, (str, int, float, bool)) for ev in enum_vals)):
+                                        errors.append(f"{scope}.{k}.columnTypes.{ck}.enum must be an array for enum type")
                 if scope == 'nodeVariables':
                     # Optional dotted path
                     if 'path' in defn and not isinstance(defn.get('path'), str):
@@ -368,30 +402,18 @@ class TemplateService:
         
         processed_content = include_pattern.sub(replace_include, processed_content)
 
-        # Replace simple variables first
+        # Replace simple variables first, but only when they appear as standalone tokens.
+        # This avoids replacing inside node-scoped placeholders like `$nodes.title$`.
         for key, value in data.items():
             if isinstance(value, (str, bool, int, float)):
-                processed_content = processed_content.replace(f'${key}$', str(value))
-
-        # Top-level conditionals like $if(toc)$ ... $endif$, plus $if(nodes)$ and $ifnot(nodes)$
-        def compute_truthy(value: Any) -> bool:
-            if isinstance(value, list):
-                return len(value) > 0
-            return bool(value)
-
-        def replace_top_level_if(var_name: str, text: str) -> str:
-            pattern = re.compile(rf"\$if\({re.escape(var_name)}\)\$(.*?)\$endif\$", re.DOTALL)
-            truthy = compute_truthy(data.get(var_name))
-            return pattern.sub(lambda m: m.group(1) if truthy else '', text)
-
-        def replace_top_level_ifnot(var_name: str, text: str) -> str:
-            pattern = re.compile(rf"\$ifnot\({re.escape(var_name)}\)\$(.*?)\$endif\$", re.DOTALL)
-            truthy = compute_truthy(data.get(var_name))
-            return pattern.sub(lambda m: m.group(1) if not truthy else '', text)
-
-        for cond in ['toc', 'includeMetadata', 'include_metadata', 'nodes']:
-            processed_content = replace_top_level_if(cond, processed_content)
-            processed_content = replace_top_level_ifnot(cond, processed_content)
+                try:
+                    # Match `$key$` not immediately preceded by an identifier character or dot.
+                    # Example: will match `$title$` in text, but NOT inside `$nodes.title$`.
+                    pattern = re.compile(rf"(?<![A-Za-z0-9_\.])\${re.escape(str(key))}\$")
+                    processed_content = pattern.sub(str(value), processed_content)
+                except Exception:
+                    # Fallback to naive replacement if regex compilation fails for any reason
+                    processed_content = processed_content.replace(f'${key}$', str(value))
 
         # Helper to resolve dotted path against arbitrary data dict
         def resolve_path(expr: str, ctx: Dict[str, Any]) -> Any:
@@ -402,6 +424,42 @@ class TemplateService:
                 else:
                     return None
             return cur
+
+        # Top-level conditionals: handle ANY $if(expr)$/$ifnot(expr)$ that does NOT start with 'nodes.'
+        # Supports dotted paths into data (e.g., 'raci.rows', 'summary')
+        def compute_truthy(value: Any) -> bool:
+            if isinstance(value, list):
+                return len(value) > 0
+            return bool(value)
+
+        def apply_generic_conditionals(text: str) -> str:
+            try:
+                if_pat = re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
+                ifnot_pat = re.compile(r"\$ifnot\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
+
+                def if_repl(m):
+                    expr = (m.group(1) or '').strip()
+                    # Leave node-scoped expressions for node processing
+                    if expr.startswith('nodes.'):
+                        return m.group(0)
+                    val = resolve_path(expr, data)
+                    return m.group(2) if compute_truthy(val) else ''
+
+                def ifnot_repl(m):
+                    expr = (m.group(1) or '').strip()
+                    if expr.startswith('nodes.'):
+                        return m.group(0)
+                    val = resolve_path(expr, data)
+                    return m.group(2) if not compute_truthy(val) else ''
+
+                text = if_pat.sub(if_repl, text)
+                text = ifnot_pat.sub(ifnot_repl, text)
+                return text
+            except Exception:
+                # Fail-safe: return text unchanged on any error
+                return text
+
+        processed_content = apply_generic_conditionals(processed_content)
 
         # Generic top-level loops for document variables: $for(var)$...$endfor$
         # Supports arrays of primitives/objects and dicts.
@@ -462,21 +520,187 @@ class TemplateService:
                 prev = processed_content
                 processed_content = self._process_nodes_array(processed_content, data['nodes'])
 
-        # Final safety cleanup: strip any leftover control tokens to prevent leaking into output
-        # This only removes the markers; at this point, content should already be correctly included/excluded.
-        processed_content = re.sub(r"\$if\([^)]+\)\$", '', processed_content)
-        processed_content = re.sub(r"\$ifnot\([^)]+\)\$", '', processed_content)
-        processed_content = processed_content.replace('$endif$', '')
+        # Final safety cleanup: only strip leftover NON-node-scoped control tokens here.
+        # Leave node-scoped markers for potential later passes.
+        processed_content = re.sub(r"\$if\((?!nodes\.)[^)]+\)\$", '', processed_content)
+        processed_content = re.sub(r"\$ifnot\((?!nodes\.)[^)]+\)\$", '', processed_content)
 
+        return processed_content
+
+    def evaluate_inline(self, text: str, data: Dict[str, Any], options: Optional[Dict[str, Any]] = None) -> str:
+        """Re-evaluate variables/conditionals/loops in already-rendered text without processing includes.
+        This supports multi-pass evaluation for variables embedded in node content. It can optionally
+        re-process $for(nodes)$ blocks based on options (defaults to True).
+        """
+        try:
+            import re as _re
+        except Exception:
+            _re = re
+
+        # Normalize newlines for consistent regex behavior
+        processed_content = text.replace('\r\n', '\n').replace('\r', '\n')
+
+        # Replace simple top-level variables first (standalone tokens only)
+        for key, value in data.items():
+            if isinstance(value, (str, bool, int, float)):
+                try:
+                    pattern = re.compile(rf"(?<![A-Za-z0-9_\.])\${re.escape(str(key))}\$")
+                    processed_content = pattern.sub(str(value), processed_content)
+                except Exception:
+                    processed_content = processed_content.replace(f'${key}$', str(value))
+
+        # Helper to resolve dotted path where the first segment may include hyphens (e.g., node-<ID>)
+        def resolve_any_path(expr: str, ctx: Dict[str, Any]) -> Any:
+            try:
+                expr = str(expr).strip()
+                if not expr:
+                    return None
+                # Split first segment (allow '-') and the rest by '.'
+                first, dot, rest = expr.partition('.')
+                cur: Any = ctx.get(first)
+                if not dot:
+                    return cur
+                for part in rest.split('.') if rest else []:
+                    if isinstance(cur, dict) and part in cur:
+                        cur = cur[part]
+                    else:
+                        return None
+                return cur
+            except Exception:
+                return None
+
+        # Conditionals for non-nodes expressions
+        def compute_truthy(value: Any) -> bool:
+            if isinstance(value, list):
+                return len(value) > 0
+            return bool(value)
+
+        def apply_generic_conditionals(text_in: str) -> str:
+            try:
+                if_pat = re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
+                ifnot_pat = re.compile(r"\$ifnot\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
+
+                def if_repl(m):
+                    expr = (m.group(1) or '').strip()
+                    # Leave node-scoped expressions for node processing only (nodes.*)
+                    if expr.startswith('nodes.'):
+                        return m.group(0)
+                    val = resolve_any_path(expr, data)
+                    return m.group(2) if compute_truthy(val) else ''
+
+                def ifnot_repl(m):
+                    expr = (m.group(1) or '').strip()
+                    if expr.startswith('nodes.'):
+                        return m.group(0)
+                    val = resolve_any_path(expr, data)
+                    return m.group(2) if not compute_truthy(val) else ''
+
+                out = if_pat.sub(if_repl, text_in)
+                out = ifnot_pat.sub(ifnot_repl, out)
+                return out
+            except Exception:
+                return text_in
+
+        processed_content = apply_generic_conditionals(processed_content)
+
+        # Generic loops for non-nodes expressions, including node-id based paths like node-<ID>.attachments
+        # Allow first token to contain hyphens
+        loop_pat = re.compile(r"\$for\(([A-Za-z0-9_\-][A-Za-z0-9_\-\.]*?)\)\$(.*?)\$endfor\$", re.DOTALL)
+        pos = 0
+        rebuilt: List[str] = []
+        while True:
+            m = loop_pat.search(processed_content, pos)
+            if not m:
+                rebuilt.append(processed_content[pos:])
+                break
+            expr = m.group(1)
+            inner = m.group(2)
+            # Skip nodes.* here; handle in nodes re-processing below
+            if expr.startswith('nodes'):
+                rebuilt.append(processed_content[pos:m.end()])
+                pos = m.end()
+                continue
+            value = resolve_any_path(expr, data)
+            rendered = ''
+            if isinstance(value, list):
+                items_out: List[str] = []
+                for it in value:
+                    chunk = inner
+                    if isinstance(it, dict):
+                        for k, v in it.items():
+                            chunk = chunk.replace(f'$it.{k}$', str(v))
+                    else:
+                        chunk = chunk.replace('$it$', str(it))
+                    items_out.append(chunk)
+                rendered = '\n'.join(items_out)
+            elif isinstance(value, dict):
+                items_out = []
+                for k, v in value.items():
+                    chunk = inner
+                    chunk = chunk.replace('$it.key$', str(k))
+                    chunk = chunk.replace('$it.value$', str(v))
+                    items_out.append(chunk)
+                rendered = '\n'.join(items_out)
+            else:
+                # Optionally show unresolved marker for non-iterables
+                if options and options.get('showUnresolvedMarkers'):
+                    rendered = f"<!-- unresolved: {expr} -->"
+                else:
+                    rendered = ''
+            rebuilt.append(processed_content[pos:m.start()])
+            rebuilt.append(rendered)
+            pos = m.end()
+        processed_content = ''.join(rebuilt)
+
+        # Replace scalar dotted placeholders that are not node-scoped (skip nodes.*)
+        # Match $something$ where 'something' has no parentheses and is not a control token
+        token_pat = re.compile(r"\$([^$()\n]+?)\$")
+        def replace_token(m):
+            expr = (m.group(1) or '').strip()
+            # Skip control tokens
+            if expr.startswith(('if(', 'ifnot(', 'for(')) or expr in ('endif', 'endfor'):
+                return m.group(0)
+            # Skip nodes.* (processed below if enabled)
+            if expr.startswith('nodes.'):
+                return m.group(0)
+            # Skip loop iterators, which are handled within loops
+            if expr == 'it' or expr.startswith('it.'):
+                return m.group(0)
+            val = resolve_any_path(expr, data)
+            if isinstance(val, (str, int, float, bool)):
+                return str(val)
+            return f"<!-- unresolved: {expr} -->" if options and options.get('showUnresolvedMarkers') else ''
+        processed_content = token_pat.sub(replace_token, processed_content)
+
+        # Safety: strip any leftover $for(nodes.vars)$ blocks (should have been expanded/removed earlier)
+        try:
+            processed_content = re.sub(r"\$for\(nodes\.vars\)\$(.*?)\$endfor\$", '', processed_content, flags=re.DOTALL)
+        except Exception:
+            pass
+
+        # Optionally reprocess $for(nodes)$ blocks using current data['nodes']
+        reprocess_nodes = True if options is None else bool(options.get('reprocessNodesInPasses', True))
+        if reprocess_nodes and isinstance(data.get('nodes'), list):
+            prev = None
+            while prev != processed_content:
+                prev = processed_content
+                processed_content = self._process_nodes_array(processed_content, data['nodes'])
+
+        # Do not strip control tokens here; that should be done after all passes
         return processed_content
     
     def _process_nodes_array(self, template: str, nodes: List[Dict[str, Any]]) -> str:
-        """Process all $for(nodes)$ ... $endfor$ loops in the template (zero or more occurrences)."""
-        pattern = re.compile(r'\$for\(nodes\)\$(.*)\$endfor\$', re.DOTALL)
+        """Process all $for(nodes)$ ... $endfor$ loops in the template (zero or more occurrences).
+        Robust to nested $for(...)$ blocks by scanning and balancing $for/$endfor tokens.
+        """
+        start_pat = re.compile(r'\$for\(nodes\)\$')
+        endfor_pat = re.compile(r'\$endfor\$')
+        any_for_pat = re.compile(r'\$for\([^)]*\)\$')
         out_parts: List[str] = []
         idx = 0
+        text_len = len(template)
         while True:
-            m = pattern.search(template, idx)
+            m = start_pat.search(template, idx)
             if not m:
                 out_parts.append(template[idx:])
                 break
@@ -484,7 +708,27 @@ class TemplateService:
             # Append text before this loop
             out_parts.append(template[idx:m.start()])
 
-            loop_content = m.group(1)
+            # Find matching $endfor$ with nesting awareness
+            pos = m.end()
+            depth = 1
+            while pos < text_len and depth > 0:
+                m_for = any_for_pat.search(template, pos)
+                m_end = endfor_pat.search(template, pos)
+                if not m_end:
+                    # Malformed; bail out and append rest
+                    out_parts.append(template[m.start():])
+                    return ''.join(out_parts)
+                if m_for and m_for.start() < m_end.start():
+                    depth += 1
+                    pos = m_for.end()
+                else:
+                    depth -= 1
+                    pos = m_end.end()
+
+            loop_block_start = m.start()
+            loop_block_end = pos
+            loop_content = template[m.end(): m_end.start()] if depth == 0 else template[m.end():pos]
+
             rendered_nodes: List[str] = []
 
             for node in nodes:
@@ -560,9 +804,15 @@ class TemplateService:
 
                 has_vars = isinstance(node.get('vars'), dict) and len(node.get('vars')) > 0
                 if has_vars:
-                    node_block = re.sub(r"\$if\(nodes\.vars\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
+                    # Keep inner content when vars exist
+                    node_block = re.sub(r"\$if\(\s*nodes\.vars\s*\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
                 else:
-                    node_block = re.sub(r"\$if\(nodes\.vars\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
+                    # Remove guarded block when no vars
+                    node_block = re.sub(r"\$if\(\s*nodes\.vars\s*\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
+                    # Also remove any standalone vars loop blocks as a safety net
+                    node_block = re.sub(r"\$for\(nodes\.vars\)\$(.*?)\$endfor\$", '', node_block, flags=re.DOTALL)
+                    # Remove the exact heading used by default templates if left dangling
+                    node_block = re.sub(r"^###\s+Variables\s*$\n?", '', node_block, flags=re.MULTILINE)
 
                 has_atts = isinstance(node.get('attachments'), list) and len(node.get('attachments')) > 0
                 if has_atts:
@@ -634,7 +884,7 @@ class TemplateService:
                 rendered_nodes.append(node_block)
 
             out_parts.append('\n\n'.join(rendered_nodes))
-            idx = m.end()
+            idx = loop_block_end
 
         return ''.join(out_parts)
 

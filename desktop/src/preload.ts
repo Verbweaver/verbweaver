@@ -13,6 +13,7 @@ export interface ElectronAPI {
   openFile: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   openDirectory: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   saveFile: (content: string) => Promise<{ canceled: boolean; filePath?: string }>;
+  saveJsonFile: (defaultName: string, jsonText: string) => Promise<{ canceled: boolean; filePath?: string }>;
   readFile: (filePath: string) => Promise<string>;
   readFileBinary: (filePath: string) => Promise<Buffer>;
   writeFile: (filePath: string, content: string) => Promise<void>;
@@ -24,6 +25,7 @@ export interface ElectronAPI {
   moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean }>;
   readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
   pathExists: (somePath: string) => Promise<boolean>;
+  saveBinaryFile: (data: Uint8Array, defaultName?: string) => Promise<{ canceled: boolean; filePath?: string }>;
   
   // Project operations
   createProject: (name: string, path: string) => Promise<string>;
@@ -83,6 +85,7 @@ export interface ElectronAPI {
   onMenuNewProject: (callback: () => void) => () => void;
   onMenuOpenProject: (callback: () => void) => () => void;
   onMenuSettings: (callback: () => void) => () => void;
+  onMenuHelpDocumentation: (callback: () => void) => () => void;
   
   // For Help View
   listDocs: () => Promise<DocFile[]>;
@@ -107,6 +110,7 @@ const electronAPI = {
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
   saveFile: (content: string) => ipcRenderer.invoke('dialog:saveFile', content),
+  saveJsonFile: (defaultName: string, jsonText: string) => ipcRenderer.invoke('dialog:saveJson', defaultName, jsonText),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
   readFileBinary: (filePath: string) => ipcRenderer.invoke('fs:readFileBinary', filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
@@ -119,6 +123,7 @@ const electronAPI = {
   readProjectFiles: (projectPath: string) => ipcRenderer.invoke('fs:readProjectFiles', projectPath),
   // Utils
   pathExists: (somePath: string) => ipcRenderer.invoke('fs:pathExists', somePath),
+  saveBinaryFile: (data: Uint8Array, defaultName?: string) => ipcRenderer.invoke('dialog:saveBinary', data, defaultName),
   
   // Project operations
   createProject: (name: string, path: string): Promise<string> => ipcRenderer.invoke('project:create', name, path),
@@ -203,6 +208,11 @@ const electronAPI = {
     ipcRenderer.on('menu-settings', handler);
     return () => ipcRenderer.removeListener('menu-settings', handler);
   },
+  onMenuHelpDocumentation: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('menu-help-documentation', handler);
+    return () => ipcRenderer.removeListener('menu-help-documentation', handler);
+  },
   
   // For Help View
   listDocs: () => ipcRenderer.invoke('docs:list'),
@@ -239,5 +249,5 @@ if (process.contextIsolated) {
 } else {
   // For environments where contextIsolation is false (less secure, not recommended)
   // @ts-ignore
-  window.electronAPI = electronAPI;
+  (window as any).electronAPI = electronAPI;
 } 

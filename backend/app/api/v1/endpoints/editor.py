@@ -2,17 +2,26 @@
 Editor endpoints
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import os
+import re
+from pathlib import Path
 
 from app.database import get_db
 from app.models import User, Project
 from app.core.security import get_current_user
 from app.services.node_service import NodeService
 from pydantic import BaseModel
+try:
+    # Optional: used to respect .gitignore patterns
+    from pathspec import PathSpec
+    from pathspec.patterns import GitWildMatchPattern
+except Exception:  # pragma: no cover
+    PathSpec = None  # type: ignore
+    GitWildMatchPattern = None  # type: ignore
 
 router = APIRouter()
 
@@ -311,15 +320,29 @@ async def get_file_tree(
     return {"tree": tree}
 
 
+class SearchRequest(BaseModel):
+    query: str
+    regex: bool = False
+    case_sensitive: bool = False
+
+
 @router.post("/{project_id}/search")
 async def search_files(
     project_id: str,
-    query: str,
-    file_type: Optional[str] = None,
+    req: SearchRequest | None = Body(default=None),
+    query: str | None = None,
+    regex: bool | None = None,
+    case_sensitive: bool | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Search for files in the project."""
+    """Search across the entire project tree for files containing the query.
+
+    - Respects .gitignore if present
+    - Skips hidden folders and the .git directory
+    - Skips binary files (simple heuristic on first 4KB)
+    - Supports plain text or regex query and case sensitivity
+    """
     # Check project access
     result = await db.execute(
         select(Project).where(
@@ -328,29 +351,128 @@ async def search_files(
         )
     )
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
-    # Search using NodeService
-    node_service = NodeService(project)
-    results = await node_service.search_nodes(
-        query=query,
-        node_type=file_type
-    )
-    
-    # Format results
-    formatted_results = []
-    for node in results:
-        formatted_results.append({
-            "path": node["path"],
-            "name": node["name"],
-            "type": "directory" if node["isDirectory"] else "file",
-            "metadata": node["metadata"],
-            "content_preview": node.get("content", "")[:200] if node.get("content") else None
-        })
-    
-    return {"results": formatted_results, "count": len(formatted_results)} 
+
+    # Coalesce inputs from either JSON body or query params
+    _query = (req.query if req else None) or query or ""
+    _regex = (req.regex if req else None)
+    if _regex is None:
+        _regex = bool(regex)
+    _case = (req.case_sensitive if req else None)
+    if _case is None:
+        _case = bool(case_sensitive)
+
+    # Determine project path
+    project_path = (project.git_config or {}).get('path')
+    if not project_path:
+        raise HTTPException(status_code=404, detail="Project path not configured")
+    project_path = os.path.abspath(os.path.normpath(project_path))
+    if not os.path.isdir(project_path):
+        raise HTTPException(status_code=404, detail="Project directory not found")
+
+    # Prepare .gitignore matcher if library available
+    spec = None
+    gitignore_file = os.path.join(project_path, '.gitignore')
+    if PathSpec is not None and os.path.exists(gitignore_file):
+        try:
+            with open(gitignore_file, 'r', encoding='utf-8', errors='ignore') as f:
+                patterns = f.read().splitlines()
+            spec = PathSpec.from_lines(GitWildMatchPattern, patterns)
+        except Exception:
+            spec = None
+
+    def is_ignored(rel_path: str) -> bool:
+        # rel_path should be POSIX-style for pathspec
+        if not rel_path:
+            return False
+        posix = rel_path.replace('\\', '/')
+        if spec is None:
+            return False
+        return spec.match_file(posix)
+
+    def is_binary_file(abs_path: str) -> bool:
+        try:
+            with open(abs_path, 'rb') as bf:
+                sample = bf.read(4096)
+            if b'\x00' in sample:
+                return True
+            # Heuristic: if a significant portion are non-text bytes
+            text_chars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x7F)))
+            non_text = sum(1 for b in sample if b not in text_chars)
+            return (len(sample) > 0 and non_text / max(1, len(sample)) > 0.30)
+        except Exception:
+            # If unreadable, treat as binary to be safe
+            return True
+
+    # Compile matcher
+    if _regex:
+        flags = 0
+        if not _case:
+            flags |= re.IGNORECASE
+        try:
+            pattern = re.compile(_query, flags)
+        except re.error as e:
+            raise HTTPException(status_code=400, detail=f"Invalid regex: {e}")
+    else:
+        needle = _query if _case else _query.lower()
+
+    results: List[Dict[str, Any]] = []
+
+    for root, dirs, files in os.walk(project_path):
+        # Prune hidden and .git dirs early
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d != '.git']
+
+        rel_root = os.path.relpath(root, project_path)
+        if rel_root == '.':
+            rel_root = ''
+
+        # Skip ignored directories
+        if rel_root and is_ignored(rel_root + '/'):
+            dirs[:] = []
+            continue
+
+        for fname in files:
+            if fname.startswith('.'):  # skip hidden files
+                continue
+            rel_path = os.path.join(rel_root, fname).replace('\\', '/') if rel_root else fname
+
+            # Skip ignored files
+            if is_ignored(rel_path):
+                continue
+
+            abs_path = os.path.join(project_path, rel_path)
+
+            # Skip likely binary files
+            if is_binary_file(abs_path):
+                continue
+
+            # Read and search
+            try:
+                with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+            except Exception:
+                continue
+
+            match_count = 0
+            if _regex:
+                match_count = len(pattern.findall(content))
+            else:
+                haystack = content if _case else content.lower()
+                if needle:
+                    # Count non-overlapping occurrences
+                    match_count = haystack.count(needle)
+
+            if match_count > 0:
+                results.append({
+                    'path': rel_path,
+                    'count': match_count
+                })
+
+    # Sort results for stable ordering
+    results.sort(key=lambda r: r['path'])
+    return { 'results': results, 'count': len(results) }

@@ -9,7 +9,7 @@ In the web version of Verbweaver:
 - **Default Storage**: All projects are stored on the Verbweaver server in a secure location
 - **No Path Selection**: Users cannot specify custom paths since they don't have access to the server's filesystem
 - **Project Management**: Users can view and manage all their projects through the Project List interface
-- **Server Storage**: Projects are stored in the server's `git-repos` directory, organized by user ID and project name
+- **Server Storage**: Projects are stored in the server `git-repos` directory (configurable via `GIT_PROJECTS_ROOT`)
 - **Remote Repositories**: Users can optionally connect to remote Git repositories (GitHub, GitLab, etc.) by providing repository URLs and credentials
 
 ### Creating a Project (Web)
@@ -43,12 +43,13 @@ Regardless of where a project is stored, Verbweaver maintains a consistent struc
 
 ```
 project-root/
-├── .git/                 # Git repository data
+├── .git/                # Git repository data
 ├── .gitignore           # Git ignore rules
-├── nodes/               # Your content nodes (Markdown files)
-├── templates/           # Project templates
-│   └── Empty.md        # Default empty template
-└── .verbweaver/        # Verbweaver-specific data (if needed)
+├── nodes/               # Content nodes (Markdown files)
+├── templates/           # Project/compiler templates
+│   └── Empty.md         # Default empty template
+├── docs/                # Optional location to store additional project documentation
+└── .verbweaver/         # Verbweaver-specific data (if needed)
 ```
 
 ## Remote Repository Support
@@ -87,7 +88,7 @@ Both web and desktop versions support remote Git repositories:
 
 ### Web Storage
 
-- Projects are stored in: `{SERVER_ROOT}/git-repos/{user_id}/{project_name}`
+- Projects are stored in: `{GIT_PROJECTS_ROOT}/{user_id}/{project_name}`
 - Each user's projects are isolated from other users
 - The server handles all Git operations
 - Regular backups are recommended (configure in server settings)

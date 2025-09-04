@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical, RefreshCcw, Upload } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical, RefreshCcw, Upload, FolderOpen, Search, X as CloseIcon } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { editorApi } from '../../api/editorApi'
 import { TemplateSelectionDialog } from '../TemplateSelectionDialog'
@@ -38,6 +38,13 @@ function EditorSidebar() {
   const [draggedNode, setDraggedNode] = useState<FileNode | null>(null)
   const [dragOverNode, setDragOverNode] = useState<string | null>(null)
   const { addEditorTab } = useTabStore()
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [findRegex, setFindRegex] = useState(false)
+  const [findCase, setFindCase] = useState(false)
+  const [findResults, setFindResults] = useState<Map<string, number>>(new Map())
+  const [isSearching, setIsSearching] = useState(false)
+  const findInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (currentProject) {
@@ -59,7 +66,7 @@ function EditorSidebar() {
     
     setIsLoading(true)
     try {
-      if (isElectron && currentProjectPath && window.electronAPI) {
+      if (isElectron && currentProjectPath && window.electronAPI && !findOpen) {
         // For Electron, read the actual project structure
         const rootItems = await window.electronAPI.readDirectory(currentProjectPath)
         
@@ -115,6 +122,104 @@ function EditorSidebar() {
       setIsLoading(false)
     }
   }
+
+  // When enabling find, ensure we load the full tree via API for comprehensive filtering
+  useEffect(() => {
+    if (findOpen && currentProject) {
+      // Ensure we have a full tree available (web/API already loads full tree)
+      if (isElectron) {
+        loadFileTree()
+      }
+    }
+  }, [findOpen, currentProject, isElectron])
+
+  // Debounced search in backend (web) or simple read in Electron using backend as well for consistency
+  useEffect(() => {
+    let cancelled = false
+    const doSearch = async () => {
+      if (!currentProject || !findOpen) return
+      const q = findQuery
+      if (!q) {
+        setFindResults(new Map())
+        return
+      }
+      setIsSearching(true)
+      try {
+        // Always use backend API; it respects .gitignore and skips binaries
+        const data = await editorApi.searchFiles(String(currentProject.id), {
+          query: q,
+          regex: findRegex,
+          caseSensitive: findCase,
+        })
+        if (cancelled) return
+        const map = new Map<string, number>()
+        for (const item of data.results || []) {
+          map.set(item.path, item.count || 0)
+        }
+        setFindResults(map)
+        // Auto-expand only ancestors of matched files; collapse unrelated
+        const next = new Set<string>()
+        if (map.size > 0) {
+          for (const relPath of map.keys()) {
+            const parts = relPath.split('/')
+            let acc = ''
+            for (let i = 0; i < parts.length - 1; i++) {
+              acc = acc ? `${acc}/${parts[i]}` : parts[i]
+              next.add(acc)
+            }
+          }
+        } else {
+          // Fallback: expand ancestors of filename matches so users see immediate feedback
+          const test = (name: string) => {
+            try {
+              if (findRegex) {
+                const flags = findCase ? '' : 'i'
+                const re = new RegExp(q, flags)
+                return re.test(name)
+              }
+              const hay = findCase ? name : name.toLowerCase()
+              const needle = findCase ? q : q.toLowerCase()
+              return hay.includes(needle)
+            } catch {
+              return false
+            }
+          }
+          // DFS over current tree
+          const visit = (node: FileNode, ancestors: string[]) => {
+            const isNameMatch = test(node.name)
+            const isFile = node.type === 'file'
+            if (isNameMatch && isFile) {
+              for (const a of ancestors) next.add(a)
+            }
+            if (node.children && node.children.length > 0) {
+              for (const child of node.children) {
+                visit(child, node.type === 'directory' ? [...ancestors, node.path] : ancestors)
+              }
+            }
+          }
+          for (const root of fileTree) visit(root, [])
+        }
+        setExpandedDirs(next)
+      } catch (e) {
+        console.error('Search failed', e)
+      } finally {
+        if (!cancelled) setIsSearching(false)
+      }
+    }
+
+    const handle = setTimeout(doSearch, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(handle)
+    }
+  }, [currentProject, findOpen, findQuery, findRegex, findCase, fileTree])
+
+  // Focus input when opening find
+  useEffect(() => {
+    if (findOpen) {
+      setTimeout(() => findInputRef.current?.focus(), 0)
+    }
+  }, [findOpen])
 
   const loadDirectoryContents = async (node: FileNode) => {
     if (!isElectron || !window.electronAPI || node.loaded || !currentProjectPath) return
@@ -404,12 +509,55 @@ Add any additional notes or references here.
     }
   }, [draggedNode, currentProject, currentProjectPath, isElectron, loadFileTree])
 
+  const highlightName = (name: string): JSX.Element => {
+    const q = findQuery
+    if (!findOpen || !q) return <>{name}</>
+    try {
+      if (findRegex) {
+        const flags = findCase ? 'g' : 'gi'
+        const re = new RegExp(q, flags)
+        const parts: Array<string | JSX.Element> = []
+        let lastIndex = 0
+        let m: RegExpExecArray | null
+        while ((m = re.exec(name)) !== null) {
+          if (m.index > lastIndex) parts.push(name.slice(lastIndex, m.index))
+          parts.push(<span className="bg-yellow-200 dark:bg-yellow-700/60" key={m.index}>{name.slice(m.index, re.lastIndex)}</span>)
+          lastIndex = re.lastIndex
+          if (m.index === re.lastIndex) re.lastIndex++
+        }
+        if (lastIndex < name.length) parts.push(name.slice(lastIndex))
+        return <>{parts}</>
+      } else {
+        const hay = findCase ? name : name.toLowerCase()
+        const needle = findCase ? q : q.toLowerCase()
+        const idx = hay.indexOf(needle)
+        if (idx === -1) return <>{name}</>
+        return <>
+          {name.slice(0, idx)}
+          <span className="bg-yellow-200 dark:bg-yellow-700/60">{name.slice(idx, idx + needle.length)}</span>
+          {name.slice(idx + needle.length)}
+        </>
+      }
+    } catch {
+      return <>{name}</>
+    }
+  }
+
   const renderNode = (node: FileNode, depth: number = 0) => {
     const isExpanded = expandedDirs.has(node.path)
     const isSelected = node.type === 'directory' && node.path === selectedFolder
     const isDragOver = dragOverNode === node.path
     const Icon = node.type === 'directory' ? Folder : FileText
     const ChevronIcon = isExpanded ? ChevronDown : ChevronRight
+
+    // Filter when find is active: show directories that are ancestors of matches or any matching files; hide unrelated leaves
+    if (findOpen && findResults.size > 0) {
+      const isMatch = node.type === 'file' && findResults.has(node.path)
+      const isAncestor = node.type === 'directory' && Array.from(findResults.keys()).some(p => p.startsWith(node.path + '/'))
+      if (!isMatch && !isAncestor) {
+        return null
+      }
+    }
 
     return (
       <div key={node.id}>
@@ -440,7 +588,10 @@ Add any additional notes or references here.
               <ChevronIcon className="w-3 h-3 flex-shrink-0" />
             )}
             <Icon className="w-4 h-4 flex-shrink-0" />
-            <span className="truncate">{node.name}</span>
+            <span className="truncate">{highlightName(node.name)}</span>
+            {node.type === 'file' && findOpen && findResults.has(node.path) && (
+              <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-accent text-accent-foreground">{findResults.get(node.path)}</span>
+            )}
           </button>
         </div>
         
@@ -476,6 +627,28 @@ Add any additional notes or references here.
           )}
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => setFindOpen(v => !v)}
+            className={clsx("p-1 rounded hover:bg-accent", findOpen && "bg-accent")}
+            title="Find in Files"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+          <button
+            onClick={async () => {
+              if (!isElectron || !window.electronAPI || !currentProjectPath) return
+              const api: any = window.electronAPI
+              try { if (api?.openPath) { await api.openPath(currentProjectPath); return } } catch {}
+              try { if (api?.openExternal) { const url = `file://${currentProjectPath.replace(/\\/g,'/')}`; await api.openExternal(url); return } } catch {}
+              try { if (api?.showItemInFolder) { await api.showItemInFolder(currentProjectPath); return } } catch {}
+              toast.error('Unable to open folder')
+            }}
+            className="p-1 rounded hover:bg-accent"
+            title={currentProjectPath ? 'Open project folder' : 'No project path'}
+            disabled={!currentProjectPath}
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
           <button
             onClick={loadFileTree}
             className="p-1 rounded hover:bg-accent"
@@ -546,6 +719,40 @@ Add any additional notes or references here.
           </button>
         </div>
       </div>
+
+      {/* Find Bar */}
+      {findOpen && (
+        <div className="p-2 border-b border-border bg-muted/30">
+          <div className="flex items-center gap-2">
+            <input
+              ref={findInputRef}
+              type="text"
+              value={findQuery}
+              onChange={(e) => setFindQuery(e.target.value)}
+              placeholder="Find in files..."
+              className="flex-1 text-sm px-2 py-1 border border-input rounded bg-background"
+            />
+            {isSearching && <span className="text-xs text-muted-foreground">Searching...</span>}
+            <button
+              onClick={() => setFindOpen(false)}
+              className="p-1 rounded hover:bg-accent"
+              title="Close Find"
+            >
+              <CloseIcon className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="mt-2 flex items-center gap-4">
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={findCase} onChange={(e)=>setFindCase(e.target.checked)} />
+              Case sensitive
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={findRegex} onChange={(e)=>setFindRegex(e.target.checked)} />
+              Regex
+            </label>
+          </div>
+        </div>
+      )}
 
       {/* File Tree */}
       <div className="flex-1 overflow-y-auto scrollbar-thin py-1">

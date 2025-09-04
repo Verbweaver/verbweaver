@@ -92,6 +92,11 @@ function TabBar() {
             tab.id === activeTabId && 'bg-background'
           )}
           onClick={() => handleTabClick(tab.id, tab.path)}
+          onMouseUp={(e) => {
+            if (e.button === 1) {
+              handleCloseTab(e, tab.id)
+            }
+          }}
         >
           <span className="text-sm truncate flex items-center gap-1">
             {tab.title}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -26,6 +26,11 @@ export default function Help() {
   const [docFiles, setDocFiles] = useState<DocFile[]>([]);
   const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [docContent, setDocContent] = useState<string>('');
+  const [findQuery, setFindQuery] = useState<string>('');
+  const [findIndex, setFindIndex] = useState<number>(0);
+  const [findCount, setFindCount] = useState<number>(0);
+  const [showFind, setShowFind] = useState<boolean>(false);
+  const findInputRef = useRef<HTMLInputElement | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
@@ -99,6 +104,76 @@ export default function Help() {
     }
   }, [selectedDocPath, loadDocContent]);
 
+  // Basic Ctrl+F handling within this view (client-side search in rendered text)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isCtrlF = (e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F');
+      if (isCtrlF) {
+        e.preventDefault();
+        setShowFind(true);
+        setTimeout(() => findInputRef.current?.focus(), 0);
+        return;
+      }
+      if (showFind && e.key === 'Escape') {
+        e.preventDefault();
+        setShowFind(false);
+        return;
+      }
+      if (!showFind) return;
+      if (findQuery && e.key === 'F3') {
+        e.preventDefault();
+        const next = e.shiftKey ? findIndex - 1 : findIndex + 1;
+        setFindIndex(next);
+        setTimeout(() => highlightMatch(findQuery, next), 0);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [findQuery, findIndex, docContent, showFind]);
+
+  const highlightMatch = (q: string, index: number) => {
+    try {
+      const container = document.querySelector('#help-doc-container');
+      if (!container) return;
+      // Clear previous (unwrap highlight spans)
+      container.querySelectorAll('.help-find-hit').forEach((n) => {
+        const span = n as HTMLElement
+        const parent = span.parentNode
+        if (!parent) return
+        while (span.firstChild) parent.insertBefore(span.firstChild, span)
+        parent.removeChild(span)
+      })
+      const text = container.textContent || '';
+      const pattern = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const matches = [...text.matchAll(pattern)].map(m => ({ start: m.index || 0, end: (m.index || 0) + (m[0]?.length || 0) }));
+      setFindCount(matches.length);
+      if (matches.length === 0) return;
+      const idx = ((index % matches.length) + matches.length) % matches.length;
+      // crude scroll to selection by walking text nodes
+      let pos = 0;
+      const target = matches[idx];
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      let node: any;
+      while ((node = walker.nextNode())) {
+        const nextPos = pos + node.textContent.length;
+        if (target.start >= pos && target.start < nextPos) {
+          const range = document.createRange()
+          range.setStart(node, target.start - pos)
+          range.setEnd(node, Math.min(target.end - pos, node.textContent.length))
+          const span = document.createElement('span')
+          span.className = 'help-find-hit'
+          span.style.background = 'rgba(255, 213, 0, 0.45)'
+          range.surroundContents(span)
+          span.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          break;
+        }
+        pos = nextPos;
+      }
+      // Restore focus to input (typing should continue seamlessly)
+      try { findInputRef.current?.focus() } catch {}
+    } catch {}
+  };
+
   if (isLoading && docFiles.length === 0 && !error) {
     return <div className="p-6 text-center">Loading documentation...</div>;
   }
@@ -131,7 +206,33 @@ export default function Help() {
         </div>
       </div>
 
-      <div className="flex-1 p-6 overflow-y-auto">
+      <div className="flex-1 p-6 overflow-y-auto relative" id="help-doc-container">
+        {showFind && (
+          <div className="absolute top-2 right-2 z-10 bg-background border border-border rounded shadow p-2 flex items-center gap-2">
+            <input
+              ref={findInputRef}
+              value={findQuery}
+              onChange={(e)=>{ setFindQuery(e.target.value); setFindIndex(0); setTimeout(()=>highlightMatch(e.target.value, 0),0); }}
+              onKeyDown={(e)=>{
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const next = (e.shiftKey ? findIndex - 1 : findIndex + 1);
+                  setFindIndex(next);
+                  setTimeout(()=>highlightMatch(findQuery, next),0);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setShowFind(false);
+                }
+              }}
+              className="px-2 py-1 border border-input rounded bg-background text-sm w-56"
+              placeholder="Find in document"
+            />
+            <span className="text-xs text-muted-foreground w-12 text-right">{findCount > 0 ? `${((findIndex%findCount)+findCount)%findCount + 1}/${findCount}` : '0/0'}</span>
+            <button className="text-xs px-2 py-1 border rounded hover:bg-accent" onClick={()=>{ const next = findIndex - 1; setFindIndex(next); setTimeout(()=>highlightMatch(findQuery, next),0); }}>Prev</button>
+            <button className="text-xs px-2 py-1 border rounded hover:bg-accent" onClick={()=>{ const next = findIndex + 1; setFindIndex(next); setTimeout(()=>highlightMatch(findQuery, next),0); }}>Next</button>
+            <button className="text-xs px-2 py-1 border rounded hover:bg-accent" onClick={()=> setShowFind(false)}>Close</button>
+          </div>
+        )}
         {isLoading && !docContent && (
           <div className="flex justify-center items-center h-full">
             <p className="text-muted-foreground">Loading content...</p>

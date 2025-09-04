@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Verbweaver is built as a modern, scalable application using a microservices-inspired architecture with clear separation of concerns.
+Verbweaver is a modular monolith: a FastAPI backend, React frontend, and an Electron desktop app that embeds the backend for offline use.
 
 ## System Architecture
 
@@ -16,7 +16,7 @@ Verbweaver is built as a modern, scalable application using a microservices-insp
                               │
                               ▼
                     ┌─────────────────┐
-                    │   Load Balancer │
+                    │   Reverse Proxy │
                     │     (Nginx)     │
                     └────────┬────────┘
                              │
@@ -33,8 +33,8 @@ Verbweaver is built as a modern, scalable application using a microservices-insp
                     ▼                   ▼                   ▼
             ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
             │   Database   │   │     Git      │   │    Redis     │
-            │  (SQLite/    │   │ Repositories │   │   (Cache)    │
-            │  PostgreSQL) │   │              │   │              │
+            │  (SQLite/    │   │ Repositories │   │ (sessions/   │
+            │  PostgreSQL) │   │              │   │  state, opt) │
             └──────────────┘   └──────────────┘   └──────────────┘
 ```
 
@@ -46,8 +46,7 @@ Verbweaver is built as a modern, scalable application using a microservices-insp
 - **Authentication**: JWT with OAuth2 support
 - **Git Integration**: GitPython
 - **WebSockets**: FastAPI WebSockets
-- **Task Queue**: Celery (optional)
-- **Cache**: Redis (optional)
+- **Cache/State**: Redis (optional; OAuth/Passkey state, rate limits)
 
 ### Frontend
 - **Framework**: React 18 with TypeScript
@@ -67,10 +66,10 @@ Verbweaver is built as a modern, scalable application using a microservices-insp
 - **Storage**: electron-store for settings
 - **Build**: electron-builder
 
-### Mobile
+### Mobile (WIP)
 - **Framework**: React Native
 - **Navigation**: React Navigation
-- **State**: Shared with web (Zustand)
+- **State**: Shared types via `shared/`
 
 ## Desktop Application Architecture
 
@@ -180,16 +179,16 @@ const result = await ipcRenderer.invoke('git:commit', 'My commit');
 
 ### 1. Authentication Flow
 ```
-Client → API Gateway → Auth Service → Database
-                            ↓
-                    JWT Token Generation
-                            ↓
-                    Client (Store Token)
+Client → FastAPI → Database (users)
+                ↓
+          JWT Tokens
+                ↓
+             Client
 ```
 
 ### 2. Real-time Updates
 ```
-Client Action → API → Database Update
+Client Action → API → Git/DB Update
                  ↓
             WebSocket Broadcast
                  ↓
@@ -221,24 +220,21 @@ Editor Change → IPC → Main Process
 ## Security Architecture
 
 ### Authentication & Authorization
-- JWT tokens with short expiration
-- Refresh token rotation
-- Role-based access control (RBAC)
+- JWT tokens (short-lived access, refresh rotation)
 - Project-level permissions
-- Desktop: No auth, OS-level security
+- Desktop: local mode without auth; relies on OS user isolation
 
 ### Data Protection
-- HTTPS everywhere
+- HTTPS via reverse proxy (Nginx/Caddy)
 - Input validation and sanitization
 - SQL injection prevention via ORM
 - XSS protection in React
-- CSRF tokens for state-changing operations
-- Desktop: Local encryption options
+- CSRF mitigations for cookie flows (most auth uses Bearer tokens)
+- Desktop: data local to machine
 
 ### Password Security
 - Bcrypt hashing with salt
-- Configurable password policies
-- Account lockout after failed attempts
+- Password policy and account lockout enforced
 - Password reset with time-limited tokens
 
 ## Scalability Considerations
@@ -258,11 +254,10 @@ Editor Change → IPC → Main Process
 - Desktop: Local caching, no network latency
 
 ### Monitoring & Observability
-- Structured logging with correlation IDs
-- Prometheus metrics
+- Structured logging
 - Health check endpoints
-- Error tracking with Sentry (optional)
-- Desktop: Local logging and diagnostics
+- Error tracking (optional)
+- Desktop: local logging and diagnostics
 
 ## Development Practices
 
@@ -304,16 +299,11 @@ verbweaver/
 - Security tests for vulnerabilities
 - Desktop: Native integration tests
 
-### CI/CD Pipeline
-1. Code push triggers GitHub Actions
-2. Run linters and formatters
-3. Execute test suites
-4. Build Docker images
-5. Build desktop apps for all platforms
-6. Deploy to staging
-7. Run E2E tests
-8. Deploy to production (manual approval)
-9. Release desktop builds
+### CI/CD Pipeline (overview)
+1. CI runs lint/tests for backend/frontend
+2. Build Docker image(s)
+3. Build desktop apps (Electron)
+4. Publish artifacts to GitHub Releases/registry
 
 ## Deployment Architecture
 
@@ -338,17 +328,13 @@ services:
 ```
 
 ### Kubernetes (Production)
-- Deployments for API and web servers
-- StatefulSet for PostgreSQL
-- Ingress for routing
-- Horizontal Pod Autoscaler
-- Persistent volumes for Git repos
+- Not officially maintained; use at your discretion
 
 ### Desktop Distribution
-- **Windows**: NSIS installer, auto-update via Squirrel
-- **macOS**: DMG with auto-update via Sparkle
-- **Linux**: AppImage, deb, rpm packages
-- **Update Server**: Static file hosting or dedicated server
+- **Windows**: NSIS installer
+- **macOS**: DMG
+- **Linux**: AppImage, deb, rpm
+- Auto-updates via electron-updater (GitHub provider)
 
 ### Cloud Deployment Options
 - **AWS**: ECS/EKS, RDS, ElastiCache, S3

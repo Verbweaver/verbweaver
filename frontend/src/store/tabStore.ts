@@ -1,5 +1,30 @@
 import { create } from 'zustand'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { persist } from 'zustand/middleware'
+
+export interface CompilerState {
+  title?: string
+  author?: string
+  selectedNodes?: string[]
+  orderedNodes?: string[]
+  selectedFormat?: string
+  selectedTemplate?: string
+  customVariables?: Array<{ name: string; value: string }>
+  nodeVariables?: Record<string, Record<string, any>>
+  docVars?: Record<string, any>
+  expandedDirs?: string[]
+  options?: {
+    includeMetadata?: boolean
+    includeToc?: boolean
+    includeIndex?: boolean
+    includeBibliography?: boolean
+    embedUploadedFiles?: boolean
+    pageSize?: 'A4' | 'Letter' | 'A5'
+    fontSize?: 'small' | 'medium' | 'large'
+    margins?: 'narrow' | 'normal' | 'wide'
+    lineSpacing?: 'single' | '1.5' | 'double'
+  }
+}
 
 export interface Tab {
   id: string
@@ -11,29 +36,8 @@ export interface Tab {
     isModified?: boolean // Track if file has unsaved changes
     unsavedContent?: string // Store unsaved content for editor tabs
     // For compiler tabs
-    compilerState?: {
-      title?: string
-      author?: string
-      selectedNodes?: string[]
-      orderedNodes?: string[]
-      selectedFormat?: string
-      selectedTemplate?: string
-      customVariables?: Array<{ name: string; value: string }>
-      nodeVariables?: Record<string, Record<string, any>>
-      docVars?: Record<string, any>
-      expandedDirs?: string[]
-      options?: {
-        includeMetadata?: boolean
-        includeToc?: boolean
-        includeIndex?: boolean
-        includeBibliography?: boolean
-        embedUploadedFiles?: boolean
-        pageSize?: 'A4' | 'Letter' | 'A5'
-        fontSize?: 'small' | 'medium' | 'large'
-        margins?: 'narrow' | 'normal' | 'wide'
-        lineSpacing?: 'single' | '1.5' | 'double'
-      }
-    }
+    compilerState?: CompilerState
+    compilerStateByProject?: Record<string, CompilerState>
   }
 }
 
@@ -46,13 +50,16 @@ interface TabState {
   removeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
   updateTab: (tabId: string, updates: Partial<Tab>) => void
+  updateTabMetadata: (tabId: string, updater: (prev?: Tab['metadata']) => Tab['metadata']) => void
   getActiveTab: () => Tab | null
+  getTabById: (tabId: string) => Tab | undefined
   findEditorTab: (filePath: string) => Tab | undefined
+  setTabs: (tabs: Tab[], activeTabId?: string | null) => void
 }
 
 export const useTabStore = create<TabState>()(
-  persist(
-    (set, get) => ({
+  persist<TabState>(
+    (set: any, get: any) => ({
       tabs: [
         {
           id: 'default-dashboard',
@@ -63,14 +70,14 @@ export const useTabStore = create<TabState>()(
       ],
       activeTabId: 'default-dashboard',
       
-      addTab: (tabData) => {
+      addTab: (tabData: Omit<Tab, 'id'>) => {
         const id = `tab-${Date.now()}`
         const newTab: Tab = {
           ...tabData,
           id
         }
         
-        set(state => ({
+        set((state: TabState) => ({
           tabs: [...state.tabs, newTab],
           activeTabId: id
         }))
@@ -80,7 +87,7 @@ export const useTabStore = create<TabState>()(
       
       addEditorTab: (filePath: string, fileName: string) => {
         // Check if tab already exists
-        const existingTab = get().tabs.find(tab => 
+        const existingTab = get().tabs.find((tab: Tab) => 
           tab.type === 'editor' && tab.metadata?.filePath === filePath
         )
         
@@ -102,7 +109,7 @@ export const useTabStore = create<TabState>()(
           }
         }
         
-        set(state => ({
+        set((state: TabState) => ({
           tabs: [...state.tabs, newTab],
           activeTabId: id
         }))
@@ -110,8 +117,8 @@ export const useTabStore = create<TabState>()(
         return id
       },
       
-      removeTab: (tabId) => {
-        set(state => {
+      removeTab: (tabId: string) => {
+        set((state: TabState) => {
           const newTabs = state.tabs.filter(tab => tab.id !== tabId)
           let newActiveId = state.activeTabId
           
@@ -134,26 +141,53 @@ export const useTabStore = create<TabState>()(
         })
       },
       
-      setActiveTab: (tabId) => {
+      setTabs: (tabs: Tab[], activeId?: string | null) => {
+        set(() => ({
+          tabs: tabs.length > 0 ? tabs : [{ id: 'default-dashboard', path: '/dashboard', title: 'Dashboard', type: 'dashboard' }],
+          activeTabId: activeId ?? (tabs.length > 0 ? tabs[0].id : 'default-dashboard')
+        }))
+      },
+      
+      setActiveTab: (tabId: string) => {
         set({ activeTabId: tabId })
       },
       
-      updateTab: (tabId, updates) => {
-        set(state => ({
-          tabs: state.tabs.map(tab => 
+      updateTab: (tabId: string, updates: Partial<Tab>) => {
+        set((state: TabState) => ({
+          tabs: state.tabs.map((tab: Tab) => 
             tab.id === tabId ? { ...tab, ...updates } : tab
           )
         }))
       },
+
+      updateTabMetadata: (tabId: string, updater: (prev?: Tab['metadata']) => Tab['metadata']) => {
+        set((state: TabState) => {
+          const nextTabs = state.tabs.map((tab: Tab) => {
+            if (tab.id !== tabId) return tab
+            const prevMeta = tab.metadata
+            const nextMeta = updater(prevMeta)
+            try {
+              console.log('[TabStore] updateTabMetadata', { tabId, prevMeta, nextMeta })
+            } catch {}
+            return { ...tab, metadata: nextMeta }
+          })
+          return { tabs: nextTabs }
+        })
+      },
       
       getActiveTab: () => {
-        const state = get()
+        const state: TabState = get()
         return state.tabs.find(tab => tab.id === state.activeTabId) || null
+      },
+
+      getTabById: (tabId: string) => {
+        const state: TabState = get()
+        return state.tabs.find((t: Tab) => t.id === tabId)
       },
       
       findEditorTab: (filePath: string) => {
-        const state = get()
-        return state.tabs.find(tab => 
+        const state: TabState = get()
+        return state.tabs.find((tab: Tab) => 
           tab.type === 'editor' && tab.metadata?.filePath === filePath
         )
       }

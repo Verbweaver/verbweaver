@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
-import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip, ChevronDown, ChevronRight, Link as LinkIcon, Type, Copy } from 'lucide-react'
+import { Save, FileText, Plus, Minus, X, Eye, HelpCircle, Trash2, Paperclip, ChevronDown, ChevronRight, Link as LinkIcon, Type, Copy, Unlink, ListTodo } from 'lucide-react'
 import { editorApi } from '../api/editorApi'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
@@ -16,6 +16,7 @@ import { useNodeStore } from '../store/nodeStore'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
@@ -48,6 +49,10 @@ function EditorView() {
   const [trackingBusy, setTrackingBusy] = useState(false)
   const [navConfirmOpen, setNavConfirmOpen] = useState(false)
   const [navTargetPath, setNavTargetPath] = useState<string | null>(null)
+  const [removeLinkOpen, setRemoveLinkOpen] = useState(false)
+  const [removeLinkTarget, setRemoveLinkTarget] = useState<string | null>(null)
+  const [removeLinksOpen, setRemoveLinksOpen] = useState(false)
+  const [removeLinksSelected, setRemoveLinksSelected] = useState<Set<string>>(new Set())
   const editorRef = useRef<any>(null)
   const monacoRef = useRef<any>(null)
   const decorationIdsRef = useRef<string[]>([])
@@ -68,7 +73,26 @@ function EditorView() {
       try { updateLinkDecorationsRef.current?.() } catch {}
     }, 50)
   }, [])
-  const [linksExpanded, setLinksExpanded] = useState(false)
+  const [linksExpanded, setLinksExpanded] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.EDITOR_LINKS_EXPANDED)
+      return raw === 'true'
+    } catch { return false }
+  })
+  const [createLinkOpen, setCreateLinkOpen] = useState(false)
+
+  // Robust YAML frontmatter detection (handles BOM and leading blank lines)
+  const FRONTMATTER_RE = /^\uFEFF?(?:\s*\r?\n)*---\s*[\r\n][\s\S]*?[\r\n]---\s*(?:[\r\n]|$)/
+  // Keep the latest detected frontmatter so we can re-inject it when hiding metadata during edits
+  const frontmatterRef = useRef<string>('')
+  useEffect(() => {
+    try {
+      const match = (content || '').match(FRONTMATTER_RE)
+      frontmatterRef.current = match ? match[0] : ''
+    } catch {
+      frontmatterRef.current = ''
+    }
+  }, [content])
 
   // Resolve current node path (project-relative in Electron; API path in web)
   const resolvedNodePath = useMemo(() => {
@@ -96,22 +120,35 @@ function EditorView() {
 
   // Resolve linked nodes (soft links) for the current node
   const linkedNodes = useNodeStore((s) => {
-    if (!resolvedNodePath) return [] as Array<{ path: string; name: string; title: string }>
+    if (!resolvedNodePath) return [] as Array<{ path: string; name: string; title: string; id: string }>
     const node = s.nodes.get(resolvedNodePath)
     if (!node) return []
     const linkIds: string[] = Array.isArray(node.metadata?.links) ? node.metadata.links : []
-    const results: Array<{ path: string; name: string; title: string }> = []
+    const results: Array<{ path: string; name: string; title: string; id: string }> = []
     if (linkIds.length === 0) return results
     for (const other of s.nodes.values()) {
       if (!other.isDirectory && linkIds.includes(other.metadata?.id)) {
-        results.push({ path: other.path, name: other.name, title: other.metadata?.title || other.name })
+        results.push({ path: other.path, name: other.name, title: other.metadata?.title || other.name, id: other.metadata?.id })
       }
     }
     // De-duplicate by path
-    const uniq = new Map<string, { path: string; name: string; title: string }>()
+    const uniq = new Map<string, { path: string; name: string; title: string; id: string }>()
     results.forEach(r => uniq.set(r.path, r))
     return Array.from(uniq.values()).sort((a, b) => a.title.localeCompare(b.title))
   })
+
+  // Ensure nodes are loaded (fix Links panel empty on Linux when Editor opens first)
+  const { loadNodes, nodes: allNodes } = useNodeStore()
+  useEffect(() => {
+    const ensureNodes = async () => {
+      try {
+        if ((allNodes?.size || 0) === 0) {
+          await loadNodes()
+        }
+      } catch {}
+    }
+    ensureNodes()
+  }, [loadNodes])
 
   const openEditorForPath = useCallback((projectRelativePath: string) => {
     if (isElectron && currentProjectPath) {
@@ -136,6 +173,17 @@ function EditorView() {
     }
     navigateToRelRef.current = navigateFn
   }, [openEditorForPath])
+
+  // Default expand Links when there are links and no saved preference yet
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.EDITOR_LINKS_EXPANDED)
+      if (raw === null && linkedNodes.length > 0) {
+        setLinksExpanded(true)
+        localStorage.setItem(STORAGE_KEYS.EDITOR_LINKS_EXPANDED, 'true')
+      }
+    } catch {}
+  }, [linkedNodes.length])
 
   const resolveRelativePath = useCallback((baseProjectRelativePath: string, rawHref: string) => {
     // Split anchor if present
@@ -174,6 +222,28 @@ function EditorView() {
       openEditorForPath(projectRelativePath)
     }
   }, [isModified, openEditorForPath])
+
+  // Refresh the current editor content from source-of-truth (after metadata changes like links)
+  const refreshCurrentEditorContent = useCallback(async () => {
+    try {
+      if (isElectron && (localFilePath || filePath) && window.electronAPI) {
+        const abs = localFilePath || (filePath ? (() => { try { return decodeURIComponent(filePath) } catch { return filePath } })() : null)
+        if (abs) {
+          const latest = await window.electronAPI.readFile(abs)
+          setContent(latest)
+          setIsModified(false)
+        }
+      } else if (!isElectron && currentProject && resolvedNodePath) {
+        try {
+          const file = await editorApi.getFile(currentProject.id, resolvedNodePath)
+          if (file?.content !== undefined) {
+            setContent(file.content)
+            setIsModified(false)
+          }
+        } catch {}
+      }
+    } catch {}
+  }, [isElectron, localFilePath, filePath, currentProject, resolvedNodePath])
 
   // Handle clicks on links inside preview HTML
   const handlePreviewClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -591,7 +661,7 @@ function EditorView() {
       const filename = localFileName || currentFile?.name || ''
       if (!filename.endsWith('.md')) return
              try {
-         const source = hideMetadata ? content.replace(/^---\s*[\s\S]*?\n---\s*\n?/, '') : content
+         const source = hideMetadata ? (content || '').replace(FRONTMATTER_RE, '') : content
          // Compute project-relative file path for resource resolution
          let projectRel: string | undefined
          if (isElectron && localFilePath && currentProjectPath) {
@@ -673,6 +743,29 @@ function EditorView() {
         </div>
       </div>
     )
+  }
+
+  const copyNodeIdTag = async (id: string) => {
+    const core = String(id || '').replace(/^node-/, '')
+    const tag = `node-${core}`
+    try {
+      if ((navigator as any)?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(tag)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = tag
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.focus()
+        ta.select()
+        try { document.execCommand('copy') } catch {}
+        document.body.removeChild(ta)
+      }
+      toast.success('Copied node ID tag')
+    } catch {
+      toast.error('Copy failed')
+    }
   }
 
   const displayFileName = isElectron ? localFileName : currentFile?.name
@@ -786,7 +879,42 @@ function EditorView() {
             >
               <HelpCircle className="w-4 h-4" />
             </button>
-           
+            {/* Divider after documentation buttons */}
+            <div className="mx-2 h-4 w-px bg-border" />
+
+            {/* Create Link */}
+            <button
+              onClick={() => setCreateLinkOpen(true)}
+              className="p-1.5 rounded hover:bg-accent"
+              title="Create link (Ctrl+Shift+L)"
+              disabled={!resolvedNodePath}
+            >
+              <LinkIcon className="w-4 h-4" />
+            </button>
+            {/* Remove Link(s) – adjacent to Create */}
+            <button
+              onClick={() => setRemoveLinksOpen(true)}
+              className="p-1.5 rounded hover:bg-accent"
+              title="Remove link(s)"
+              disabled={!resolvedNodePath}
+            >
+              <Unlink className="w-4 h-4" />
+            </button>
+
+            {/* See Task */}
+            <button
+              onClick={() => {
+                const current = resolvedNodePathRef.current
+                if (current) navigate(`/tasks/${encodeURIComponent(current)}`)
+              }}
+              className="p-1.5 rounded hover:bg-accent"
+              title="See Task"
+              disabled={!resolvedNodePath}
+            >
+              <ListTodo className="w-4 h-4" />
+            </button>
+
+          
            <button
              onClick={() => setIsPreview(prev => !prev)}
              disabled={! (localFileName || currentFile?.name || '').endsWith('.md') }
@@ -959,8 +1087,16 @@ function EditorView() {
             />
           ) : (
             <Editor
-            value={hideMetadata ? content.replace(/^---\s*[\s\S]*?\n---\s*\n?/, '') : content}
-            onChange={handleEditorChange}
+            value={hideMetadata ? ((content || '').replace(FRONTMATTER_RE, '')) : content}
+            onChange={(value) => {
+              if (value === undefined) return
+              if (hideMetadata) {
+                const header = frontmatterRef.current || ''
+                handleEditorChange(header + value)
+              } else {
+                handleEditorChange(value)
+              }
+            }}
             language="markdown"
             theme={theme === 'dark' ? 'vs-dark' : 'light'}
             options={{
@@ -999,6 +1135,14 @@ function EditorView() {
                     label: 'Insert Link',
                     keybindings: [(monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyCode.KeyK],
                     run: () => applyLink(),
+                  })
+                  editorInstance.addAction({
+                    id: 'vw-open-create-link-modal',
+                    label: 'Create Link',
+                    keybindings: [
+                      (monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyMod.Shift | (monaco as any).KeyCode.KeyL,
+                    ],
+                    run: () => setCreateLinkOpen(true),
                   })
                   editorInstance.addAction({
                     id: 'vw-toggle-preview',
@@ -1141,23 +1285,51 @@ function EditorView() {
       <div className="border-t border-border px-4 py-2 bg-muted/40">
         <button
           className="flex items-center gap-1 text-xs hover:underline"
-          onClick={() => setLinksExpanded(v => !v)}
+          onClick={() => setLinksExpanded(v => { const next = !v; try { localStorage.setItem(STORAGE_KEYS.EDITOR_LINKS_EXPANDED, String(next)) } catch {}; return next })}
         >
           {linksExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           Links ({linkedNodes.length})
         </button>
         {linksExpanded && linkedNodes.length > 0 && (
-          <ul className="mt-2 grid gap-1 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
+          <ul className="mt-2 space-y-2">
             {linkedNodes.map((ln) => (
-              <li key={ln.path}>
-                <button
-                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                  onClick={() => openEditorForPath(ln.path)}
-                  title={ln.path}
-                >
-                  <LinkIcon className="w-3 h-3" />
-                  {ln.title}
-                </button>
+              <li key={ln.path} className="flex items-center justify-between border border-border rounded px-2 py-1 bg-background">
+                <div className="flex-1 flex items-center gap-2 min-w-0">
+                  <button
+                    className="text-xs text-primary hover:underline inline-flex items-center gap-1 min-w-0 truncate"
+                    onClick={() => openEditorForPath(ln.path)}
+                    title={ln.path}
+                  >
+                    <LinkIcon className="w-3 h-3" />
+                    {ln.title}
+                  </button>
+                  {ln.id && (
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent text-muted-foreground whitespace-nowrap"
+                      onClick={() => copyNodeIdTag(ln.id)}
+                      title={`Copy node ID tag (${String(ln.id).replace(/^node-/, '')})`}
+                    >
+                      {String(ln.id).replace(/^node-/, '')}
+                    </button>
+                  )}
+                </div>
+                <div className="ml-2 flex items-center gap-1">
+                  <button
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent"
+                    onClick={() => navigate(`/tasks/${encodeURIComponent(ln.path)}`)}
+                    title="Open Task"
+                  >Open Task</button>
+                  <button
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent"
+                    onClick={() => navigate(`/graph?focus=${encodeURIComponent(ln.path)}`)}
+                    title="Open Graph"
+                  >Open Graph</button>
+                  <button
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent text-destructive"
+                    onClick={() => { setRemoveLinkTarget(ln.path); setRemoveLinkOpen(true) }}
+                    title="Remove Link"
+                  >Remove</button>
+                </div>
               </li>
             ))}
           </ul>
@@ -1166,6 +1338,19 @@ function EditorView() {
           <div className="text-xs text-muted-foreground mt-2">No links</div>
         )}
       </div>
+      {createLinkOpen && resolvedNodePath && (
+        <SharedCreateLinkModal
+          currentNodePath={resolvedNodePath}
+          onClose={() => setCreateLinkOpen(false)}
+          onLinkCreated={() => {
+            try { useNodeStore.getState().loadNodes() } catch {}
+            setLinksExpanded(true)
+            try { localStorage.setItem(STORAGE_KEYS.EDITOR_LINKS_EXPANDED, 'true') } catch {}
+            // Refresh current editor content to show updated frontmatter
+            refreshCurrentEditorContent()
+          }}
+        />
+      )}
       {/* Confirm Delete Dialog */}
       <ConfirmDialog
       isOpen={confirmState.open}
@@ -1196,6 +1381,96 @@ function EditorView() {
           setNavTargetPath(null)
         }}
       />
+
+      {/* Remove link confirmation */}
+      <ConfirmDialog
+        isOpen={removeLinkOpen}
+        title="Remove link"
+        message="Are you sure you want to remove this link?"
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        onConfirm={async () => {
+          setRemoveLinkOpen(false)
+          try {
+            const store = useNodeStore.getState()
+            const current = resolvedNodePathRef.current
+            const target = removeLinkTarget
+            setRemoveLinkTarget(null)
+            if (!current || !target) return
+            await store.removeSoftLink(current, target)
+            try { await store.loadNodes() } catch {}
+            setLinksExpanded(true)
+            // Refresh editor content to reflect updated metadata
+            await refreshCurrentEditorContent()
+          } catch {}
+        }}
+        onCancel={() => { setRemoveLinkOpen(false); setRemoveLinkTarget(null) }}
+      />
+
+      {/* Bulk remove links dialog */}
+      {removeLinksOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setRemoveLinksOpen(false)}>
+          <div className="bg-background border border-border rounded-lg w-[520px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">Remove links</h3>
+              <button className="p-1.5 rounded hover:bg-accent" onClick={() => setRemoveLinksOpen(false)}><X className="w-4 h-4"/></button>
+            </div>
+            <div className="p-4">
+              <p className="text-sm text-muted-foreground mb-2">Select links to remove from this node:</p>
+              <div className="max-h-64 overflow-auto border border-border rounded">
+                <ul>
+                  {linkedNodes.length === 0 && (
+                    <li className="px-3 py-2 text-sm text-muted-foreground">No links</li>
+                  )}
+                  {linkedNodes.map(ln => (
+                    <li key={ln.path} className="flex items-center gap-2 px-3 py-2 border-b last:border-b-0">
+                      <input
+                        type="checkbox"
+                        checked={removeLinksSelected.has(ln.path)}
+                        onChange={(e) => {
+                          setRemoveLinksSelected(prev => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(ln.path); else next.delete(ln.path)
+                            return next
+                          })
+                        }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm truncate">{ln.title}</div>
+                        <div className="text-xs text-muted-foreground truncate">{ln.path}</div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <button className="px-4 py-2 border border-input rounded hover:bg-accent" onClick={() => { setRemoveLinksOpen(false); setRemoveLinksSelected(new Set()) }}>Cancel</button>
+              <button
+                className="px-4 py-2 bg-destructive text-destructive-foreground rounded hover:bg-destructive/90 disabled:opacity-50"
+                disabled={removeLinksSelected.size === 0}
+                onClick={async () => {
+                  try {
+                    const store = useNodeStore.getState()
+                    const current = resolvedNodePathRef.current
+                    if (!current) return
+                    // Remove links sequentially
+                    for (const p of Array.from(removeLinksSelected)) {
+                      await store.removeSoftLink(current, p)
+                    }
+                    try { await store.loadNodes() } catch {}
+                    setLinksExpanded(true)
+                    await refreshCurrentEditorContent()
+                  } finally {
+                    setRemoveLinksOpen(false)
+                    setRemoveLinksSelected(new Set())
+                  }
+                }}
+              >Remove selected</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hidden file input for attachments */}
       <input

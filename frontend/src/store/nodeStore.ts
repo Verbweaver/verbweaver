@@ -73,24 +73,29 @@ interface NodeFilter {
   searchTerm?: string
 }
 
+// Robust frontmatter detection: allow BOM, leading blank lines, and CRLF
+const FRONTMATTER_RE = /^\uFEFF?(?:\s*\r?\n)*---\s*[\r\n]([\s\S]*?)[\r\n]---\s*(?:\r?\n)?([\s\S]*)$/
+
 // Helper function to parse YAML front matter
 function parseMarkdownWithFrontMatter(content: string): { metadata: any, content: string } {
-  const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  const match = content.match(FRONTMATTER_RE)
   if (match) {
     try {
-      const metadata = yaml.load(match[1]) as any;
-      return { metadata, content: match[2] };
+      const metadata = yaml.load(match[1]) as any
+      return { metadata, content: match[2] }
     } catch (e) {
-      console.error('Failed to parse YAML front matter:', e);
+      console.error('Failed to parse YAML front matter:', e)
     }
   }
-  return { metadata: {}, content };
+  return { metadata: {}, content }
 }
 
 // Helper function to stringify content with YAML front matter
 function stringifyMarkdownWithFrontMatter(metadata: any, content: string): string {
-  const yamlStr = yaml.dump(metadata, { indent: 2, lineWidth: -1 });
-  return `---\n${yamlStr}---\n${content}`;
+  // Guard against callers passing content that already contains frontmatter
+  const body = (content || '').replace(FRONTMATTER_RE, '$2')
+  const yamlStr = yaml.dump(metadata, { indent: 2, lineWidth: -1 })
+  return `---\n${yamlStr}---\n${body}`
 }
 
 // Helper to generate a unique ID
@@ -147,7 +152,7 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
       };
       content = parsed.content;
     } else if (!isDirectory) {
-      // Check for .metadata.md file
+      // For non-markdown files (e.g., uploads), only treat as nodes if a .metadata.md exists
       try {
         const metadataContent = await window.electronAPI.readFile(relativeMetadataPath);
         const parsed = parseMarkdownWithFrontMatter(metadataContent);
@@ -159,7 +164,8 @@ async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise
           ...parsed.metadata 
         };
       } catch (e) {
-        // No metadata file, use defaults
+        // No metadata file: skip exposing this file as a node entirely
+        return null;
       }
     }
   } catch (error) {
@@ -324,9 +330,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     
     try {
       if (isElectron && window.electronAPI && currentProjectPath) {
-        // Build absolute path for Electron
-        const absolutePath = joinPaths(currentProjectPath, relativePath);
-        await window.electronAPI.writeFile(absolutePath, fileContent);
+        // Electron: pass project-relative path; main process joins with project path
+        await window.electronAPI.writeFile(relativePath, fileContent);
       } else if (!isElectron) {
         // Web API call
         await apiClient.post(`/projects/${useProjectStore.getState().currentProject?.id}/nodes`, { path: relativePath, metadata, content });
@@ -377,9 +382,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       
       try {
         if (isElectron && window.electronAPI && currentProjectPath) {
-          // Build absolute path for Electron
-          const absolutePath = path.startsWith(currentProjectPath) ? path : joinPaths(currentProjectPath, path);
-          await window.electronAPI.writeFile(absolutePath, fileContent);
+          // Electron: send project-relative path; main process resolves
+          await window.electronAPI.writeFile(path, fileContent);
         } else if (!isElectron) {
           await apiClient.put(`/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}`, { metadata: updatedMetadata, content: updatedContent });
         }
@@ -409,9 +413,8 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       
       try {
         if (isElectron && window.electronAPI && currentProjectPath) {
-          // Build absolute path for Electron
-          const absoluteMetadataPath = joinPaths(currentProjectPath, metadataPath);
-          await window.electronAPI.writeFile(absoluteMetadataPath, metadataContent);
+          // Electron: send project-relative metadata path
+          await window.electronAPI.writeFile(metadataPath, metadataContent);
         } else if (!isElectron) {
           await apiClient.put(`/projects/${useProjectStore.getState().currentProject?.id}/nodes/${encodeURIComponent(path)}/metadata`, { metadata: updatedMetadata });
         }
