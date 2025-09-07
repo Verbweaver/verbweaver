@@ -8,8 +8,8 @@ Verbweaver is a modular monolith: a FastAPI backend, React frontend, and an Elec
 ┌─────────────────────────────────────────────────────────────────┐
 │                           Clients                                │
 ├──────────────┬──────────────┬──────────────┬───────────────────┤
-│  Web Browser │   Desktop    │    Mobile    │   API Clients     │
-│   (React)    │  (Electron)  │ (React Native│    (REST/WS)      │
+│  Web Browser │   Desktop    │   API Clients     │
+│   (React)    │  (Electron)  │    (REST/WS)      │
 └──────┬───────┴──────┬───────┴──────┬───────┴───────┬───────────┘
        │              │              │               │
        └──────────────┴──────────────┴───────────────┘
@@ -65,11 +65,6 @@ Verbweaver is a modular monolith: a FastAPI backend, React frontend, and an Elec
 - **Embedded Backend**: Python server via child process
 - **Storage**: electron-store for settings
 - **Build**: electron-builder
-
-### Mobile (WIP)
-- **Framework**: React Native
-- **Navigation**: React Navigation
-- **State**: Shared types via `shared/`
 
 ## Desktop Application Architecture
 
@@ -287,8 +282,7 @@ verbweaver/
 │   │   ├── preload/      # Preload scripts
 │   │   └── renderer/     # Renderer process
 │   └── resources/        # Icons, installers
-├── shared/               # Shared types/constants
-└── mobile/               # React Native app
+└── shared/               # Shared types/constants
 ```
 
 ### Testing Strategy
