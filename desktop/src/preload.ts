@@ -47,6 +47,7 @@ export interface ElectronAPI {
   gitSwitchBranch: (projectPath: string, branchName: string) => Promise<void>;
   gitGetDiff: (projectPath: string, filePath?: string) => Promise<string>;
   gitRevert: (projectPath: string, commitSha: string) => Promise<void>;
+  gitResetHard: (projectPath: string) => Promise<void>;
   
   // System operations
   getAppVersion: () => Promise<string>;
@@ -146,6 +147,7 @@ const electronAPI = {
   gitSwitchBranch: (projectPath: string, branchName: string) => ipcRenderer.invoke('git:switchBranch', projectPath, branchName),
   gitGetDiff: (projectPath: string, filePath?: string) => ipcRenderer.invoke('git:getDiff', projectPath, filePath),
   gitRevert: (projectPath: string, commitSha: string) => ipcRenderer.invoke('git:revert', projectPath, commitSha),
+  gitResetHard: (projectPath: string) => ipcRenderer.invoke('git:resetHard', projectPath),
   
   // System operations
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),

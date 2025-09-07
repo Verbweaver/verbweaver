@@ -2434,6 +2434,43 @@ Start your content here.
     });
   });
 
+  ipcMain.handle('git:resetHard', async (_, projectPath: string) => {
+    const { spawn } = require('child_process');
+    return new Promise((resolve, reject) => {
+      // Discard all uncommitted changes and untracked files
+      const git = spawn('git', ['reset', '--hard'], {
+        cwd: projectPath,
+        shell: true
+      });
+
+      let errorOutput = '';
+
+      git.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          // Also clean untracked files for a full reset
+          const clean = spawn('git', ['clean', '-fd'], { cwd: projectPath, shell: true });
+          let cleanErr = '';
+          clean.stderr.on('data', (d: Buffer) => { cleanErr += d.toString(); });
+          clean.on('close', (c: number) => {
+            if (c === 0) resolve(true);
+            else reject(new Error(cleanErr || `Git clean failed with code ${c}`));
+          });
+          clean.on('error', (e: Error) => reject(e));
+        } else {
+          reject(new Error(errorOutput || `Git reset --hard failed with code ${code}`));
+        }
+      });
+
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+  });
+
   // System operations
   ipcMain.handle('shell:openExternal', async (_, url: string) => {
     if (url.startsWith('http://') || url.startsWith('https://')) {
