@@ -52,6 +52,7 @@ declare global {
       gitCreateBranch: (projectPath: string, branchName: string) => Promise<void>;
       gitSwitchBranch: (projectPath: string, branchName: string) => Promise<void>;
       gitGetDiff: (projectPath: string, filePath?: string) => Promise<string>;
+      gitRevert: (projectPath: string, commitSha: string) => Promise<void>;
       
       // System operations
       getAppVersion: () => Promise<string>;

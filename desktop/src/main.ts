@@ -2405,6 +2405,35 @@ Start your content here.
     });
   });
 
+  ipcMain.handle('git:revert', async (_, projectPath: string, commitSha: string) => {
+    const { spawn } = require('child_process');
+    return new Promise((resolve, reject) => {
+      // Use 'git revert --no-edit <sha>' for a non-interactive revert
+      const git = spawn('git', ['revert', '--no-edit', commitSha], {
+        cwd: projectPath,
+        shell: true
+      });
+
+      let errorOutput = '';
+
+      git.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          resolve(true);
+        } else {
+          reject(new Error(errorOutput || `Git revert failed with code ${code}`));
+        }
+      });
+
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+  });
+
   // System operations
   ipcMain.handle('shell:openExternal', async (_, url: string) => {
     if (url.startsWith('http://') || url.startsWith('https://')) {
