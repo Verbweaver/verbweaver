@@ -25,7 +25,7 @@ Download the installer for your platform from GitHub Releases:
 
 2. **Clone and Setup**
    ```bash
-   git clone https://github.com/TheWover/verbweaver.git
+   git clone https://github.com/Verbweaver/verbweaver.git
    cd verbweaver
    
    # Install shared dependencies
@@ -83,7 +83,7 @@ Perfect for teams and collaboration.
 
 2. **Clone and Setup**
    ```bash
-   git clone https://github.com/TheWover/verbweaver.git
+   git clone https://github.com/Verbweaver/verbweaver.git
    cd verbweaver
    ```
 
@@ -345,7 +345,7 @@ To reset all settings and data:
 
 - Read the [User Guide](user-guide.md) for detailed features
 - Check the [API Reference](api-reference.md) for automation
-- Join our [community](https://github.com/yourusername/verbweaver/discussions)
+- Join our [community](https://github.com/Verbweaver/verbweaver/discussions)
 
 ## Getting Help
 
@@ -355,11 +355,11 @@ To reset all settings and data:
 - [Troubleshooting](troubleshooting.md)
 
 ### Community
-- [GitHub Issues](https://github.com/yourusername/verbweaver/issues)
+- [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues)
 - [Discord Server](https://discord.gg/verbweaver)
-- [Discussion Forum](https://github.com/yourusername/verbweaver/discussions)
+- [Discussion Forum](https://github.com/Verbweaver/verbweaver/discussions)
 
 ### Support
 - Email: support@verbweaver.com
 - Documentation: [docs/](.)
-- Bug Reports: [GitHub Issues](https://github.com/yourusername/verbweaver/issues) 
+- Bug Reports: [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues) 
