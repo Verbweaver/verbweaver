@@ -5,6 +5,7 @@ import { useProjectStore } from '../store/projectStore';
 import toast from 'react-hot-toast';
 import Editor from '@monaco-editor/react';
 import { useThemeStore } from '../store/themeStore';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -45,6 +46,7 @@ export default function VersionControlView() {
   const [showDiff, setShowDiff] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [isGitInitialized, setIsGitInitialized] = useState(true);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (currentProject || currentProjectPath) {
@@ -409,6 +411,15 @@ export default function VersionControlView() {
             <Download className="h-4 w-4" />
             Pull
           </button>
+          {isElectron && (
+            <button
+              onClick={() => setResetConfirmOpen(true)}
+              className="flex-1 py-2 flex items-center justify-center gap-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90"
+              title="Discard all uncommitted changes"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
 
@@ -580,6 +591,30 @@ export default function VersionControlView() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Reset confirmation dialog */}
+      {isElectron && (
+        <ConfirmDialog
+          isOpen={resetConfirmOpen}
+          title="Reset uncommitted changes"
+          message="This will discard ALL uncommitted changes and delete untracked files. This action cannot be undone."
+          confirmLabel="Reset"
+          cancelLabel="Cancel"
+          onConfirm={async () => {
+            setResetConfirmOpen(false);
+            if (!currentProjectPath || !window.electronAPI) return;
+            try {
+              await window.electronAPI.gitResetHard(currentProjectPath);
+              await loadGitStatus();
+              toast.success('Uncommitted changes discarded');
+            } catch (error) {
+              console.error('Failed to reset changes:', error);
+              toast.error('Failed to reset changes');
+            }
+          }}
+          onCancel={() => setResetConfirmOpen(false)}
+        />
       )}
     </div>
   );
