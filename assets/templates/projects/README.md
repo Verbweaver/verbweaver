@@ -17,7 +17,7 @@ Verbweaver organizes ideas and tasks as Markdown files under the `nodes/` folder
 
 ### Views
 
-- Graph: Visual relationships between nodes with the Mind Map; order them with Outline; generate graphs from node variables with Progression
+- Graph: Visualize relationships between nodes with the Mind Map; order them with Outline; generate graphs from node variables with Progression
 - Tasks: Task and project management tools; Kanban Board, Calendar, To‑Do (Overdue, Today, Unscheduled), and Charts (Gantt and Burndown)
 - Editor: Markdown editing of nodes with preview mode
 - Version Control: View Git status, branches, commits; manage changes

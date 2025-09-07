@@ -113,22 +113,10 @@ async def create_project(
     # NodeService calls for creating initial folders/templates are removed 
     # as GitService.initialize_project() now handles this.
     
-    # 7. Seed project with global templates (README + templates/) if available
+    # 7. Seed project with global templates (templates tree + README copied as-is) if available
     try:
         project_path = db_project.git_config.get('path') or ''
         if project_path and os.path.isdir(settings.GLOBAL_TEMPLATES_DIR or ''):
-            # Seed README.md from global template if present
-            readme_template = os.path.join(settings.GLOBAL_TEMPLATES_DIR, 'project', 'README.md')
-            if os.path.exists(readme_template):
-                with open(readme_template, 'r', encoding='utf-8') as f:
-                    tmpl = f.read()
-                name = project_data.name or 'Project'
-                desc = (project_data.description or '').strip()
-                content = tmpl.replace('{{ PROJECT_NAME }}', name).replace('{{ PROJECT_DESCRIPTION }}', desc)
-                # Always write README for a freshly created project to reflect latest global template
-                with open(os.path.join(project_path, 'README.md'), 'w', encoding='utf-8') as f:
-                    f.write(content)
-
             # Copy templates tree (node and compiler templates)
             import shutil
             src_templates = os.path.join(settings.GLOBAL_TEMPLATES_DIR, 'templates')
@@ -327,17 +315,18 @@ async def reseed_project_templates(
 
     try:
         import shutil
-        # README: always overwrite to apply latest
-        readme_template = os.path.join(settings.GLOBAL_TEMPLATES_DIR, 'project', 'README.md')
-        if os.path.exists(readme_template):
-            with open(readme_template, 'r', encoding='utf-8') as f:
-                tmpl = f.read()
-            name = project.name or 'Project'
-            desc = (project.description or '').strip()
-            content = tmpl.replace('{{ PROJECT_NAME }}', name).replace('{{ PROJECT_DESCRIPTION }}', desc)
-            dst = os.path.join(project_path, 'README.md')
-            with open(dst, 'w', encoding='utf-8') as f:
-                f.write(content)
+        # README: copy from global templates if present (prefer projects/ then project/), overwrite existing
+        try:
+            candidates = [
+                os.path.join(settings.GLOBAL_TEMPLATES_DIR, 'projects', 'README.md'),
+                os.path.join(settings.GLOBAL_TEMPLATES_DIR, 'project', 'README.md'),
+            ]
+            for c in candidates:
+                if os.path.exists(c):
+                    shutil.copy2(c, os.path.join(project_path, 'README.md'))
+                    break
+        except Exception as e:
+            logger.warning(f"Failed to copy README during reseed: {e}")
 
         # templates tree from global store
         src_templates = os.path.join(settings.GLOBAL_TEMPLATES_DIR, 'templates')
