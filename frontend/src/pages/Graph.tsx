@@ -144,19 +144,18 @@ function GraphView() {
       try {
         if (!isElectron) {
           const settings = await projectsApi.getProjectSettings(currentProject.id)
-          if (settings && settings.outlineMap && typeof settings.outlineMap === 'object') {
-            setOutlineOrder(settings.outlineMap as Record<string, string[]>)
-            if (settings && typeof settings.graphPositions === 'object') {
-              setGraphPositions(settings.graphPositions as Record<string, { x: number; y: number }>)
-            }
-            if (settings && typeof (settings as any).graphCollapsed === 'object') {
-              setGraphCollapsed((settings as any).graphCollapsed as Record<string, boolean>)
-            }
-            // Ensure positionsReady flips even if no positions exist
-            setPositionsReady(true)
-            return
+          if (settings && typeof (settings as any).outlineMap === 'object') {
+            setOutlineOrder((settings as any).outlineMap as Record<string, string[]>)
           }
-          // No outline in settings; start empty without hitting file API in web mode
+          if (settings && typeof (settings as any).graphPositions === 'object') {
+            setGraphPositions((settings as any).graphPositions as Record<string, { x: number; y: number }>)
+          }
+          if (settings && typeof (settings as any).graphCollapsed === 'object') {
+            setGraphCollapsed((settings as any).graphCollapsed as Record<string, boolean>)
+          }
+          // Ensure positionsReady flips even if no positions exist
+          setPositionsReady(true)
+          return
         } else {
           // Electron: try local file if exists
           if (window.electronAPI && currentProjectPath) {
