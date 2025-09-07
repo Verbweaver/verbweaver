@@ -60,7 +60,17 @@ class GitService:
 
         # Initialize git repository
         try:
-            subprocess.run(['git', 'init'], cwd=str(repo_path_obj), check=True, capture_output=True)
+            # Prefer creating repo with main as default branch when supported (Git >= 2.28)
+            try:
+                subprocess.run(['git', 'init', '-b', 'main'], cwd=str(repo_path_obj), check=True, capture_output=True)
+            except subprocess.CalledProcessError:
+                # Fallback for older Git versions: legacy init, then create main branch
+                init_result = subprocess.run(['git', 'init'], cwd=str(repo_path_obj), check=True, capture_output=True)
+                # Best-effort branch switch/creation to main; ignore errors so we don't block project creation
+                try:
+                    subprocess.run(['git', 'checkout', '-b', 'main'], cwd=str(repo_path_obj), check=True, capture_output=True)
+                except subprocess.CalledProcessError:
+                    pass
             
             # Create initial .gitignore
             gitignore_content = """# Verbweaver gitignore

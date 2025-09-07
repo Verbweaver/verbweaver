@@ -1082,23 +1082,35 @@ Start your content here.
       // Initialize Git repository
       const { spawn } = require('child_process');
       
-      // Check if git is available
-      const gitInit = spawn('git', ['init'], { 
-        cwd: projectPath,
-        shell: true 
-      });
-      
+      // Try to initialize with main as default branch (Git >= 2.28). Fallback to legacy init.
       await new Promise((resolve) => {
-        gitInit.on('close', (code: number) => {
+        const gitInitMain = spawn('git', ['init', '-b', 'main'], { 
+          cwd: projectPath,
+          shell: true 
+        });
+        
+        gitInitMain.on('close', (code: number) => {
           if (code === 0) {
             resolve(code);
-          } else {
-            console.warn('Git init failed, continuing without git');
-            resolve(code); // Resolve even if git init fails, to not block project creation
+            return;
           }
+          console.warn('git init -b main failed; falling back to legacy init');
+          const gitInit = spawn('git', ['init'], { 
+            cwd: projectPath,
+            shell: true 
+          });
+          gitInit.on('close', () => {
+            const gitCheckout = spawn('git', ['checkout', '-b', 'main'], { 
+              cwd: projectPath,
+              shell: true 
+            });
+            gitCheckout.on('close', () => resolve(code));
+            gitCheckout.on('error', () => resolve(code));
+          });
+          gitInit.on('error', () => resolve(code));
         });
-        gitInit.on('error', (error: Error) => {
-          console.warn('Git not available:', error);
+        gitInitMain.on('error', (error: Error) => {
+          console.warn('Git not available or init failed:', error);
           resolve(null); // Resolve even if git is not available
         });
       });

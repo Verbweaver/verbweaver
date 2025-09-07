@@ -83,3 +83,4 @@ The Progression view plots line charts from node metadata.
 - If labels collide, toggle “Show node titles along X axis” off or trim variable lists.
 
 
+
