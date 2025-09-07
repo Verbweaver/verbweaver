@@ -52,7 +52,7 @@ Build from source (one-time setup):
 
 ```bash
 # Clone
-git clone https://github.com/TheWover/verbweaver.git
+git clone https://github.com/Verbweaver/verbweaver.git
 cd verbweaver
 
 # Install workspace dependencies (root installs shared + frontend + desktop)
@@ -315,8 +315,8 @@ The MIT License ensures that you have unrestricted rights to use, modify, and re
 ## 📞 Support
 
 - **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/TheWover/verbweaver/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/TheWover/verbweaver/discussions)
+- **Issues**: [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Verbweaver/verbweaver/discussions)
 - **Discord**: [Join our community](https://discord.gg/verbweaver)
 - **Email**: support@verbweaver.com
 

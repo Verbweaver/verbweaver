@@ -14,7 +14,7 @@ By participating in this project, you agree to abide by our Code of Conduct:
 
 1. **Fork the repository**
    ```bash
-   git clone https://github.com/yourusername/verbweaver.git
+   git clone https://github.com/Verbweaver/verbweaver.git
    cd verbweaver
    ```
 
@@ -32,7 +32,7 @@ By participating in this project, you agree to abide by our Code of Conduct:
 
 ### 1. Before You Start
 
-- Check existing [issues](https://github.com/verbweaver/verbweaver/issues) and [pull requests](https://github.com/verbweaver/verbweaver/pulls)
+- Check existing [issues](https://github.com/Verbweaver/verbweaver/issues) and [pull requests](https://github.com/verbweaver/Verbweaver/pulls)
 - For major changes, open an issue first to discuss
 - Ensure your idea aligns with the project's goals
 
@@ -232,7 +232,7 @@ Current areas where we especially welcome contributions:
 ## 📞 Getting Help
 
 - **Discord**: [Join our community](https://discord.gg/verbweaver)
-- **Discussions**: [GitHub Discussions](https://github.com/verbweaver/verbweaver/discussions)
+- **Discussions**: [GitHub Discussions](https://github.com/verbweaver/Verbweaver/discussions)
 - **Email**: dev@verbweaver.com
 
 ## 🙏 Recognition
