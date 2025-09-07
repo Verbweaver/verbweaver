@@ -29,7 +29,7 @@ declare global {
       pathExists?: (somePath: string) => Promise<boolean>;
       
       // Project operations
-      createProject: (name: string, path: string) => Promise<string>;
+      createProject: (name: string, path: string, description?: string) => Promise<string>;
       openProject: (path: string) => Promise<void>;
       getRecentProjects: () => Promise<string[]>;
       pruneRecentProjects?: () => Promise<string[]>;
