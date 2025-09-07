@@ -28,7 +28,7 @@ export interface ElectronAPI {
   saveBinaryFile: (data: Uint8Array, defaultName?: string) => Promise<{ canceled: boolean; filePath?: string }>;
   
   // Project operations
-  createProject: (name: string, path: string) => Promise<string>;
+  createProject: (name: string, path: string, description?: string) => Promise<string>;
   openProject: (path: string) => Promise<void>;
   getRecentProjects: () => Promise<string[]>;
   pruneRecentProjects: () => Promise<string[]>;
@@ -126,7 +126,7 @@ const electronAPI = {
   saveBinaryFile: (data: Uint8Array, defaultName?: string) => ipcRenderer.invoke('dialog:saveBinary', data, defaultName),
   
   // Project operations
-  createProject: (name: string, path: string): Promise<string> => ipcRenderer.invoke('project:create', name, path),
+  createProject: (name: string, path: string, description?: string): Promise<string> => ipcRenderer.invoke('project:create', name, path, description),
   openProject: (path: string): Promise<void> => ipcRenderer.invoke('project:open', path),
   getRecentProjects: () => ipcRenderer.invoke('project:getRecent'),
   pruneRecentProjects: () => ipcRenderer.invoke('project:pruneRecent'),
