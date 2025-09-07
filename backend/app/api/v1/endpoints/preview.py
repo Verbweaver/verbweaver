@@ -20,10 +20,11 @@ async def preview_markdown(request: PreviewRequest):
         # Build pandoc command
         cmd = [
             "pandoc",
-            "-f", "markdown",
+            "-f", "markdown+tex_math_dollars+tex_math_single_backslash",
             "-t", "html",
             "--standalone",
             "--self-contained",  # inline images so preview can render without extra network fetches
+            "--mathml",  # render LaTeX math to MathML for in-browser preview without external scripts
         ]
         # Configure resource-path for resolving images
         resource_paths: List[str] = []
@@ -41,6 +42,13 @@ async def preview_markdown(request: PreviewRequest):
         import re as _re
         def _rewrite_img_paths(md: str) -> str:
             # Replace backslashes with slashes and strip a single leading slash for project-relative roots
+            try:
+                if md is None:
+                    md = ""
+                else:
+                    md = str(md)
+            except Exception:
+                md = ""
             def repl(m: Any) -> str:
                 prefix, path, suffix = m.group(1), m.group(2), m.group(3)
                 p = path
@@ -53,13 +61,17 @@ async def preview_markdown(request: PreviewRequest):
                 return f"{prefix}{p}{suffix}"
             return _re.sub(r'(!\[[^\]]*\]\()([^)]*)(\))', repl, md)
 
-        normalized_markdown = _rewrite_img_paths(request.markdown_text)
+        # Ensure markdown_text is a string
+        incoming_text = request.markdown_text or ""
+        normalized_markdown = _rewrite_img_paths(incoming_text)
 
         # Simple variable preprocessing so $title$ (and friends) work in Preview
         # Extract frontmatter from the provided markdown_text itself
         def _extract_frontmatter(md: str) -> Dict[str, Any]:
             try:
-                m = _re.match(r'^---\s*\n(.*?)\n---\s*\n', md, _re.DOTALL)
+                if md is None:
+                    return {}
+                m = _re.match(r'^---\s*\n(.*?)\n---\s*\n', str(md), _re.DOTALL)
                 if not m:
                     return {}
                 data = yaml.safe_load(m.group(1)) or {}
@@ -67,7 +79,7 @@ async def preview_markdown(request: PreviewRequest):
             except Exception:
                 return {}
 
-        fm = _extract_frontmatter(request.markdown_text)
+        fm = _extract_frontmatter(normalized_markdown)
         vars_map: Dict[str, Any] = {}
         for k in ('title', 'author', 'date'):
             v = fm.get(k)
@@ -117,7 +129,7 @@ async def preview_markdown(request: PreviewRequest):
                 # Fallback to stdin method if no project path
                 result = subprocess.run(
                     cmd,
-                    input=request.markdown_text,
+                    input=normalized_markdown,
                     text=True,
                     capture_output=True
                 )
@@ -126,7 +138,7 @@ async def preview_markdown(request: PreviewRequest):
                 raise RuntimeError(result.stderr.strip() or "Pandoc conversion failed")
             
             # Get the output
-            output = result.stdout
+            output = result.stdout or ''
             
         finally:
             # Clean up temporary file
