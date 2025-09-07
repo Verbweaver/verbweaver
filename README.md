@@ -13,7 +13,7 @@
 - **Real-time Collaboration**: Work together with your team in real-time
 - **Export Anywhere**: Compile your non-linear notes into linear documents (PDF, Word, ePub, etc.)
 - **Git Version Control**: Built-in version control for all your projects
-- **Multi-platform**: Available as a web app, desktop app (Windows, Mac, Linux), and mobile app (iOS, Android)
+- **Multi-platform**: Available as a web app and desktop app (Windows, Mac, Linux)
 
 ## 🏗️ Architecture
 
@@ -22,7 +22,6 @@ Verbweaver uses a modern, scalable architecture:
 - **Backend**: Python with FastAPI, SQLAlchemy, and GitPython
 - **Frontend**: React with TypeScript, Vite, and Tailwind CSS
 - **Desktop**: Electron with secure IPC communication
-- **Mobile**: React Native with shared business logic
 - **Database**: SQLite (default) or PostgreSQL
 - **Real-time**: WebSockets for collaboration
 
@@ -239,7 +238,6 @@ verbweaver/
 │   │   ├── store/
 │   │   └── views/
 │   └── package.json
-├── mobile/                          # React Native app (WIP)
 ├── nginx/                           # Reverse proxy configs
 │   └── nginx.conf
 ├── shared/                          # Workspace with shared TS types/constants
