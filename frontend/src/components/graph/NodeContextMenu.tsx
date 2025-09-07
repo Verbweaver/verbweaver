@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { desktopTemplatesApi } from '../../api/desktop-templates'
 import { templatesApi, Template } from '../../api/templates'
 import { useProjectStore } from '../../store/projectStore'
-import { Plus, Trash2, Edit, Link, FolderPlus, CheckSquare, Paperclip, Loader2, CheckCircle, Lock, Unlock } from 'lucide-react'
+import { Plus, Trash2, Edit, Link, FolderPlus, CheckSquare, Paperclip, Loader2, CheckCircle, Lock, Unlock, ChevronDown, ChevronRight } from 'lucide-react'
 
 interface NodeContextMenuProps {
   x: number
@@ -26,9 +26,11 @@ interface NodeContextMenuProps {
   onToggleTrackTask?: (nodeId: string) => void
   onToggleLock?: (nodeId: string) => void
   isLocked?: boolean
+  onToggleCollapse?: (nodeId: string) => void
+  isCollapsed?: boolean
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -178,6 +180,15 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
         <>
           {isFolder && (
             <>
+              {onToggleCollapse && (
+                <button
+                  onClick={() => { if (nodeId) onToggleCollapse(nodeId) }}
+                  className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                >
+                  {isCollapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  {isCollapsed ? 'Expand' : 'Collapse'}
+                </button>
+              )}
               {onCreateChildNode && (
                 <button
                   onClick={() => onCreateChildNode(nodeId)}

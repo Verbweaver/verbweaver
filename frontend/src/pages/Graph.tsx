@@ -104,6 +104,8 @@ function GraphView() {
 
   // Persisted per-project positions for folders (and optionally special nodes)
   const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({})
+  // Persisted per-project collapsed state for folders
+  const [graphCollapsed, setGraphCollapsed] = useState<Record<string, boolean>>({})
   // Flag to trigger initial rebuild after positions are loaded
   const [positionsReady, setPositionsReady] = useState<boolean>(false)
 
@@ -147,6 +149,9 @@ function GraphView() {
             if (settings && typeof settings.graphPositions === 'object') {
               setGraphPositions(settings.graphPositions as Record<string, { x: number; y: number }>)
             }
+            if (settings && typeof (settings as any).graphCollapsed === 'object') {
+              setGraphCollapsed((settings as any).graphCollapsed as Record<string, boolean>)
+            }
             // Ensure positionsReady flips even if no positions exist
             setPositionsReady(true)
             return
@@ -161,6 +166,7 @@ function GraphView() {
               const parsed: any = yaml.load(content || '') || {}
               if (parsed && typeof parsed === 'object') setOutlineOrder(parsed.outline || {})
               if (parsed && typeof parsed.graph_positions === 'object') setGraphPositions(parsed.graph_positions)
+              if (parsed && typeof parsed.graph_collapsed === 'object') setGraphCollapsed(parsed.graph_collapsed)
               setPositionsReady(true)
             } catch {}
           }
@@ -205,7 +211,7 @@ function GraphView() {
     if (!isElectron) {
       try {
         const settings = await projectsApi.getProjectSettings(currentProject.id)
-        const next = { ...(settings || {}), outlineMap: map, graphPositions }
+        const next = { ...(settings || {}), outlineMap: map, graphPositions, graphCollapsed }
         await projectsApi.updateProjectSettings(currentProject.id, next)
       } catch (e) {
         console.warn('Failed to save outline in project settings', e)
@@ -214,7 +220,7 @@ function GraphView() {
     }
     // Electron: persist to file alongside project
     try {
-      const content = yaml.dump({ outline: map, graph_positions: graphPositions })
+      const content = yaml.dump({ outline: map, graph_positions: graphPositions, graph_collapsed: graphCollapsed })
       if (window.electronAPI && currentProjectPath) {
         const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
         await window.electronAPI.writeFile(abs, content)
@@ -225,6 +231,30 @@ function GraphView() {
       console.warn('Failed to save outline.yaml', e)
     }
   }
+
+  // Persist graph positions and collapsed state to storage
+  const persistGraphState = useCallback(async (folderPositions: Record<string, { x: number; y: number }>, collapsedMap: Record<string, boolean>) => {
+    if (!currentProject?.id) return
+    try {
+      if (!isElectron) {
+        const settings = await projectsApi.getProjectSettings(currentProject.id)
+        const next = { ...(settings || {}), graphPositions: folderPositions, graphCollapsed: collapsedMap }
+        await projectsApi.updateProjectSettings(currentProject.id, next)
+      } else if (window.electronAPI && currentProjectPath) {
+        const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
+        let parsed: any = {}
+        try {
+          const content = await window.electronAPI.readFile(abs)
+          parsed = yaml.load(content || '') || {}
+        } catch {}
+        parsed.outline = parsed.outline || outlineOrder
+        parsed.graph_positions = folderPositions
+        parsed.graph_collapsed = collapsedMap
+        const content = yaml.dump(parsed)
+        await window.electronAPI.writeFile(abs, content)
+      }
+    } catch {}
+  }, [currentProject?.id, currentProjectPath, outlineOrder])
 
   // Build virtual parent index for items moved to different folders
   const virtualParentOf = useMemo(() => {
@@ -373,6 +403,8 @@ function GraphView() {
       const flowEdges: Edge[] = []
       
       // First pass: Create all nodes we want on the graph
+      // Build collapsed folder prefixes for quick filtering
+      const collapsedFolders = new Set<string>(Object.entries(graphCollapsed).filter(([_, v]) => !!v).map(([k]) => k.replace(/\\/g, '/')))
       verbweaverNodes.forEach((node) => {
         const normPath = node.path.replace(/\\/g, '/')
 
@@ -390,6 +422,10 @@ function GraphView() {
 
         // Filter by allowed roots
         if (!(isNodesRoot || isUnderNodes || isUploadsRoot || isUnderUploads)) return
+
+        // Hide descendants of collapsed folders (but still show the folder itself)
+        const isDescendantOfCollapsed = Array.from(collapsedFolders).some(prefix => prefix !== normPath && (normPath.startsWith(prefix + '/')))
+        if (isDescendantOfCollapsed) return
 
         // Compute position
         const position = (() => {
@@ -426,6 +462,7 @@ function GraphView() {
             isDirectory: node.isDirectory,
             isMarkdown: node.isMarkdown,
             locked,
+            collapsed: !!graphCollapsed[node.path],
             isNodesRoot: isNodes,
             projectTitle: isNodes ? (currentProject?.name || 'Project') : undefined,
           },
@@ -453,6 +490,7 @@ function GraphView() {
             isDirectory: true,
             isMarkdown: false,
             locked: true,
+            collapsed: !!graphCollapsed['nodes'],
             isNodesRoot: true,
             projectTitle: currentProject?.name || 'Project',
           },
@@ -542,7 +580,7 @@ function GraphView() {
       setNodes(flowNodes)
       setEdges(flowEdges)
     }
-  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads])
+  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads, graphCollapsed])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
@@ -1006,25 +1044,24 @@ function GraphView() {
     // Save merged into project settings or outline.yaml without blocking UI
     ;(async () => {
       try {
-        if (rigidMode && !isElectron) {
-          const settings = await projectsApi.getProjectSettings(currentProject.id)
-          const next = { ...(settings || {}), graphPositions: folderPositions }
-          await projectsApi.updateProjectSettings(currentProject.id, next)
-        } else if (rigidMode && window.electronAPI && currentProjectPath) {
-          const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
-          let parsed: any = {}
-          try {
-            const content = await window.electronAPI.readFile(abs)
-            parsed = yaml.load(content || '') || {}
-          } catch {}
-          parsed.outline = parsed.outline || outlineOrder
-          parsed.graph_positions = folderPositions
-          const content = yaml.dump(parsed)
-          await window.electronAPI.writeFile(abs, content)
-        }
+        if (rigidMode) await persistGraphState(folderPositions, graphCollapsed)
       } catch {}
     })()
-  }, [nodes, currentProject?.id, rigidMode])
+  }, [nodes, currentProject?.id, rigidMode, graphCollapsed, persistGraphState])
+
+  // Toggle collapsed state for a folder and persist immediately
+  const toggleFolderCollapsed = useCallback(async (folderPath: string) => {
+    setGraphCollapsed(prev => {
+      const next = { ...prev, [folderPath]: !prev[folderPath] }
+      // Persist asynchronously but do not block UI
+      ;(async () => {
+        try {
+          await persistGraphState(graphPositions, next)
+        } catch {}
+      })()
+      return next
+    })
+  }, [graphPositions, persistGraphState])
 
   // -------- Outline helpers --------
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -1545,7 +1582,7 @@ function GraphView() {
           y={contextMenu.y}
           nodeId={contextMenu.nodeId}
           edgeId={contextMenu.edgeId}
-          isFolder={contextMenu.isFolder}
+          isFolder={contextMenu.isFolder || contextMenu.nodeId === 'nodes'}
           hasTask={contextMenu.hasTask}
           onCreateNode={handleCreateNode}
           onDeleteNode={(id) => {
@@ -1585,6 +1622,11 @@ function GraphView() {
             const n = verbweaverNodes.get(id)
             if (!n) return false
             return id === 'nodes' ? (n.metadata?.locked !== false) : !!n.metadata?.locked
+          })()}
+          onToggleCollapse={(nodeId) => { if (nodeId) toggleFolderCollapsed(nodeId); setContextMenu(null) }}
+          isCollapsed={(() => {
+            const id = contextMenu.nodeId || ''
+            return !!graphCollapsed[id]
           })()}
           onUploadFiles={() => {
             const input = document.getElementById('graph-canvas-upload-input') as HTMLInputElement | null
