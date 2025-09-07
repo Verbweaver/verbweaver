@@ -134,4 +134,4 @@ There should be GitHub Actions that automatically build Verbweaver for all targe
 
 Those server platforms include: baremetal server and docker container. 
 
-There should also be GitHub actions that build the installed applications for desktops (Windows, Mac, Linux) and mobile (Android and iPhone).
+There should also be GitHub actions that build the installed applications for desktops (Windows, Mac, Linux).

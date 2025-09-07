@@ -12,6 +12,7 @@ interface CustomNodeProps {
     isDirectory?: boolean
     hasTask?: boolean
     locked?: boolean
+    collapsed?: boolean
     isNodesRoot?: boolean
     projectTitle?: string
   }
@@ -80,6 +81,11 @@ function CustomNode({ data, selected }: CustomNodeProps) {
       {data.locked && (
         <div className="absolute -top-2 -right-2">
           <span className="text-red-600 font-bold text-xs" title="Locked">🔒</span>
+        </div>
+      )}
+      {data.isDirectory && data.collapsed && (
+        <div className="absolute -top-2 -left-2">
+          <span className="text-blue-600 font-bold text-xs" title="Collapsed">▸</span>
         </div>
       )}
       {/* Top Handles */}

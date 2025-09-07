@@ -60,7 +60,17 @@ class GitService:
 
         # Initialize git repository
         try:
-            subprocess.run(['git', 'init'], cwd=str(repo_path_obj), check=True, capture_output=True)
+            # Prefer creating repo with main as default branch when supported (Git >= 2.28)
+            try:
+                subprocess.run(['git', 'init', '-b', 'main'], cwd=str(repo_path_obj), check=True, capture_output=True)
+            except subprocess.CalledProcessError:
+                # Fallback for older Git versions: legacy init, then create main branch
+                init_result = subprocess.run(['git', 'init'], cwd=str(repo_path_obj), check=True, capture_output=True)
+                # Best-effort branch switch/creation to main; ignore errors so we don't block project creation
+                try:
+                    subprocess.run(['git', 'checkout', '-b', 'main'], cwd=str(repo_path_obj), check=True, capture_output=True)
+                except subprocess.CalledProcessError:
+                    pass
             
             # Create initial .gitignore
             gitignore_content = """# Verbweaver gitignore
@@ -110,8 +120,29 @@ Thumbs.db
             except Exception as e:
                 print(f"Warning: failed to seed default templates: {e}")
 
-            # Stage and commit the .gitignore, nodes/, templates/, and compiler templates
-            subprocess.run(['git', 'add', '.gitignore', 'nodes/', 'templates/'], cwd=str(repo_path_obj), check=True, capture_output=True)
+            # Copy README from global templates (prefer projects/ then project/) and substitute placeholders
+            try:
+                candidates = [
+                    Path(settings.GLOBAL_TEMPLATES_DIR) / 'projects' / 'README.md',
+                    Path(settings.GLOBAL_TEMPLATES_DIR) / 'project' / 'README.md',
+                ]
+                for c in candidates:
+                    if c.exists():
+                        try:
+                            tmpl = c.read_text(encoding='utf-8')
+                            name = self.project.name or 'Project'
+                            desc = (self.project.description or '').strip()
+                            content = tmpl.replace('{{ PROJECT_NAME }}', name).replace('{{ PROJECT_DESCRIPTION }}', desc)
+                            (repo_path_obj / 'README.md').write_text(content, encoding='utf-8')
+                        except Exception:
+                            # If substitution fails, copy raw file
+                            shutil.copy2(str(c), str(repo_path_obj / 'README.md'))
+                        break
+            except Exception as e:
+                print(f"Warning: failed to copy README template: {e}")
+
+            # Stage and commit all initial files (includes README/templates)
+            subprocess.run(['git', 'add', '.'], cwd=str(repo_path_obj), check=True, capture_output=True)
             subprocess.run(['git', 'commit', '-m', 'Initial commit with project structure and Empty template'], cwd=str(repo_path_obj), check=True, capture_output=True)
             
         except subprocess.CalledProcessError as e:

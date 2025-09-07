@@ -5,6 +5,7 @@ import { useProjectStore } from '../store/projectStore';
 import toast from 'react-hot-toast';
 import Editor from '@monaco-editor/react';
 import { useThemeStore } from '../store/themeStore';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -45,6 +46,7 @@ export default function VersionControlView() {
   const [showDiff, setShowDiff] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [isGitInitialized, setIsGitInitialized] = useState(true);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (currentProject || currentProjectPath) {
@@ -409,6 +411,23 @@ export default function VersionControlView() {
             <Download className="h-4 w-4" />
             Pull
           </button>
+          {isElectron ? (
+            <button
+              onClick={() => setResetConfirmOpen(true)}
+              className="flex-1 py-2 flex items-center justify-center gap-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90"
+              title="Discard all uncommitted changes"
+            >
+              Reset
+            </button>
+          ) : (
+            <button
+              onClick={() => setResetConfirmOpen(true)}
+              className="flex-1 py-2 flex items-center justify-center gap-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90"
+              title="Discard all uncommitted changes"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
 
@@ -482,7 +501,46 @@ export default function VersionControlView() {
                       <GitCommit className="h-4 w-4 text-muted-foreground" />
                       <code className="text-xs text-muted-foreground">{commit.sha.slice(0, 7)}</code>
                     </div>
-                    <span className="text-xs text-muted-foreground">{formatDate(commit.date)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{formatDate(commit.date)}</span>
+                      {isElectron ? (
+                        <button
+                          onClick={async () => {
+                            if (!currentProjectPath || !window.electronAPI) return;
+                            try {
+                              await window.electronAPI.gitRevert(currentProjectPath, commit.sha);
+                              await loadGitStatus();
+                              toast.success(`Reverted commit ${commit.sha.slice(0,7)}`);
+                            } catch (error) {
+                              console.error('Failed to revert commit:', error);
+                              toast.error('Failed to revert commit');
+                            }
+                          }}
+                          className="text-xs px-2 py-1 border rounded hover:bg-accent"
+                          title="Revert this commit"
+                        >
+                          Revert
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            if (!currentProject) return;
+                            try {
+                              await api.post(`/git/projects/${currentProject.id}/revert`, { sha: commit.sha });
+                              await loadGitStatus();
+                              toast.success(`Reverted commit ${commit.sha.slice(0,7)}`);
+                            } catch (error) {
+                              console.error('Failed to revert commit:', error);
+                              toast.error('Failed to revert commit');
+                            }
+                          }}
+                          className="text-xs px-2 py-1 border rounded hover:bg-accent"
+                          title="Revert this commit"
+                        >
+                          Revert
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <p className="text-sm font-medium mb-1">{commit.message}</p>
                   <p className="text-xs text-muted-foreground">by {commit.author}</p>
@@ -559,6 +617,33 @@ export default function VersionControlView() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Reset confirmation dialog */}
+      {true && (
+        <ConfirmDialog
+          isOpen={resetConfirmOpen}
+          title="Reset uncommitted changes"
+          message="This will discard ALL uncommitted changes and delete untracked files. This action cannot be undone."
+          confirmLabel="Reset"
+          cancelLabel="Cancel"
+          onConfirm={async () => {
+            setResetConfirmOpen(false);
+            try {
+              if (isElectron && currentProjectPath && window.electronAPI) {
+                await window.electronAPI.gitResetHard(currentProjectPath);
+              } else if (currentProject) {
+                await api.post(`/git/projects/${currentProject.id}/reset/hard`);
+              }
+              await loadGitStatus();
+              toast.success('Uncommitted changes discarded');
+            } catch (error) {
+              console.error('Failed to reset changes:', error);
+              toast.error('Failed to reset changes');
+            }
+          }}
+          onCancel={() => setResetConfirmOpen(false)}
+        />
       )}
     </div>
   );

@@ -29,7 +29,7 @@ declare global {
       pathExists?: (somePath: string) => Promise<boolean>;
       
       // Project operations
-      createProject: (name: string, path: string) => Promise<string>;
+      createProject: (name: string, path: string, description?: string) => Promise<string>;
       openProject: (path: string) => Promise<void>;
       getRecentProjects: () => Promise<string[]>;
       pruneRecentProjects?: () => Promise<string[]>;
@@ -52,6 +52,8 @@ declare global {
       gitCreateBranch: (projectPath: string, branchName: string) => Promise<void>;
       gitSwitchBranch: (projectPath: string, branchName: string) => Promise<void>;
       gitGetDiff: (projectPath: string, filePath?: string) => Promise<string>;
+      gitRevert: (projectPath: string, commitSha: string) => Promise<void>;
+      gitResetHard: (projectPath: string) => Promise<void>;
       
       // System operations
       getAppVersion: () => Promise<string>;

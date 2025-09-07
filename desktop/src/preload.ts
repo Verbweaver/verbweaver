@@ -28,7 +28,7 @@ export interface ElectronAPI {
   saveBinaryFile: (data: Uint8Array, defaultName?: string) => Promise<{ canceled: boolean; filePath?: string }>;
   
   // Project operations
-  createProject: (name: string, path: string) => Promise<string>;
+  createProject: (name: string, path: string, description?: string) => Promise<string>;
   openProject: (path: string) => Promise<void>;
   getRecentProjects: () => Promise<string[]>;
   pruneRecentProjects: () => Promise<string[]>;
@@ -46,6 +46,8 @@ export interface ElectronAPI {
   gitCreateBranch: (projectPath: string, branchName: string) => Promise<void>;
   gitSwitchBranch: (projectPath: string, branchName: string) => Promise<void>;
   gitGetDiff: (projectPath: string, filePath?: string) => Promise<string>;
+  gitRevert: (projectPath: string, commitSha: string) => Promise<void>;
+  gitResetHard: (projectPath: string) => Promise<void>;
   
   // System operations
   getAppVersion: () => Promise<string>;
@@ -126,7 +128,7 @@ const electronAPI = {
   saveBinaryFile: (data: Uint8Array, defaultName?: string) => ipcRenderer.invoke('dialog:saveBinary', data, defaultName),
   
   // Project operations
-  createProject: (name: string, path: string): Promise<string> => ipcRenderer.invoke('project:create', name, path),
+  createProject: (name: string, path: string, description?: string): Promise<string> => ipcRenderer.invoke('project:create', name, path, description),
   openProject: (path: string): Promise<void> => ipcRenderer.invoke('project:open', path),
   getRecentProjects: () => ipcRenderer.invoke('project:getRecent'),
   pruneRecentProjects: () => ipcRenderer.invoke('project:pruneRecent'),
@@ -144,6 +146,8 @@ const electronAPI = {
   gitCreateBranch: (projectPath: string, branchName: string) => ipcRenderer.invoke('git:createBranch', projectPath, branchName),
   gitSwitchBranch: (projectPath: string, branchName: string) => ipcRenderer.invoke('git:switchBranch', projectPath, branchName),
   gitGetDiff: (projectPath: string, filePath?: string) => ipcRenderer.invoke('git:getDiff', projectPath, filePath),
+  gitRevert: (projectPath: string, commitSha: string) => ipcRenderer.invoke('git:revert', projectPath, commitSha),
+  gitResetHard: (projectPath: string) => ipcRenderer.invoke('git:resetHard', projectPath),
   
   // System operations
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),

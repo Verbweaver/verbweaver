@@ -7,8 +7,7 @@
     "backend",
     "frontend",
     "shared",
-    "desktop",
-    "mobile"
+    "desktop"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
@@ -20,7 +19,6 @@
     "build:frontend": "cd frontend && npm run build",
     "build:backend": "cd backend && echo 'Backend is Python, no build needed'",
     "build:desktop": "cd desktop && npm run build",
-    "build:mobile": "cd mobile && npm run build",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces"
   },

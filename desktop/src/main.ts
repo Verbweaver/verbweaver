@@ -899,7 +899,7 @@ function setupIpcHandlers() {
   });
 
   // Project operations
-  ipcMain.handle('project:create', async (_, projectName: string, projectPath: string) => {
+  ipcMain.handle('project:create', async (_, projectName: string, projectPath: string, projectDescription?: string) => {
     try {
       // Create project directory if it doesn't exist
       if (!existsSync(projectPath)) {
@@ -934,47 +934,7 @@ function setupIpcHandlers() {
         'utf-8'
       );
       
-      // Create README.md (prefer external template so users can customize it)
-      let readmeContent: string
-      try {
-        const tmplPath = isDevelopment
-          ? join(__dirname, '../../resources/project-templates/README.md')
-          : join(process.resourcesPath, 'project-templates', 'README.md')
-        const tmpl = await fs.readFile(tmplPath, 'utf-8')
-        readmeContent = tmpl.replace(/\{\{\s*PROJECT_NAME\s*\}\}/g, projectName)
-      } catch {
-        // Fallback inline README content
-        readmeContent = `# ${projectName}
-
-Welcome to your Verbweaver project.
-
-## Getting Started
-
-Verbweaver organizes ideas and tasks as Markdown files under the \`nodes/\` folder. Task fields (status, due date, etc.) live in each file's YAML frontmatter.
-
-### Project Structure
-
-- \`nodes/\` — all content nodes and tasks (Markdown)
-- \`uploads/\` — files you attach to nodes (keeps original filenames)
-- \`templates/\` — templates for new nodes and compiler
-- \`.verbweaver/\` — project settings and internal data
-
-### Views
-
-- Graph: Mind Map and Outline subviews; Hide Uploads and Rigid Mode controls; lock nodes in place
-- Tasks: Board, Calendar, and To‑Do (Overdue, Today, Unscheduled; drag‑and‑drop; complete/uncomplete)
-- Editor: Markdown editing with shortcuts (Bold, Italic, Link, Preview); Duplicate File
-- Version Control: Git status, branches, commits
-- Compiler: Export to PDF/DOCX/HTML/EPUB; templates; optional metadata and ToC
-
-Tips: Use Manage Statuses to configure task columns; set Default Template in Project Settings.
-
-## Version Control
-
-This repository is a normal Git repo. Use the Version view to stage, commit, and review history.
-`
-      }
-      await writeFile(join(projectPath, 'README.md'), readmeContent, 'utf-8');
+      // README.md: do not generate; copy from templates if present
 
       // Seed templates from the global templates directory if configured
       const userGlobalTemplatesBase = (store.get('globalTemplatesDir') as string) 
@@ -1012,6 +972,33 @@ This repository is a normal Git repo. Use the Version view to stage, commit, and
       // Choose source root and copy
       const srcChosen = await resolveTemplatesSource();
       const srcTemplates = srcChosen ?? userGlobalTemplatesBase;
+
+      // Copy README from templates if found (support projects/ or project/ and nested under templates/)
+      try {
+        const candidates = [
+          join(srcTemplates, 'projects', 'README.md'),
+          join(srcTemplates, 'project', 'README.md'),
+          join(srcTemplates, 'templates', 'projects', 'README.md'),
+          join(srcTemplates, 'templates', 'project', 'README.md'),
+        ];
+        for (const c of candidates) {
+          try {
+            await fs.access(c);
+            // Copy then substitute placeholders for project name/description
+            const dst = join(projectPath, 'README.md');
+            const raw = await fs.readFile(c, 'utf-8');
+            const replaced = raw
+              .replace(/\{\{\s*PROJECT_NAME\s*\}\}/g, projectName)
+              .replace(/\{\{\s*PROJECT_DESCRIPTION\s*\}\}/g, (projectDescription || '').trim());
+            await ensureDir(path.dirname(dst));
+            await fs.writeFile(dst, replaced, 'utf-8');
+            break;
+          } catch {}
+        }
+        // If not found, skip creating README; user can add later or via reseed
+      } catch (e) {
+        console.warn('Failed to copy README from templates:', e);
+      }
 
       async function pathExists(p: string): Promise<boolean> {
         try { await fs.stat(p); return true } catch { return false }
@@ -1082,23 +1069,35 @@ Start your content here.
       // Initialize Git repository
       const { spawn } = require('child_process');
       
-      // Check if git is available
-      const gitInit = spawn('git', ['init'], { 
-        cwd: projectPath,
-        shell: true 
-      });
-      
+      // Try to initialize with main as default branch (Git >= 2.28). Fallback to legacy init.
       await new Promise((resolve) => {
-        gitInit.on('close', (code: number) => {
+        const gitInitMain = spawn('git', ['init', '-b', 'main'], { 
+          cwd: projectPath,
+          shell: true 
+        });
+        
+        gitInitMain.on('close', (code: number) => {
           if (code === 0) {
             resolve(code);
-          } else {
-            console.warn('Git init failed, continuing without git');
-            resolve(code); // Resolve even if git init fails, to not block project creation
+            return;
           }
+          console.warn('git init -b main failed; falling back to legacy init');
+          const gitInit = spawn('git', ['init'], { 
+            cwd: projectPath,
+            shell: true 
+          });
+          gitInit.on('close', () => {
+            const gitCheckout = spawn('git', ['checkout', '-b', 'main'], { 
+              cwd: projectPath,
+              shell: true 
+            });
+            gitCheckout.on('close', () => resolve(code));
+            gitCheckout.on('error', () => resolve(code));
+          });
+          gitInit.on('error', () => resolve(code));
         });
-        gitInit.on('error', (error: Error) => {
-          console.warn('Git not available:', error);
+        gitInitMain.on('error', (error: Error) => {
+          console.warn('Git not available or init failed:', error);
           resolve(null); // Resolve even if git is not available
         });
       });
@@ -2406,6 +2405,72 @@ Start your content here.
     });
   });
 
+  ipcMain.handle('git:revert', async (_, projectPath: string, commitSha: string) => {
+    const { spawn } = require('child_process');
+    return new Promise((resolve, reject) => {
+      // Use 'git revert --no-edit <sha>' for a non-interactive revert
+      const git = spawn('git', ['revert', '--no-edit', commitSha], {
+        cwd: projectPath,
+        shell: true
+      });
+
+      let errorOutput = '';
+
+      git.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          resolve(true);
+        } else {
+          reject(new Error(errorOutput || `Git revert failed with code ${code}`));
+        }
+      });
+
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+  });
+
+  ipcMain.handle('git:resetHard', async (_, projectPath: string) => {
+    const { spawn } = require('child_process');
+    return new Promise((resolve, reject) => {
+      // Discard all uncommitted changes and untracked files
+      const git = spawn('git', ['reset', '--hard'], {
+        cwd: projectPath,
+        shell: true
+      });
+
+      let errorOutput = '';
+
+      git.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+
+      git.on('close', (code: number) => {
+        if (code === 0) {
+          // Also clean untracked files for a full reset
+          const clean = spawn('git', ['clean', '-fd'], { cwd: projectPath, shell: true });
+          let cleanErr = '';
+          clean.stderr.on('data', (d: Buffer) => { cleanErr += d.toString(); });
+          clean.on('close', (c: number) => {
+            if (c === 0) resolve(true);
+            else reject(new Error(cleanErr || `Git clean failed with code ${c}`));
+          });
+          clean.on('error', (e: Error) => reject(e));
+        } else {
+          reject(new Error(errorOutput || `Git reset --hard failed with code ${code}`));
+        }
+      });
+
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+  });
+
   // System operations
   ipcMain.handle('shell:openExternal', async (_, url: string) => {
     if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -2800,7 +2865,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
       name: 'LaTeX (xelatex/pdflatex)',
       available: pdf.success,
       version: pdf.version,
-      installUrl: 'https://www.tug.org/texlive/',
+      installUrl: 'https://miktex.org/download/',
       installInstructions: process.platform === 'linux'
         ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
         : (process.platform === 'darwin'
@@ -2811,7 +2876,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
     dependencies.push({
       name: 'LaTeX (xelatex/pdflatex)',
       available: false,
-      installUrl: 'https://www.tug.org/texlive/',
+      installUrl: 'https://miktex.org/download/',
       installInstructions: process.platform === 'linux'
         ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
         : (process.platform === 'darwin'

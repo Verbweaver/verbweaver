@@ -18,7 +18,7 @@ export interface FileCreate {
 export const editorApi = {
   previewMarkdown: async (markdown: string, projectPath?: string, filePath?: string): Promise<string> => {
     const requestBody = {
-      markdown_text: markdown,
+      markdown_text: typeof markdown === 'string' ? markdown : (markdown ?? ''),
       project_path: projectPath,
       file_path: filePath
     }

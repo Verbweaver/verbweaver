@@ -51,7 +51,7 @@ export default function NewProjectDialog({ isOpen, onClose }: NewProjectDialogPr
     try {
       if (isElectron && window.electronAPI) {
         // Desktop version: Create project with specified path
-        await window.electronAPI.createProject(projectName, projectPath)
+        await window.electronAPI.createProject(projectName, projectPath, projectDescription || undefined)
         
         // Set the current project path in the store
         setCurrentProjectPath(projectPath, projectName)
