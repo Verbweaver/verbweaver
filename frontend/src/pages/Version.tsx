@@ -411,7 +411,15 @@ export default function VersionControlView() {
             <Download className="h-4 w-4" />
             Pull
           </button>
-          {isElectron && (
+          {isElectron ? (
+            <button
+              onClick={() => setResetConfirmOpen(true)}
+              className="flex-1 py-2 flex items-center justify-center gap-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90"
+              title="Discard all uncommitted changes"
+            >
+              Reset
+            </button>
+          ) : (
             <button
               onClick={() => setResetConfirmOpen(true)}
               className="flex-1 py-2 flex items-center justify-center gap-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90"
@@ -495,12 +503,30 @@ export default function VersionControlView() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{formatDate(commit.date)}</span>
-                      {isElectron && (
+                      {isElectron ? (
                         <button
                           onClick={async () => {
                             if (!currentProjectPath || !window.electronAPI) return;
                             try {
                               await window.electronAPI.gitRevert(currentProjectPath, commit.sha);
+                              await loadGitStatus();
+                              toast.success(`Reverted commit ${commit.sha.slice(0,7)}`);
+                            } catch (error) {
+                              console.error('Failed to revert commit:', error);
+                              toast.error('Failed to revert commit');
+                            }
+                          }}
+                          className="text-xs px-2 py-1 border rounded hover:bg-accent"
+                          title="Revert this commit"
+                        >
+                          Revert
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            if (!currentProject) return;
+                            try {
+                              await api.post(`/git/projects/${currentProject.id}/revert`, { sha: commit.sha });
                               await loadGitStatus();
                               toast.success(`Reverted commit ${commit.sha.slice(0,7)}`);
                             } catch (error) {
@@ -594,7 +620,7 @@ export default function VersionControlView() {
       )}
 
       {/* Reset confirmation dialog */}
-      {isElectron && (
+      {true && (
         <ConfirmDialog
           isOpen={resetConfirmOpen}
           title="Reset uncommitted changes"
@@ -603,9 +629,12 @@ export default function VersionControlView() {
           cancelLabel="Cancel"
           onConfirm={async () => {
             setResetConfirmOpen(false);
-            if (!currentProjectPath || !window.electronAPI) return;
             try {
-              await window.electronAPI.gitResetHard(currentProjectPath);
+              if (isElectron && currentProjectPath && window.electronAPI) {
+                await window.electronAPI.gitResetHard(currentProjectPath);
+              } else if (currentProject) {
+                await api.post(`/git/projects/${currentProject.id}/reset/hard`);
+              }
               await loadGitStatus();
               toast.success('Uncommitted changes discarded');
             } catch (error) {
