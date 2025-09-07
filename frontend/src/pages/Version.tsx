@@ -482,7 +482,28 @@ export default function VersionControlView() {
                       <GitCommit className="h-4 w-4 text-muted-foreground" />
                       <code className="text-xs text-muted-foreground">{commit.sha.slice(0, 7)}</code>
                     </div>
-                    <span className="text-xs text-muted-foreground">{formatDate(commit.date)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{formatDate(commit.date)}</span>
+                      {isElectron && (
+                        <button
+                          onClick={async () => {
+                            if (!currentProjectPath || !window.electronAPI) return;
+                            try {
+                              await window.electronAPI.gitRevert(currentProjectPath, commit.sha);
+                              await loadGitStatus();
+                              toast.success(`Reverted commit ${commit.sha.slice(0,7)}`);
+                            } catch (error) {
+                              console.error('Failed to revert commit:', error);
+                              toast.error('Failed to revert commit');
+                            }
+                          }}
+                          className="text-xs px-2 py-1 border rounded hover:bg-accent"
+                          title="Revert this commit"
+                        >
+                          Revert
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <p className="text-sm font-medium mb-1">{commit.message}</p>
                   <p className="text-xs text-muted-foreground">by {commit.author}</p>
