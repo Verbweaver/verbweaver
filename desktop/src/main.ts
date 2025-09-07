@@ -2800,7 +2800,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
       name: 'LaTeX (xelatex/pdflatex)',
       available: pdf.success,
       version: pdf.version,
-      installUrl: 'https://www.tug.org/texlive/',
+      installUrl: 'https://miktex.org/download/',
       installInstructions: process.platform === 'linux'
         ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
         : (process.platform === 'darwin'
@@ -2811,7 +2811,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
     dependencies.push({
       name: 'LaTeX (xelatex/pdflatex)',
       available: false,
-      installUrl: 'https://www.tug.org/texlive/',
+      installUrl: 'https://miktex.org/download/',
       installInstructions: process.platform === 'linux'
         ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
         : (process.platform === 'darwin'
