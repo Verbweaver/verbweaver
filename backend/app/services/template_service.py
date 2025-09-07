@@ -653,8 +653,9 @@ class TemplateService:
         processed_content = ''.join(rebuilt)
 
         # Replace scalar dotted placeholders that are not node-scoped (skip nodes.*)
-        # Match $something$ where 'something' has no parentheses and is not a control token
-        token_pat = re.compile(r"\$([^$()\n]+?)\$")
+        # IMPORTANT: Do not consume TeX inline math like $x^2$ or $\alpha+\beta$.
+        # We only replace tokens that look like identifiers/paths: letters, digits, underscores, dots.
+        token_pat = re.compile(r"\$([A-Za-z0-9_][A-Za-z0-9_\.]*?)\$")
         def replace_token(m):
             expr = (m.group(1) or '').strip()
             # Skip control tokens
@@ -925,7 +926,12 @@ class TemplateService:
                 temp_file_path = os.path.abspath(temp_file_path)
                 
                 # Build pandoc command
-                cmd = ['pandoc', temp_file_path, '-o', output_file]
+                cmd = [
+                    'pandoc',
+                    temp_file_path,
+                    '-o', output_file,
+                    '-f', 'markdown+tex_math_dollars+tex_math_single_backslash'
+                ]
                 # Ensure resources (images) resolve relative to project root
                 try:
                     if os.path.isdir(self.project_path):
@@ -946,13 +952,13 @@ class TemplateService:
                     # Use xelatex for better Unicode support, fallback to pdflatex
                     cmd.extend(['--pdf-engine=xelatex'])
                 elif output_format == 'html':
-                    cmd.extend(['--standalone', '--self-contained'])
+                    cmd.extend(['--standalone', '--self-contained', '--mathml'])
                 elif output_format == 'docx':
                     # Basic DOCX export without reference template
                     pass
                 elif output_format == 'epub':
-                    # Basic EPUB export without metadata file
-                    pass
+                    # EPUB benefits from MathML for math rendering
+                    cmd.extend(['--mathml'])
                 elif output_format == 'odt':
                     # OpenDocument Text format
                     pass

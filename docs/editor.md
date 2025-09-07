@@ -114,6 +114,43 @@ Absolute repo-relative also works:
 
 Images that aren't Markdown files should exist in the repo (e.g., `uploads/`), with optional `.metadata.md` for graph visibility.
 
+## Math and LaTeX
+
+Verbweaver supports LaTeX-style math in both Preview and compiled outputs via Pandoc.
+
+- Inline math: wrap with single dollar signs
+  
+  ```markdown
+  The mass–energy relation is $E = mc^2$.
+  ```
+
+- Display math: wrap with double dollar signs on their own lines
+  
+  ```markdown
+  $$
+  F(x) = \int_{-\infty}^{x} \frac{1}{\sqrt{2\pi\sigma^2}}\,\exp\!\left(-\frac{(t-\mu)^2}{2\sigma^2}\right) dt
+  $$
+  ```
+
+- More examples
+  
+  ```markdown
+  Inline: $\alpha^2 + \beta^2 = \gamma^2$, and $\sum_{i=1}^n i = \tfrac{n(n+1)}{2}$.
+
+  $$
+  A = \begin{bmatrix}
+    1 & 0 & a \\
+    0 & 1 & b \\
+    0 & 0 & 1
+  \end{bmatrix}
+  $$
+  ```
+
+Notes
+- Use `$...$` for inline and `$$...$$` for display math. Pandoc also understands `\(...\)` and `\[...\]` in most cases.
+- Do not put math inside code spans or code fences; it will not be typeset.
+- PDF exports require a LaTeX distribution (see Install guides). HTML preview/export renders math using browser-supported math (no extra setup needed on modern browsers).
+
 ## YAML front matter
 
 Each Markdown node can start with YAML front matter between `---` lines. This stores metadata used by Verbweaver:
