@@ -70,7 +70,7 @@ jobs:
           priority: extra
           maintainer: Verbweaver Team
           description: Verbweaver Backend (FastAPI)
-          homepage: https://github.com/TheWover/verbweaver
+          homepage: https://github.com/Verbweaver/verbweaver
           license: MIT
           contents:
             - src: pkgroot/usr/bin/verbweaver-backend

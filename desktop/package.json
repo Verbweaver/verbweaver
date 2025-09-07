@@ -6,7 +6,7 @@
   "author": "Verbweaver Team",
   "repository": {
     "type": "git",
-    "url": "https://github.com/TheWover/verbweaver.git"
+    "url": "https://github.com/Verbweaver/verbweaver.git"
   },
   "main": "dist/main/main.js",
   "scripts": {

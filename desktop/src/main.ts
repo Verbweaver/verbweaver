@@ -566,7 +566,7 @@ function createMenu() {
         {
           label: 'Report Issue',
           click: () => {
-            shell.openExternal('https://github.com/yourusername/verbweaver/issues');
+            shell.openExternal('https://github.com/Verbweaver/verbweaver/issues');
           }
         },
         { type: 'separator' },
