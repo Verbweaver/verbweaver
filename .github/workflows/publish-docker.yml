@@ -30,8 +30,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            docker.io/${{ secrets.DOCKERHUB_ORG }}/verbweaver-backend
-            ghcr.io/${{ github.repository_owner }}/verbweaver-backend
+            docker.io/${{ toLower(secrets.DOCKERHUB_ORG != '' && secrets.DOCKERHUB_ORG || github.repository_owner) }}/verbweaver-backend
+            ghcr.io/${{ toLower(github.repository_owner) }}/verbweaver-backend
           tags: |
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
@@ -58,6 +58,7 @@ jobs:
         with:
           context: ./backend
           platforms: linux/amd64,linux/arm64
+          load: ${{ github.event_name != 'release' }}
           push: ${{ github.event_name == 'release' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
