@@ -16,6 +16,7 @@ jobs:
       packages: write
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_OWNER: ${{ secrets.DOCKERHUB_ORG != '' && secrets.DOCKERHUB_ORG || github.repository_owner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,8 +31,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            docker.io/${{ toLower(secrets.DOCKERHUB_ORG != '' && secrets.DOCKERHUB_ORG || github.repository_owner) }}/verbweaver-backend
-            ghcr.io/${{ toLower(github.repository_owner) }}/verbweaver-backend
+            docker.io/${{ env.DOCKERHUB_OWNER }}/verbweaver-backend
+            ghcr.io/${{ github.repository_owner }}/verbweaver-backend
           tags: |
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
