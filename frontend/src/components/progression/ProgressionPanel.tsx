@@ -568,7 +568,7 @@ export default function ProgressionPanel(
               <NodeSelector
                 selectedNodes={config.selectedNodes}
                 onSelectionChange={(sel)=> setConfig(c=>({ ...c, selectedNodes: sel }))}
-                showFolders={false}
+                showFolders={true}
                 filters={config.filters}
                 onFiltersChange={(f)=> setConfig(c=>({ ...c, filters: f }))}
               />
