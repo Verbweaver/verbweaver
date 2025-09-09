@@ -17,6 +17,7 @@ jobs:
       - name: Update cask file
         shell: bash
         run: |
+          set -euo pipefail
           sudo apt-get update && sudo apt-get install -y jq
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
@@ -26,18 +27,19 @@ jobs:
           SHA=$(curl -L "$DMG_URL" | shasum -a 256 | awk '{print $1}')
           CASK_FILE="Casks/verbweaver.rb"
           mkdir -p Casks
-          printf "%s\n" \
-"cask \"verbweaver\" do" \
-"  version \"${VERSION}\"" \
-"  sha256 \"${SHA}\"" \
-"" \
-"  url \"${DMG_URL}\"" \
-"  name \"Verbweaver\"" \
-"  desc \"Graph-based writing and task management\"" \
-"  homepage \"https://github.com/${{ github.repository }}\"" \
-"" \
-"  app \"Verbweaver.app\"" \
-"end" > "$CASK_FILE"
+          cat > "$CASK_FILE" <<EOF
+          cask "verbweaver" do
+            version "${VERSION}"
+            sha256 "${SHA}"
+
+            url "${DMG_URL}"
+            name "Verbweaver"
+            desc "Nonlinear writing and task management"
+            homepage "https://github.com/${{ github.repository }}"
+
+            app "Verbweaver.app"
+          end
+          EOF
 
       - name: Commit and push
         run: |
