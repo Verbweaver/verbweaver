@@ -44,13 +44,6 @@ const exportFormats: ExportFormat[] = [
     extension: '.epub'
   },
   {
-    id: 'mobi',
-    name: 'MOBI',
-    icon: Book,
-    description: 'Kindle format',
-    extension: '.mobi'
-  },
-  {
     id: 'html',
     name: 'HTML',
     icon: Globe,
@@ -338,7 +331,7 @@ function CompilerView() {
                       : 'border-input hover:bg-accent'
                   }`}
                 >
-                  <format.icon className="w-5 h-5" />
+                  <format.icon className="w-5 h-5 shrink-0" />
                   <span className="text-sm font-medium">{format.name}</span>
                 </button>
               ))}

@@ -361,67 +361,70 @@ function NodeSelector({
     })
   }
 
-  const handleNodeToggle = (node: FileNode) => {
-    
-    if (node.type === 'directory') {
-      // Always allow folder selection when showFolders is true
-      if (showFolders) {
-        // Toggle folder selection
-        const isSelected = selectedNodes.includes(node.path)
-        if (isSelected) {
-          // Remove folder and all its children
-          const newSelection = selectedNodes.filter(path => 
-            path !== node.path && !path.startsWith(node.path + '/')
-          )
-          onSelectionChange(newSelection)
-        } else {
-          // Add folder and all its children
-          const childrenPaths = getAllChildPaths(node)
-          const newSelection = [...selectedNodes, node.path, ...childrenPaths]
-          onSelectionChange([...new Set(newSelection)]) // Remove duplicates
+  const ensureAllDescendantsLoaded = async (node: FileNode) => {
+    if (node.type !== 'directory') return
+    if (!node.loaded) {
+      await loadDirectoryContents(node)
+    }
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) {
+        if (child.type === 'directory' && !child.loaded) {
+          await loadDirectoryContents(child)
         }
-      } else {
-        // Just expand/collapse the directory
-        toggleDirectory(node)
-      }
-    } else {
-      // Toggle file selection
-      const isSelected = selectedNodes.includes(node.path)
-      if (isSelected) {
-        onSelectionChange(selectedNodes.filter(path => path !== node.path))
-      } else {
-        onSelectionChange([...selectedNodes, node.path])
+        if (child.type === 'directory') {
+          await ensureAllDescendantsLoaded(child)
+        }
       }
     }
   }
 
-  const getAllChildPaths = (node: FileNode): string[] => {
+  const handleCheckboxToggle = async (node: FileNode) => {
+    if (node.type === 'directory') {
+      // Selecting a folder affects only descendant files (not folder paths)
+      await ensureAllDescendantsLoaded(node)
+      const allDescendantFiles = getAllDescendantFilePaths(node)
+      const allSelected = allDescendantFiles.length > 0 && allDescendantFiles.every(p => selectedNodes.includes(p))
+      if (allSelected) {
+        // Uncheck folder: remove its descendant files
+        const next = selectedNodes.filter(p => !allDescendantFiles.includes(p))
+        onSelectionChange(next)
+      } else {
+        // Check folder: add all descendant files
+        const set = new Set(selectedNodes)
+        allDescendantFiles.forEach(p => set.add(p))
+        onSelectionChange(Array.from(set))
+      }
+    } else {
+      const isSelected = selectedNodes.includes(node.path)
+      if (isSelected) onSelectionChange(selectedNodes.filter(p => p !== node.path))
+      else onSelectionChange([...selectedNodes, node.path])
+    }
+  }
+
+  const getAllDescendantFilePaths = (node: FileNode): string[] => {
     const paths: string[] = []
     if (node.children) {
       node.children.forEach(child => {
-        if (child.type === 'file') {
-          paths.push(child.path)
-        } else {
-          paths.push(child.path)
-          paths.push(...getAllChildPaths(child))
-        }
+        if (child.type === 'file') paths.push(child.path)
+        else paths.push(...getAllDescendantFilePaths(child))
       })
     }
     return paths
   }
 
   const isNodeSelected = (node: FileNode): boolean => {
-    return selectedNodes.includes(node.path)
+    if (node.type === 'file') return selectedNodes.includes(node.path)
+    const allFiles = getAllDescendantFilePaths(node)
+    if (allFiles.length === 0) return false
+    return allFiles.every(p => selectedNodes.includes(p))
   }
 
   const isNodeIndeterminate = (node: FileNode): boolean => {
-    if (node.type !== 'directory' || !node.children) return false
-    
-    const selectedChildren = node.children.filter(child => 
-      child.type === 'file' ? selectedNodes.includes(child.path) : isNodeSelected(child)
-    ).length
-    
-    return selectedChildren > 0 && selectedChildren < node.children.length
+    if (node.type !== 'directory') return false
+    const allFiles = getAllDescendantFilePaths(node)
+    if (allFiles.length === 0) return false
+    const sel = allFiles.filter(p => selectedNodes.includes(p)).length
+    return sel > 0 && sel < allFiles.length
   }
 
   const renderNode = (node: FileNode, depth: number = 0) => {
@@ -431,46 +434,45 @@ function NodeSelector({
     const Icon = node.type === 'directory' ? Folder : FileText
     const ChevronIcon = isExpanded ? ChevronDown : ChevronRight
     
-
-
     return (
       <div key={node.id}>
-        <div className="flex items-center group">
-          <button
-            onClick={() => handleNodeToggle(node)}
-            className={clsx(
-              'flex-1 flex items-center gap-1 px-2 py-1 text-sm hover:bg-accent hover:text-accent-foreground',
-              'transition-colors'
+        <div className="flex items-center group" style={{ paddingLeft: `${depth * 12 + 8}px` }}>
+          {/* Chevron for directories */}
+          <div className="w-4 h-4 flex items-center justify-center mr-1">
+            {node.type === 'directory' ? (
+              <button onClick={() => toggleDirectory(node)} className="w-4 h-4 inline-flex items-center justify-center">
+                <ChevronIcon className="w-3 h-3" />
+              </button>
+            ) : (
+              <span className="w-4 h-4" />
             )}
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+          </div>
+          {/* Checkbox */}
+          <button
+            onClick={(e) => { e.stopPropagation(); handleCheckboxToggle(node) }}
+            className={clsx(
+              'w-4 h-4 border rounded flex items-center justify-center mr-1',
+              isSelected ? 'bg-primary border-primary' : 'border-input',
+              isIndeterminate && !isSelected && 'bg-primary/50 border-primary'
+            )}
+            aria-checked={isIndeterminate ? 'mixed' : isSelected}
           >
-            {/* Checkbox or Chevron */}
-            <div className="flex items-center justify-center w-4 h-4">
-              {node.type === 'file' || (node.type === 'directory' && showFolders) ? (
-                <div className={clsx(
-                  'w-4 h-4 border rounded flex items-center justify-center',
-                  isSelected ? 'bg-primary border-primary' : 'border-input',
-                  isIndeterminate && 'bg-primary/50 border-primary'
-                )}>
-                  {isSelected && <Check className="w-3 h-3 text-primary-foreground" />}
-                  {isIndeterminate && !isSelected && <div className="w-2 h-0.5 bg-primary-foreground" />}
-                </div>
-              ) : (
-                <ChevronIcon className="w-3 h-3 flex-shrink-0" />
-              )}
-            </div>
-            
+            {isSelected && <Check className="w-3 h-3 text-primary-foreground" />}
+            {isIndeterminate && !isSelected && <div className="w-2 h-0.5 bg-primary-foreground" />}
+          </button>
+          {/* Icon + Name (expand/collapse when directory) */}
+          <button
+            onClick={() => { if (node.type === 'directory') toggleDirectory(node) }}
+            className={clsx('flex-1 flex items-center gap-1 px-2 py-1 text-sm hover:bg-accent hover:text-accent-foreground', 'transition-colors')}
+          >
             <Icon className="w-4 h-4 flex-shrink-0" />
             <span className="truncate">{node.name}</span>
           </button>
         </div>
-        
         {node.type === 'directory' && isExpanded && node.children && (
           <div>
             {node.children.map(child => (
-              <div key={child.path}>
-                {renderNode(child, depth + 1)}
-              </div>
+              <div key={child.path}>{renderNode(child, depth + 1)}</div>
             ))}
           </div>
         )}
@@ -598,13 +600,7 @@ function NodeSelector({
     return filterNodes(fileTree)
   }, [fileTree, filters, nodeMap])
 
-  // Auto-select all files in scope when no explicit selection has been made
-  useEffect(() => {
-    if (!isLoading && selectedNodes.length === 0) {
-      const allFilePaths = getAllFilePaths(filteredTree)
-      if (allFilePaths.length > 0) onSelectionChange(allFilePaths)
-    }
-  }, [isLoading, filteredTree, selectedNodes.length, onSelectionChange])
+  // Remove auto-selection: expanding or loading should not auto-select any files
 
   const updateFilters = (next: Partial<NodeFilterState>) => {
     const merged = { ...filters, ...next }
@@ -612,12 +608,17 @@ function NodeSelector({
   }
 
   const selectAll = () => {
-    const allFilePaths = getAllFilePaths(fileTree)
-    onSelectionChange(allFilePaths)
+    const allFilePaths = getAllFilePaths(filteredTree) // visible files only
+    const set = new Set(selectedNodes)
+    allFilePaths.forEach(p => set.add(p))
+    onSelectionChange(Array.from(set))
   }
 
   const clearSelection = () => {
-    onSelectionChange([])
+    // Clear only visible files from selection
+    const visible = new Set(getAllFilePaths(filteredTree))
+    const next = selectedNodes.filter(p => !visible.has(p))
+    onSelectionChange(next)
   }
 
   const getAllFilePaths = (nodes: FileNode[]): string[] => {
@@ -630,6 +631,17 @@ function NodeSelector({
       }
     })
     return paths
+  }
+
+  const getAllDirectoryPaths = (nodes: FileNode[]): string[] => {
+    const dirs: string[] = []
+    nodes.forEach(node => {
+      if (node.type === 'directory') {
+        dirs.push(node.path)
+        if (node.children) dirs.push(...getAllDirectoryPaths(node.children))
+      }
+    })
+    return dirs
   }
 
   if (!currentProject) {
@@ -666,7 +678,33 @@ function NodeSelector({
             onClick={clearSelection}
             className="text-xs px-2 py-1 border border-input rounded hover:bg-accent"
           >
-            Clear
+            Clear All
+          </button>
+          <button
+            onClick={() => {
+              const allDirs = new Set(getAllDirectoryPaths(filteredTree))
+              setExpandedDirs(prev => {
+                const next = new Set(prev)
+                allDirs.forEach(d => next.add(d))
+                return next
+              })
+            }}
+            className="text-xs px-2 py-1 border border-input rounded hover:bg-accent"
+          >
+            Expand All
+          </button>
+          <button
+            onClick={() => {
+              const allDirs = new Set(getAllDirectoryPaths(filteredTree))
+              setExpandedDirs(prev => {
+                const next = new Set(prev)
+                allDirs.forEach(d => next.delete(d))
+                return next
+              })
+            }}
+            className="text-xs px-2 py-1 border border-input rounded hover:bg-accent"
+          >
+            Collapse All
           </button>
         </div>
       </div>

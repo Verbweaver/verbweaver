@@ -19,7 +19,7 @@ class TemplateService:
     def __init__(self, project_path: str):
         self.project_path = project_path
         self.templates_dir = os.path.normpath(os.path.join(project_path, "templates", "compiler"))
-        self.supported_formats = ['markdown', 'html', 'pdf', 'docx', 'epub']
+        self.supported_formats = ['markdown', 'html', 'pdf', 'docx', 'epub', 'odt']
     
     def get_available_templates(self, format_type: str) -> List[Dict[str, str]]:
         """Get available templates for a specific format"""
@@ -654,8 +654,9 @@ class TemplateService:
 
         # Replace scalar dotted placeholders that are not node-scoped (skip nodes.*)
         # IMPORTANT: Do not consume TeX inline math like $x^2$ or $\alpha+\beta$.
-        # We only replace tokens that look like identifiers/paths: letters, digits, underscores, dots.
-        token_pat = re.compile(r"\$([A-Za-z0-9_][A-Za-z0-9_\.]*?)\$")
+        # We only replace tokens that look like identifiers/paths. Allow hyphens in first segment
+        # to support node-id aliases like node-<id> paths.
+        token_pat = re.compile(r"\$([A-Za-z0-9_\-][A-Za-z0-9_\-\.]*?)\$")
         def replace_token(m):
             expr = (m.group(1) or '').strip()
             # Skip control tokens
@@ -962,9 +963,6 @@ class TemplateService:
                 elif output_format == 'odt':
                     # OpenDocument Text format
                     pass
-                elif output_format == 'mobi':
-                    # Kindle format (requires calibre)
-                    return False, "MOBI format requires Calibre. Please install Calibre to use this feature."
                 
                 # Log command for debugging
                 logger.debug(f"Pandoc command: {' '.join(cmd)}")

@@ -270,11 +270,10 @@ class ContentAggregator:
                     # Prepare content (optionally include metadata rendering)
                     clean_content = self._clean_content(content, options.get('includeMetadata', True))
                     
-                    # Get attachments
-                    attachments = []
+                    # Get attachments (always extract), only embed images when enabled
+                    attachments = self._get_attachments(content, path)
                     if options.get('embedUploadedFiles', True):
-                        attachments = self._get_attachments(content, path)
-                        # Process image embeddings in content
+                        # Process image embeddings in content when embedding is enabled
                         clean_content = self._process_image_embeddings(clean_content, path, attachments)
                     
                     node_id = None
@@ -475,12 +474,18 @@ class ContentAggregator:
         except Exception:
             pass
 
-        # Expose nodesById map and top-level aliases for node-<ID>
+        # Expose nodesById map and top-level aliases for node-<ID> and node-node-<ID>
         if id_to_node:
             try:
                 data['nodesById'] = dict(id_to_node)
                 for nid, nobj in id_to_node.items():
+                    # Direct alias by id (e.g., 'node-b')
                     data[str(nid)] = nobj
+                    # Compatibility alias with extra 'node-' prefix (e.g., 'node-node-b')
+                    try:
+                        data[f"node-{nid}"] = nobj
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
@@ -504,6 +509,12 @@ class ContentAggregator:
         # Helper to find a node file by metadata.id and build node_data
         def _load_node_by_id(node_id: str) -> Optional[Dict[str, Any]]:
             try:
+                # Normalize doubled 'node-' prefix (e.g., 'node-node-b' -> 'node-b')
+                try:
+                    while node_id.startswith('node-node-'):
+                        node_id = 'node-' + node_id[len('node-node-'):]
+                except Exception:
+                    pass
                 # Prefer scanning the standard 'nodes' directory for performance
                 base_dirs = []
                 nd = os.path.join(self.project_path, 'nodes')
@@ -533,9 +544,9 @@ class ContentAggregator:
                                     extracted_title = self._extract_title(raw)
                                     title = (fm_title or extracted_title or os.path.basename(rel_path).replace('.md',''))
                                     clean_content = self._clean_content(raw, options.get('includeMetadata', True))
-                                    attachments = []
+                                    # Always extract attachments for referenced nodes
+                                    attachments = self._get_attachments(raw, rel_path)
                                     if options.get('embedUploadedFiles', True):
-                                        attachments = self._get_attachments(raw, rel_path)
                                         clean_content = self._process_image_embeddings(clean_content, rel_path, attachments)
                                     node_obj: Dict[str, Any] = {
                                         'id': node_id,
@@ -1095,7 +1106,6 @@ async def get_supported_formats():
             {"id": "docx", "name": "Word Document", "description": "Microsoft Word format"},
             {"id": "odt", "name": "OpenDocument", "description": "Open Document Text"},
             {"id": "epub", "name": "EPUB", "description": "Electronic publication"},
-            {"id": "mobi", "name": "MOBI", "description": "Kindle format"},
         ]
     }
 

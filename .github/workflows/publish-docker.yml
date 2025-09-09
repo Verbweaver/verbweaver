@@ -1,6 +1,10 @@
 name: Publish Docker Images
 
 on:
+  push:
+    branches:
+      - main
+      - release-testing
   release:
     types: [published]
 
@@ -10,6 +14,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_OWNER: ${{ secrets.DOCKERHUB_ORG != '' && secrets.DOCKERHUB_ORG || github.repository_owner }}
+      PLATFORMS: ${{ github.event_name == 'release' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +32,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            docker.io/${{ secrets.DOCKERHUB_ORG }}/verbweaver-backend
+            docker.io/${{ env.DOCKERHUB_OWNER }}/verbweaver-backend
             ghcr.io/${{ github.repository_owner }}/verbweaver-backend
           tags: |
             type=semver,pattern=v{{version}}
@@ -33,13 +41,14 @@ jobs:
             type=raw,value=latest
 
       - name: Login to DockerHub
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
+        if: ${{ env.DOCKERHUB_USERNAME != '' && github.event_name == 'release' }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GHCR
+        if: ${{ github.event_name == 'release' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -50,8 +59,9 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./backend
-          platforms: linux/amd64,linux/arm64
-          push: true
+          platforms: ${{ env.PLATFORMS }}
+          load: ${{ github.event_name != 'release' }}
+          push: ${{ github.event_name == 'release' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
