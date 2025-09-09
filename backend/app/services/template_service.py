@@ -654,8 +654,9 @@ class TemplateService:
 
         # Replace scalar dotted placeholders that are not node-scoped (skip nodes.*)
         # IMPORTANT: Do not consume TeX inline math like $x^2$ or $\alpha+\beta$.
-        # We only replace tokens that look like identifiers/paths: letters, digits, underscores, dots.
-        token_pat = re.compile(r"\$([A-Za-z0-9_][A-Za-z0-9_\.]*?)\$")
+        # We only replace tokens that look like identifiers/paths. Allow hyphens in first segment
+        # to support node-id aliases like node-<id> paths.
+        token_pat = re.compile(r"\$([A-Za-z0-9_\-][A-Za-z0-9_\-\.]*?)\$")
         def replace_token(m):
             expr = (m.group(1) or '').strip()
             # Skip control tokens
