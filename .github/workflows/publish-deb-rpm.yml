@@ -59,6 +59,19 @@ jobs:
           mkdir -p pkgroot/opt/verbweaver
           rsync -a --exclude __pycache__ backend/ pkgroot/opt/verbweaver/backend/
 
+      - name: Create postinstall script
+        run: |
+          cat > postinstall.sh << 'EOF'
+          #!/bin/sh
+          set -e
+          id -u verbweaver >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin verbweaver
+          mkdir -p /var/lib/verbweaver/git-repos
+          chown -R verbweaver:verbweaver /var/lib/verbweaver
+          systemctl daemon-reload || true
+          systemctl enable verbweaver-backend || true
+          EOF
+          chmod +x postinstall.sh
+
       - name: Create nfpm config
         run: |
           cat > nfpm.yaml << 'EOF'
@@ -83,13 +96,7 @@ jobs:
             - src: pkgroot/opt/verbweaver/backend
               dst: /opt/verbweaver/backend
           scripts:
-            postinstall: |
-              #!/bin/sh
-              id -u verbweaver >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin verbweaver
-              mkdir -p /var/lib/verbweaver/git-repos
-              chown -R verbweaver:verbweaver /var/lib/verbweaver
-              systemctl daemon-reload || true
-              systemctl enable verbweaver-backend || true
+            postinstall: ./postinstall.sh
           rpm:
             signature:
               key_file: "${RPM_SIGNING_KEY:-}"
