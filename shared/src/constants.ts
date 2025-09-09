@@ -93,7 +93,6 @@ export const EXPORT_FORMATS = {
   DOCX: 'docx',
   ODT: 'odt',
   EPUB: 'epub',
-  MOBI: 'mobi',
   HTML: 'html',
   MARKDOWN: 'markdown',
 } as const;

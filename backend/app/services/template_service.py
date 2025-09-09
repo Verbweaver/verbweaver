@@ -19,7 +19,7 @@ class TemplateService:
     def __init__(self, project_path: str):
         self.project_path = project_path
         self.templates_dir = os.path.normpath(os.path.join(project_path, "templates", "compiler"))
-        self.supported_formats = ['markdown', 'html', 'pdf', 'docx', 'epub']
+        self.supported_formats = ['markdown', 'html', 'pdf', 'docx', 'epub', 'odt']
     
     def get_available_templates(self, format_type: str) -> List[Dict[str, str]]:
         """Get available templates for a specific format"""
@@ -962,9 +962,6 @@ class TemplateService:
                 elif output_format == 'odt':
                     # OpenDocument Text format
                     pass
-                elif output_format == 'mobi':
-                    # Kindle format (requires calibre)
-                    return False, "MOBI format requires Calibre. Please install Calibre to use this feature."
                 
                 # Log command for debugging
                 logger.debug(f"Pandoc command: {' '.join(cmd)}")

@@ -2870,7 +2870,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
         ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
         : (process.platform === 'darwin'
           ? 'Install MacTeX (brew install --cask mactex)'
-          : 'Install MiKTeX or TeX Live on Windows')
+          : 'Install MiKTeX or TeX Live on Windows. In MiKTeX Console → Settings, set "Install missing packages on-the-fly" to Always.')
     });
   } catch {
     dependencies.push({
@@ -2881,7 +2881,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
         ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
         : (process.platform === 'darwin'
           ? 'Install MacTeX (brew install --cask mactex)'
-          : 'Install MiKTeX or TeX Live on Windows')
+          : 'Install MiKTeX or TeX Live on Windows. In MiKTeX Console → Settings, set "Install missing packages on-the-fly" to Always.')
     });
   }
   

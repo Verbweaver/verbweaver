@@ -11,6 +11,11 @@ The Verbweaver desktop application includes a built-in dependency checker that e
 - **Detection**: Checks if `pandoc --version` command is available
 - **Installation**: Provides platform-specific installation instructions
 
+### LaTeX (xelatex/pdflatex)
+- **Required for**: PDF export
+- **Windows (MiKTeX)**: After installing, open MiKTeX Console → Settings → General and set "Install missing packages on-the-fly" to **Always**. This prevents errors such as `rerunfilecheck.sty not found`.
+- **macOS**: Install MacTeX (or via Homebrew: `brew install --cask mactex`)
+- **Linux**: Install TeX Live (e.g., `sudo apt-get install texlive texlive-xetex`)
 ## How It Works
 
 ### Automatic Detection
@@ -35,6 +40,10 @@ choco install pandoc
 
 # Option 3: Download installer
 # Visit https://pandoc.org/installing.html
+
+# MiKTeX (required for PDF via LaTeX)
+# After installing MiKTeX, open MiKTeX Console → Settings → General
+# Set "Install missing packages on-the-fly" to Always.
 ```
 
 ### macOS
@@ -127,7 +136,6 @@ sudo pacman -S pandoc
 ### Planned Features
 - **Auto-installation**: Automatic installation with user consent
 - **Version requirements**: Check for minimum required versions
-- **Additional dependencies**: Support for LaTeX, Calibre, etc.
 - **Update notifications**: Alert when newer versions are available
 
 ### Technical Improvements

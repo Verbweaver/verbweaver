@@ -242,8 +242,8 @@ async def compile_document(
             await compile_to_epub(content, compile_request.options, output_path)
         elif compile_request.format == "html":
             await compile_to_html(content, compile_request.options, output_path)
-        elif compile_request.format in ["odt", "mobi"]:
-            # For ODT and MOBI, we'll first convert to HTML then use pandoc
+        elif compile_request.format in ["odt"]:
+            # For ODT, we'll first convert to HTML then use pandoc
             html_path = output_dir / "temp.html"
             await compile_to_html(content, compile_request.options, html_path)
             
@@ -291,7 +291,6 @@ async def get_supported_formats(
             {"id": "docx", "name": "Word", "description": "Microsoft Word Document"},
             {"id": "odt", "name": "OpenDocument", "description": "OpenDocument Text"},
             {"id": "epub", "name": "EPUB", "description": "Electronic Publication"},
-            {"id": "mobi", "name": "MOBI", "description": "Kindle Format"},
             {"id": "html", "name": "HTML", "description": "Web Page"},
             {"id": "markdown", "name": "Markdown", "description": "Plain Text with Formatting"}
         ]

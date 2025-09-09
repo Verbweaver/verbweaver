@@ -44,13 +44,6 @@ const exportFormats: ExportFormat[] = [
     extension: '.epub'
   },
   {
-    id: 'mobi',
-    name: 'MOBI',
-    icon: Book,
-    description: 'Kindle format',
-    extension: '.mobi'
-  },
-  {
     id: 'html',
     name: 'HTML',
     icon: Globe,

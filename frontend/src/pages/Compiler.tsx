@@ -62,13 +62,6 @@ const exportFormats: ExportFormat[] = [
     icon: Book,
     description: 'Electronic publication',
     extension: '.epub'
-  },
-  {
-    id: 'mobi',
-    name: 'MOBI',
-    icon: Book,
-    description: 'Kindle format',
-    extension: '.mobi'
   }
 ]
 
@@ -796,11 +789,40 @@ function CompilerView() {
       }, 1000)
 
       toast.success('Export completed successfully')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Compile error:', error)
       setIsCompiling(false)
       setCompileProgress(0)
-      toast.error('Failed to compile document')
+      try {
+        // Axios with responseType:'blob' returns Blob for errors. Attempt to parse detail.
+        const blob: Blob | undefined = error?.response?.data
+        let detail = ''
+        if (blob && typeof blob.text === 'function') {
+          const text = await blob.text()
+          try { detail = (JSON.parse(text) || {}).detail || text } catch { detail = text }
+        } else if (typeof error?.response?.data?.detail === 'string') {
+          detail = error.response.data.detail
+        }
+
+        // Classify and surface helpful guidance
+        if (/Pandoc conversion failed:.*rerunfilecheck\.sty/i.test(detail)) {
+          toast.error('PDF export failed: LaTeX package rerunfilecheck.sty is missing. Enable "Install missing packages on-the-fly" in MiKTeX Console (Settings → General → Always), then retry.')
+        } else if (/Pandoc conversion failed:.*xelatex/i.test(detail)) {
+          toast.error('PDF export failed: xelatex not found. Install a LaTeX distribution (MiKTeX/TeX Live) and ensure it is on PATH.')
+        } else if (/Pandoc conversion failed:.*pdflatex/i.test(detail)) {
+          toast.error('PDF export failed: pdflatex not found. Install a LaTeX distribution (MiKTeX/TeX Live) and ensure it is on PATH.')
+        } else if (/Template not found/i.test(detail)) {
+          toast.error('Template not found. Please reselect a template or reseed templates in project settings.')
+        } else if (/No default template found/i.test(detail)) {
+          toast.error('No default template found for this format. Please select a template or add compiler templates to your project.')
+        } else if (detail) {
+          toast.error(detail)
+        } else {
+          toast.error('Failed to compile document')
+        }
+      } catch {
+        toast.error('Failed to compile document')
+      }
     }
   }
 
@@ -936,7 +958,11 @@ function CompilerView() {
                       : 'border-input hover:bg-accent'
                   }`}
                 >
-                  <format.icon className="w-5 h-5" />
+                  {(() => {
+                    const ForceIcon = (format.id === 'pdf' || format.id === 'docx' || format.id === 'odt') ? FileText : undefined
+                    const Icon = (ForceIcon || format.icon || FileText) as any
+                    return <Icon className="w-5 h-5" />
+                  })()}
                   <div className="text-left">
                     <div className="text-sm font-medium">{format.name}</div>
                     <div className="text-xs text-muted-foreground">{format.description}</div>
