@@ -958,11 +958,7 @@ function CompilerView() {
                       : 'border-input hover:bg-accent'
                   }`}
                 >
-                  {(() => {
-                    const ForceIcon = (format.id === 'pdf' || format.id === 'docx' || format.id === 'odt') ? FileText : undefined
-                    const Icon = (ForceIcon || format.icon || FileText) as any
-                    return <Icon className="w-5 h-5" />
-                  })()}
+                  <format.icon className="w-5 h-5 shrink-0" />
                   <div className="text-left">
                     <div className="text-sm font-medium">{format.name}</div>
                     <div className="text-xs text-muted-foreground">{format.description}</div>
