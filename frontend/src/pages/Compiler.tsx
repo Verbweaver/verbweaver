@@ -850,7 +850,7 @@ function CompilerView() {
         <NodeSelector
           selectedNodes={selectedNodes}
           onSelectionChange={setSelectedNodes}
-          showFolders={false}
+          showFolders={true}
           expandedDirs={expandedDirs}
           onExpandedDirsChange={setExpandedDirs}
           filters={filters}
