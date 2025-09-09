@@ -1095,7 +1095,6 @@ async def get_supported_formats():
             {"id": "docx", "name": "Word Document", "description": "Microsoft Word format"},
             {"id": "odt", "name": "OpenDocument", "description": "Open Document Text"},
             {"id": "epub", "name": "EPUB", "description": "Electronic publication"},
-            {"id": "mobi", "name": "MOBI", "description": "Kindle format"},
         ]
     }
 

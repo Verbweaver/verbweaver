@@ -191,6 +191,9 @@ export default function DependenciesSettingsPage() {
             It also powers the live preview functionality in the editor.
           </p>
           <p>
+            <strong>LaTeX (xelatex/pdflatex)</strong> is required for PDF export. On Windows with MiKTeX, open MiKTeX Console → Settings → General and set <em>Install missing packages on-the-fly</em> to <strong>Always</strong> to avoid missing package errors (e.g., <code>rerunfilecheck.sty</code>).
+          </p>
+          <p>
             If you're having trouble installing Pandoc, you can:
           </p>
           <ul className="list-disc list-inside ml-4 space-y-1">
