@@ -120,7 +120,9 @@ Notes:
 - In development you should run the backend yourself (two terminals as shown above).
 - Desktop packaging is handled by electron-builder. See scripts in `desktop/package.json` (`dist`, `dist:win`, `dist:mac`, `dist:linux`).
 
-### Web Application (For Teams)
+### Web Application (For Teams) - WIP
+
+Note: The web server version is incomplete and still in active development.
 
 Perfect for collaboration and cloud access.
 
