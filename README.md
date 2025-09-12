@@ -321,7 +321,7 @@ The MIT License ensures that you have unrestricted rights to use, modify, and re
 - **Documentation**: [docs/](docs/)
 - **Issues**: [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues)
 - **Discord**: [Join our community](https://discord.gg/aK3sBsBw)
-- **Email**: contact@verbweaver.com
+- **Email**: contact@verbweaver.design
 
 ---
 
