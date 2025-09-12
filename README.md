@@ -9,21 +9,11 @@
 - **Graph-based Design**: Visualize relationships between your ideas, documents, and tasks
 - **Task Management**: Turn any idea into a trackable task with Kanban boards
 - **Markdown-powered**: All content is stored as Markdown files with metadata headers. The [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown) format is used to enable exporting to many file formats using Pandoc with advanced formatting.
-- **Write to your heart's content**: Use the built-in Editor or your favorite Markdown editor application to write chapter, notes, data, findings, or anything else.
+- **Write to your heart's content**: Use the built-in Editor or your favorite Markdown editor application to write chapters, notes, data, findings, or anything else.
 - **Real-time Collaboration**: Work together with your team in real-time
 - **Export Anywhere**: Compile your non-linear notes into linear documents (PDF, Word, ePub, etc.)
 - **Git Version Control**: Built-in version control for all your projects
 - **Multi-platform**: Available as a web app and desktop app (Windows, Mac, Linux)
-
-## 🏗️ Architecture
-
-Verbweaver uses a modern, scalable architecture:
-
-- **Backend**: Python with FastAPI, SQLAlchemy, and GitPython
-- **Frontend**: React with TypeScript, Vite, and Tailwind CSS
-- **Desktop**: Electron with secure IPC communication
-- **Database**: SQLite (default) or PostgreSQL
-- **Real-time**: WebSockets for collaboration
 
 ## 🚀 Getting Started
 
@@ -208,6 +198,16 @@ This will start:
 - PostgreSQL database (optional)
 - Redis for caching (optional)
 
+## 🏗️ Architecture
+
+Verbweaver uses a modern, scalable architecture:
+
+- **Backend**: Python with FastAPI, SQLAlchemy, and GitPython
+- **Frontend**: React with TypeScript, Vite, and Tailwind CSS
+- **Desktop**: Electron with secure IPC communication
+- **Database**: SQLite (default) or PostgreSQL
+- **Real-time**: WebSockets for collaboration
+
 ## 📦 Project Structure
 
 ```
@@ -249,7 +249,7 @@ verbweaver/
 │   │   └── types/
 │   └── package.json
 ├── docker-compose.yml               # Full-stack dev/deploy (backend, frontend, db, redis)
-├── start-dev.ps1                    # Convenience dev scripts
+├── start-dev.ps1                    # Convenience dev script
 ├── start-dev.sh
 └── README.md
 ```
@@ -314,13 +314,12 @@ The MIT License ensures that you have unrestricted rights to use, modify, and re
 - [FullCalendar](https://fullcalendar.io/) (core, daygrid) © Adam Shaw — MIT License. We redistribute CSS assets for offline availability. See license: https://fullcalendar.io/license/mit
 - All our contributors and supporters!
 
-## 📞 Support
+## 📞 Support & Communication
 
 - **Documentation**: [docs/](docs/)
 - **Issues**: [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Verbweaver/verbweaver/discussions)
-- **Discord**: [Join our community](https://discord.gg/verbweaver)
-- **Email**: support@verbweaver.com
+- **Discord**: [Join our community](https://discord.gg/aK3sBsBw)
+- **Email**: contact@verbweaver.com
 
 ---
 
