@@ -108,6 +108,14 @@ jobs:
             npx electron-builder --linux --publish never
           fi
 
+      - name: Package desktop MSIX (no publish for branches)
+        if: startsWith(github.ref, 'refs/heads/') && runner.os == 'Windows'
+        working-directory: desktop
+        shell: bash
+        run: |
+          # Build Windows MSIX/AppX package for Store submission
+          npx electron-builder --win appx --publish never
+
       - name: Package and publish desktop app (tags/releases)
         if: startsWith(github.ref, 'refs/tags/')
         working-directory: desktop
@@ -123,12 +131,31 @@ jobs:
             npm run dist:linux
           fi
 
+      - name: Package and publish Windows MSIX (tags/releases)
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          # Build and (if configured) publish Windows MSIX/AppX artifact
+          npx electron-builder --win appx
+
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os == 'ubuntu-latest' && 'desktop-linux-latest' || format('desktop-{0}', matrix.os) }}
           path: desktop/dist-app/**
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Windows MSIX artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-msix
+          path: desktop/dist-app/**/*.msix
+          if-no-files-found: warn
           retention-days: 7
 
 

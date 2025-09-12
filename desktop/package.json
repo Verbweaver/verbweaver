@@ -110,6 +110,12 @@
       ],
       "icon": "resources/icon.ico"
     },
+    "appx": {
+      "identityName": "Verbweaver",
+      "publisher": "Verbweaver, LLC.",
+      "publisherDisplayName": "Verbweaver, LLC.",
+      "packageFormat": "msix"
+    },
     "linux": {
       "target": [
         "AppImage",
