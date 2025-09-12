@@ -2,6 +2,8 @@
 
 *Verbweaver* is a writing and design platform that thinks in relationships (graphs). It's designed for writers, artists, engineers, developers, analysts, and anyone who wants to design things while linking every idea together and turning those ideas into manageable tasks. Think and take notes in a way that is natural to you. Then, when it comes time to communicate your ideas or information to other people, use the Compiler and the powerful templating engine to generate a linear document in various common filetypes.
 
+Currently, the desktop application is in Beta. The web server version is under development and is not yet ready for use.
+
 ![Verbweaver Logo](docs/images/logo.png)
 
 ## 🌟 Features
@@ -184,7 +186,7 @@ If you are developing templates:
 - Global/default templates are bundled under `assets/templates` and copied into desktop builds.
 - The Compiler supports schema-driven variables and per-node variables; see `docs/compiler-template-system.md`.
 
-## 🐳 Docker Deployment
+## 🐳 Docker Deployment (Work in Progress)
 
 Deploy Verbweaver using Docker:
 
