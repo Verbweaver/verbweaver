@@ -111,10 +111,10 @@
       "icon": "resources/icon.ico"
     },
     "appx": {
+      "artifactName": "Verbweaver-v${version}-${arch}.msix",
       "identityName": "Verbweaver",
-      "publisher": "Verbweaver, LLC.",
-      "publisherDisplayName": "Verbweaver, LLC.",
-      "packageFormat": "msix"
+      "publisher": "CN=Verbweaver, LLC.",
+      "publisherDisplayName": "Verbweaver, LLC."
     },
     "linux": {
       "target": [

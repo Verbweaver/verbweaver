@@ -154,7 +154,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-windows-msix
-          path: desktop/dist-app/**/*.msix
+          path: |
+            desktop/dist-app/**/*.msix
+            desktop/dist-app/**/*.appx
           if-no-files-found: warn
           retention-days: 7
 
