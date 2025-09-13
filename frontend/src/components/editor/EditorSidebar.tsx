@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical, RefreshCcw, Upload, FolderOpen, Search, X as CloseIcon } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, Folder, Plus, FolderPlus, GripVertical, RefreshCcw, Upload, FolderOpen, Search, X as CloseIcon, Pencil } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { editorApi } from '../../api/editorApi'
 import { TemplateSelectionDialog } from '../TemplateSelectionDialog'
@@ -10,6 +10,7 @@ import { createNodeFromTemplateDesktop } from '../../api/desktop-templates'
 import { apiClient } from '../../api/client'
 import clsx from 'clsx'
 import FileCreateDialog from './FileCreateDialog'
+import { PromptDialog } from '../PromptDialog'
 import toast from 'react-hot-toast'
 import { useTabStore } from '../../store/tabStore'
 
@@ -35,6 +36,7 @@ function EditorSidebar() {
   const [showTemplateDialog, setShowTemplateDialog] = useState(false)
   const [showFolderDialog, setShowFolderDialog] = useState(false)
   const [selectedFolder, setSelectedFolder] = useState<string>('nodes') // Track selected folder
+  const [selectedNode, setSelectedNode] = useState<FileNode | null>(null) // Track selected file or folder
   const [draggedNode, setDraggedNode] = useState<FileNode | null>(null)
   const [dragOverNode, setDragOverNode] = useState<string | null>(null)
   const { addEditorTab } = useTabStore()
@@ -45,6 +47,8 @@ function EditorSidebar() {
   const [findResults, setFindResults] = useState<Map<string, number>>(new Map())
   const [isSearching, setIsSearching] = useState(false)
   const findInputRef = useRef<HTMLInputElement | null>(null)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameTarget, setRenameTarget] = useState<FileNode | null>(null)
 
   useEffect(() => {
     if (currentProject) {
@@ -299,6 +303,7 @@ function EditorSidebar() {
 
   const handleFileClick = async (node: FileNode) => {
     if (node.type === 'file') {
+      setSelectedNode(node)
       // Create or switch to editor tab
       const absolutePath = node.path.startsWith(currentProjectPath!) 
         ? node.path 
@@ -308,6 +313,7 @@ function EditorSidebar() {
     } else {
       // Set selected folder when a directory is clicked (use relative path)
       setSelectedFolder(node.path)
+      setSelectedNode(node)
       await toggleDirectory(node)
     }
   }
@@ -545,7 +551,7 @@ Add any additional notes or references here.
 
   const renderNode = (node: FileNode, depth: number = 0) => {
     const isExpanded = expandedDirs.has(node.path)
-    const isSelected = node.type === 'directory' && node.path === selectedFolder
+    const isSelected = selectedNode?.path === node.path || (node.type === 'directory' && node.path === selectedFolder)
     const isDragOver = dragOverNode === node.path
     const Icon = node.type === 'directory' ? Folder : FileText
     const ChevronIcon = isExpanded ? ChevronDown : ChevronRight
@@ -655,6 +661,22 @@ Add any additional notes or references here.
             title="Refresh files"
           >
             <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={() => {
+              // Prefer explicitly selected node (file or folder). Fallback to selectedFolder.
+              if (selectedNode) {
+                setRenameTarget(selectedNode)
+              } else {
+                const folderNode: FileNode | null = selectedFolder ? { id: selectedFolder, name: selectedFolder.split('/').pop() || selectedFolder, path: selectedFolder, type: 'directory' } : null
+                setRenameTarget(folderNode)
+              }
+              setRenameOpen(true)
+            }}
+            className="p-1 rounded hover:bg-accent"
+            title={selectedNode ? `Rename ${selectedNode.name}` : (selectedFolder ? `Rename ${selectedFolder}` : 'Rename')}
+          >
+            <Pencil className="w-4 h-4" />
           </button>
           <button
             onClick={async () => {
@@ -789,6 +811,58 @@ Add any additional notes or references here.
         onClose={() => setShowTemplateDialog(false)}
         onSelectTemplate={handleTemplateSelected}
         parentPath={selectedFolder}
+      />
+
+      {/* Rename Dialog */}
+      <PromptDialog
+        isOpen={renameOpen}
+        onCancel={() => setRenameOpen(false)}
+        title={renameTarget?.type === 'directory' ? 'Rename Folder' : 'Rename File'}
+        label={renameTarget?.type === 'directory' ? 'New folder name' : 'New file name'}
+        defaultValue={renameTarget?.name || ''}
+        placeholder={renameTarget?.type === 'directory' ? 'folder-name' : 'file-name.md'}
+        confirmLabel="Rename"
+        validate={(v)=>{
+          if (!v) return 'Name is required'
+          if (/[/\\]/.test(v)) return 'Name cannot contain / or \\'
+          return null
+        }}
+        onConfirm={async (newName) => {
+          if (!renameTarget) { setRenameOpen(false); return }
+          try {
+            if (isElectron && window.electronAPI && currentProjectPath) {
+              const oldPath = renameTarget.path
+              const parent = oldPath.includes('/') ? oldPath.slice(0, oldPath.lastIndexOf('/')) : ''
+              const newPath = parent ? `${parent}/${newName}` : newName
+              await window.electronAPI.moveFile(oldPath, newPath)
+              // If renaming the selected folder, update selectedFolder
+              if (renameTarget.type === 'directory' && selectedFolder === oldPath) {
+                setSelectedFolder(newPath)
+              }
+              if (selectedNode?.path === oldPath) {
+                setSelectedNode({ ...renameTarget, name: newName, path: newPath })
+              }
+            } else if (!isElectron && currentProject) {
+              const oldPath = renameTarget.path
+              const parent = oldPath.includes('/') ? oldPath.slice(0, oldPath.lastIndexOf('/')) : ''
+              const newPath = parent ? `${parent}/${newName}` : newName
+              await apiClient.post(`/projects/${currentProject.id}/move`, { old_path: oldPath, new_path: newPath })
+              if (renameTarget.type === 'directory' && selectedFolder === oldPath) {
+                setSelectedFolder(newPath)
+              }
+              if (selectedNode?.path === oldPath) {
+                setSelectedNode({ ...renameTarget, name: newName, path: newPath })
+              }
+            }
+            await loadFileTree()
+            toast.success('Renamed successfully')
+          } catch (e) {
+            console.error('Rename failed', e)
+            toast.error('Failed to rename')
+          } finally {
+            setRenameOpen(false)
+          }
+        }}
       />
     </div>
   )
