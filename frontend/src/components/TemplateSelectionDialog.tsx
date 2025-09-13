@@ -123,10 +123,10 @@ export function TemplateSelectionDialog({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+        <div className="flex-1 overflow-hidden p-6 flex flex-col">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0">
             {/* Template Selection */}
-            <div className="flex flex-col">
+            <div className="flex flex-col min-h-0">
               <label className="text-sm font-medium mb-2">Select Template</label>
               {isLoading ? (
                 <div className="flex-1 flex items-center justify-center">
@@ -163,9 +163,9 @@ export function TemplateSelectionDialog({
             </div>
 
             {/* Preview */}
-            <div className="flex flex-col">
+            <div className="flex flex-col min-h-0">
               <label className="text-sm font-medium mb-2">Preview</label>
-              <div className="flex-1 border rounded-md p-4 bg-muted/30 overflow-y-auto">
+              <div className="flex-1 min-h-0 border rounded-md p-4 bg-muted/30 overflow-auto">
                 {selectedTemplate ? (
                   <pre className="text-sm whitespace-pre-wrap font-mono">
                     {contentPreview}
