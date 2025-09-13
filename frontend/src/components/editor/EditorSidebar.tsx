@@ -420,7 +420,16 @@ Add any additional notes or references here.
     
     try {
       let response
-      if (window.electronAPI && currentProjectPath) {
+      if (templatePath === '__EMPTY__') {
+        // Create a raw empty file
+        const fileRel = `${targetParentPath}/${nodeName.endsWith('.md') ? nodeName : nodeName + '.md'}`.replace(/\\/g,'/').replace(/\/\//g,'/')
+        if (window.electronAPI && currentProjectPath) {
+          const abs = `${currentProjectPath}/${fileRel}`.replace(/\\/g,'/').replace(/\/\//g,'/')
+          await window.electronAPI.writeFile(abs, '')
+        } else if (!window.electronAPI && currentProject?.id) {
+          await editorApi.createFile(currentProject.id, fileRel, '', { raw: true, metadata: undefined })
+        }
+      } else if (window.electronAPI && currentProjectPath) {
         // Desktop path: use IPC helper
         response = await createNodeFromTemplateDesktop(
           templatePath,
@@ -445,7 +454,7 @@ Add any additional notes or references here.
       }
       // Refresh files to show new node
       await loadFileTree()
-      toast.success('Node created from template')
+      toast.success(templatePath === '__EMPTY__' ? 'Empty file created' : 'Node created from template')
     } catch (error: any) {
       console.error('Failed to create node from template:', error)
       toast.error(error?.message || 'Failed to create node')
