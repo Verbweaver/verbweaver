@@ -29,6 +29,7 @@ router = APIRouter()
 class FileCreate(BaseModel):
     path: str
     content: str = ""
+    raw: bool = False
 
 
 class FileUpdate(BaseModel):
@@ -209,7 +210,8 @@ async def create_file(
             name=name,
             node_type="file",
             initial_metadata={},
-            initial_content=file_create.content
+            initial_content=file_create.content,
+            raw=bool(file_create.raw)
         )
         
         return FileContent(

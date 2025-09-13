@@ -818,7 +818,18 @@ function GraphView() {
       try {
         let nodeResponseData; // To store the response from either API
   
-        if (window.electronAPI && currentProjectPath) {
+        if (templatePath === '__EMPTY__') {
+          // Create raw empty file
+          const rel = `${targetParentPath}/${nodeName.endsWith('.md') ? nodeName : nodeName + '.md'}`.replace(/\\/g,'/').replace(/\/\//g,'/')
+          if (window.electronAPI && currentProjectPath) {
+            const abs = `${currentProjectPath}/${rel}`.replace(/\\/g,'/').replace(/\/\//g,'/')
+            await window.electronAPI.writeFile(abs, '')
+          } else if (!window.electronAPI && currentProject?.id) {
+            await editorApi.createFile(currentProject.id, rel, '', { raw: true, metadata: undefined })
+          } else {
+            throw new Error('Project context not available')
+          }
+        } else if (window.electronAPI && currentProjectPath) {
           // --- DESKTOP Path ---
           console.log('Using desktop API to create node from template', { 
             templatePath,          // e.g., "templates/Empty.md"

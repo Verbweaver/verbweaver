@@ -18,6 +18,7 @@ class FileCreate(BaseModel):
     name: str
     content: str = ""
     metadata: Optional[dict] = None
+    raw: Optional[bool] = False
 
 
 class FileUpdate(BaseModel):
@@ -202,7 +203,8 @@ async def create_file(
             name=file_create.name,
             node_type=node_type,
             initial_metadata=file_create.metadata,
-            initial_content=file_create.content
+            initial_content=file_create.content,
+            raw=bool(file_create.raw)
         )
         
         return FileContent(

@@ -65,11 +65,22 @@ export function TemplateSelectionDialog({
         throw new Error('No project selected')
       }
       
-      setTemplates(templateList)
-      // Select the first template by default
-      if (templateList.length > 0) {
-        setSelectedTemplate(templateList[0])
+      // Inject special "Empty" option at the top
+      const emptyTemplate: Template = {
+        path: '__EMPTY__',
+        name: 'Empty',
+        metadata: {
+          title: 'Empty',
+          type: 'file',
+          description: 'Start with a blank file (no metadata).',
+          tags: []
+        },
+        content: ''
       }
+      const combined = [emptyTemplate, ...templateList]
+      setTemplates(combined)
+      // Default select Empty
+      setSelectedTemplate(emptyTemplate)
     } catch (error) {
       console.error('Failed to load templates:', error)
       toast.error('Failed to load templates')
@@ -91,6 +102,9 @@ export function TemplateSelectionDialog({
 
   const handleTemplateSelect = (template: Template) => {
     setSelectedTemplate(template)
+    if (template.path === '__EMPTY__') {
+      setContentPreview('')
+    }
   }
 
   if (!isOpen) return null
