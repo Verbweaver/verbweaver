@@ -30,6 +30,7 @@ function EditorSidebar() {
   const navigate = useNavigate()
   const { currentProject, currentProjectPath } = useProjectStore()
   const [fileTree, setFileTree] = useState<FileNode[]>([])
+  const fileTreeRef = useRef<FileNode[]>([])
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -55,6 +56,11 @@ function EditorSidebar() {
       loadFileTree()
     }
   }, [currentProject, currentProjectPath])
+
+  // Keep a ref of latest tree for async preloading
+  useEffect(() => {
+    fileTreeRef.current = fileTree
+  }, [fileTree])
 
   // Listen for external refresh events (e.g., after deletion from Editor)
   useEffect(() => {
@@ -103,6 +109,32 @@ function EditorSidebar() {
           })
         
         setFileTree(tree)
+
+        // Preload contents for directories that were expanded before refresh
+        const preloadExpanded = async () => {
+          // Sort by depth to ensure parents load before children
+          const sorted = Array.from(expandedDirs).sort((a, b) => a.split('/').length - b.split('/').length)
+          const findNodeByPath = (nodes: FileNode[], path: string): FileNode | null => {
+            for (const n of nodes) {
+              if (n.path === path) return n
+              if (n.children && n.children.length > 0) {
+                const found = findNodeByPath(n.children, path)
+                if (found) return found
+              }
+            }
+            return null
+          }
+          for (const p of sorted) {
+            // Wait a microtask to allow state updates to flush
+            await new Promise(res => setTimeout(res, 0))
+            const root = fileTreeRef.current
+            const node = findNodeByPath(root, p)
+            if (node && !node.loaded) {
+              await loadDirectoryContents(node)
+            }
+          }
+        }
+        await preloadExpanded()
       } else {
         // For web version, use the API
         const apiTree = await editorApi.getFileTree(currentProject.id)
