@@ -129,6 +129,28 @@ function GraphView() {
     return false
   }, [effectiveCompletedId])
 
+  // Counts for UI badges
+  const uploadsHiddenCount = useMemo(() => {
+    let count = 0
+    verbweaverNodes.forEach((n) => {
+      const normPath = n.path.replace(/\\/g, '/')
+      const isUploadsRoot = normPath === 'uploads'
+      const isUnderUploads = normPath.startsWith('uploads/')
+      if (!(isUploadsRoot || isUnderUploads)) return
+      if (normPath.startsWith('uploads/nodes/')) return
+      count++
+    })
+    return count
+  }, [verbweaverNodes])
+
+  const completedHiddenCount = useMemo(() => {
+    let count = 0
+    verbweaverNodes.forEach((n) => {
+      if (!n.isDirectory && n.hasTask && isTaskCompleted(n)) count++
+    })
+    return count
+  }, [verbweaverNodes, isTaskCompleted])
+
   // Persisted per-project positions for folders (and optionally special nodes)
   const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({})
   // Persisted per-project collapsed state for folders
@@ -450,6 +472,33 @@ function GraphView() {
       // First pass: Create all nodes we want on the graph
       // Build collapsed folder prefixes for quick filtering
       const collapsedFolders = new Set<string>(Object.entries(graphCollapsed).filter(([_, v]) => !!v).map(([k]) => k.replace(/\\/g, '/')))
+      // Pre-compute how many descendants are hidden by each collapsed folder (excluding items hidden by other toggles)
+      const collapsedHiddenCountByFolder = new Map<string, number>()
+      const isEligibleWithoutCollapse = (node: any) => {
+        const normPath = node.path.replace(/\\/g, '/')
+        const isNodesRoot = normPath === 'nodes'
+        const isUnderNodes = normPath.startsWith('nodes/')
+        const isUploadsRoot = normPath === 'uploads'
+        const isUnderUploads = normPath.startsWith('uploads/')
+        if (normPath.startsWith('uploads/nodes/')) return false
+        if (!(isNodesRoot || isUnderNodes || isUploadsRoot || isUnderUploads)) return false
+        if (hideUploads && (isUploadsRoot || isUnderUploads)) return false
+        if (hideCompletedTasks && !node.isDirectory && node.hasTask && isTaskCompleted(node)) return false
+        return true
+      }
+      // Count descendants per collapsed folder among nodes that would otherwise be visible
+      if (collapsedFolders.size > 0) {
+        const collapsedArray = Array.from(collapsedFolders)
+        verbweaverNodes.forEach((n) => {
+          if (!isEligibleWithoutCollapse(n)) return
+          const p = n.path.replace(/\\/g, '/')
+          for (const cf of collapsedArray) {
+            if (p !== cf && p.startsWith(cf + '/')) {
+              collapsedHiddenCountByFolder.set(cf, (collapsedHiddenCountByFolder.get(cf) || 0) + 1)
+            }
+          }
+        })
+      }
       verbweaverNodes.forEach((node) => {
         const normPath = node.path.replace(/\\/g, '/')
 
@@ -511,6 +560,7 @@ function GraphView() {
             isMarkdown: node.isMarkdown,
             locked,
             collapsed: !!graphCollapsed[node.path],
+            hiddenCount: node.isDirectory && graphCollapsed[node.path] ? (collapsedHiddenCountByFolder.get(node.path) || 0) : undefined,
             isNodesRoot: isNodes,
             projectTitle: isNodes ? (currentProject?.name || 'Project') : undefined,
           },
@@ -1507,7 +1557,14 @@ function GraphView() {
                 try { localStorage.setItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS, String(v)) } catch {}
               }}
             />
-            Hide uploads
+            <span className="inline-flex items-center gap-1">
+              <span>Hide uploads</span>
+              {hideUploads && uploadsHiddenCount > 0 && (
+                <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${uploadsHiddenCount} items hidden`}>
+                  {uploadsHiddenCount}
+                </span>
+              )}
+            </span>
           </label>
           <label className="inline-flex items-center gap-2 text-sm" title="When enabled: completed Tasks are hidden from the Mind Map.">
             <input
@@ -1519,7 +1576,14 @@ function GraphView() {
                 try { localStorage.setItem(HIDE_COMPLETED_LOCAL_KEY, String(v)) } catch {}
               }}
             />
-            Hide completed Tasks
+            <span className="inline-flex items-center gap-1">
+              <span>Hide completed Tasks</span>
+              {hideCompletedTasks && completedHiddenCount > 0 && (
+                <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${completedHiddenCount} tasks hidden`}>
+                  {completedHiddenCount}
+                </span>
+              )}
+            </span>
           </label>
           <label className="inline-flex items-center gap-2 text-sm" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
             <input
