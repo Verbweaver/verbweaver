@@ -101,6 +101,33 @@ function GraphView() {
       return true
     }
   })
+  // Hide completed tasks (Mind Map)
+  const HIDE_COMPLETED_LOCAL_KEY = 'verbweaver_graph_hide_completed_tasks'
+  const [hideCompletedTasks, setHideCompletedTasks] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(HIDE_COMPLETED_LOCAL_KEY)
+      return raw === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  // Task columns config (to determine completed status per project)
+  const [taskColumns, setTaskColumns] = useState<any[]>([])
+  const [completedColumnId, setCompletedColumnId] = useState<string | null>(null)
+  const effectiveCompletedId = useMemo(() => {
+    if (completedColumnId) return completedColumnId
+    const byTitle = taskColumns.find((c: any) => /done|complete/i.test(c?.title))?.id
+    if (byTitle) return byTitle
+    const doneId = taskColumns.find((c: any) => c?.id === 'done')?.id
+    return doneId || null
+  }, [completedColumnId, taskColumns])
+  const isTaskCompleted = useCallback((n: any): boolean => {
+    const status = (n.taskStatus || n.metadata?.task?.status) as string | undefined
+    if (effectiveCompletedId && status === effectiveCompletedId) return true
+    if (n.metadata?.task?.completedDate) return true
+    return false
+  }, [effectiveCompletedId])
 
   // Persisted per-project positions for folders (and optionally special nodes)
   const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({})
@@ -176,6 +203,25 @@ function GraphView() {
     }
     loadOutline()
   }, [currentProject?.id, currentProjectPath])
+
+  // Load per-project Tasks settings (columns + completed column)
+  useEffect(() => {
+    const loadTasksSettings = async () => {
+      if (!currentProject?.id) return
+      try {
+        const tasksSettings = await projectsApi.getTasksSettings(currentProject.id)
+        if (Array.isArray(tasksSettings?.columns)) setTaskColumns(tasksSettings.columns)
+        if (tasksSettings?.completedColumnId) setCompletedColumnId(tasksSettings.completedColumnId)
+        else {
+          const done = (tasksSettings?.columns || []).find((c: any) => /done|complete/i.test(c?.title))
+          if (done) setCompletedColumnId(done.id)
+        }
+      } catch {
+        // ignore: fall back to defaults via effectiveCompletedId
+      }
+    }
+    loadTasksSettings()
+  }, [currentProject?.id])
 
   // Initialize subview from active tab metadata
   useEffect(() => {
@@ -426,6 +472,9 @@ function GraphView() {
         const isDescendantOfCollapsed = Array.from(collapsedFolders).some(prefix => prefix !== normPath && (normPath.startsWith(prefix + '/')))
         if (isDescendantOfCollapsed) return
 
+        // Hide completed Tasks (files only) when enabled
+        if (hideCompletedTasks && !node.isDirectory && node.hasTask && isTaskCompleted(node)) return
+
         // Compute position
         const position = (() => {
           if (node.path === 'nodes') {
@@ -579,7 +628,7 @@ function GraphView() {
       setNodes(flowNodes)
       setEdges(flowEdges)
     }
-  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads, graphCollapsed])
+  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads, graphCollapsed, hideCompletedTasks, isTaskCompleted])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
@@ -1459,6 +1508,18 @@ function GraphView() {
               }}
             />
             Hide uploads
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm" title="When enabled: completed Tasks are hidden from the Mind Map.">
+            <input
+              type="checkbox"
+              checked={hideCompletedTasks}
+              onChange={(e) => {
+                const v = e.target.checked
+                setHideCompletedTasks(v)
+                try { localStorage.setItem(HIDE_COMPLETED_LOCAL_KEY, String(v)) } catch {}
+              }}
+            />
+            Hide completed Tasks
           </label>
           <label className="inline-flex items-center gap-2 text-sm" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
             <input
