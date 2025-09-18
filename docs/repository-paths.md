@@ -48,7 +48,6 @@ project-root/
 ├── nodes/               # Content nodes (Markdown files)
 ├── templates/           # Project/compiler templates
 │   └── Empty.md         # Default empty template
-├── docs/                # Optional location to store additional project documentation
 └── .verbweaver/         # Verbweaver-specific data (if needed)
 ```
 

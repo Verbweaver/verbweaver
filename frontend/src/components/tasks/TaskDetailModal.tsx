@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Send, Paperclip, Link, User, Calendar, Tag, MessageSquare, Edit3, Download, Trash2, FileText } from 'lucide-react'
+import { X, Send, Paperclip, Link, User, Calendar, Tag, MessageSquare, Edit3, Download, Trash2, FileText, Eye, ChevronDown, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useNodeStore } from '../../store/nodeStore'
 import { useTabStore } from '../../store/tabStore'
@@ -9,6 +9,8 @@ import clsx from 'clsx'
 import SharedCreateLinkModal from '../common/CreateLinkModal'
 import { KanbanColumn } from './ColumnManager'
 import toast from 'react-hot-toast'
+import { editorApi } from '../../api/editorApi'
+import { useProjectStore } from '../../store/projectStore'
 
 // Define VerbweaverNode interface locally
 interface VerbweaverNode {
@@ -65,6 +67,12 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   const [isCreateLinkModalOpen, setIsCreateLinkModalOpen] = useState(false)
   const dueDateInputRef = useRef<HTMLInputElement | null>(null)
   const startDateInputRef = useRef<HTMLInputElement | null>(null)
+  // Preview state
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState<string>('')
+  const [previewError, setPreviewError] = useState<string>('')
+  const { currentProjectPath } = useProjectStore()
 
   useEffect(() => {
     if (node) {
@@ -105,6 +113,29 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
       setFiles(migratedFiles)
     }
   }, [node])
+
+  // Fetch preview when opened
+  useEffect(() => {
+    const fetchPreview = async () => {
+      if (!previewOpen || !node) return
+      if (!node.isMarkdown) {
+        setPreviewHtml('')
+        setPreviewError('Preview available for Markdown nodes only.')
+        return
+      }
+      try {
+        setPreviewLoading(true)
+        setPreviewError('')
+        const html = await editorApi.previewMarkdown(node.content || '', currentProjectPath || undefined, node.path)
+        setPreviewHtml(html)
+      } catch (e) {
+        setPreviewError('Failed to load preview')
+      } finally {
+        setPreviewLoading(false)
+      }
+    }
+    fetchPreview()
+  }, [previewOpen, node, currentProjectPath])
 
   const handleSave = async () => {
     if (!node) return
@@ -706,6 +737,8 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
             )}
           </div>
 
+          
+
           {/* Right Panel - Comments */}
           <div className="w-80 border-l border-border flex flex-col">
             <div className="p-4 border-b border-border">
@@ -751,8 +784,36 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
             </div>
           </div>
         </div>
+        {/* Node Content Preview (inside modal, below task data) */}
+        <div className="border-t border-border">
+          <div className="p-4">
+            <button
+              className={clsx('w-full flex items-center justify-between px-3 py-2 rounded hover:bg-accent', previewOpen && 'bg-accent')}
+              onClick={() => setPreviewOpen(prev => !prev)}
+            >
+              <span className="text-sm font-medium flex items-center gap-2">
+                <Eye className="w-4 h-4" />
+                Node Content Preview
+              </span>
+              {previewOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+            {previewOpen && (
+              <div className="mt-2 border border-border rounded-md bg-muted/30 max-h-80 overflow-auto">
+                {previewLoading ? (
+                  <div className="p-4 text-sm text-muted-foreground">Loading preview…</div>
+                ) : previewError ? (
+                  <div className="p-4 text-sm text-destructive">{previewError}</div>
+                ) : previewHtml ? (
+                  <div className="p-4 prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                ) : (
+                  <div className="p-4 text-sm text-muted-foreground">No content to preview</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-      
+
       {/* Create Link Modal (shared) */}
       {isCreateLinkModalOpen && node && (
         <SharedCreateLinkModal

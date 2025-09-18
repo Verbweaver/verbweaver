@@ -155,8 +155,12 @@ class NodeService:
     
     async def create_node(self, parent_path: str, name: str, node_type: str, 
                          initial_metadata: Optional[Dict[str, Any]] = None, 
-                         initial_content: Optional[str] = None) -> Dict[str, Any]:
-        """Create a new node (Markdown file)."""
+                         initial_content: Optional[str] = None,
+                         raw: bool = False) -> Dict[str, Any]:
+        """Create a new node (Markdown file).
+
+        When raw=True, write the provided content directly without YAML front matter.
+        """
         sanitized_name = self.sanitize_filename(name)
         filename = sanitized_name if sanitized_name.endswith('.md') else f"{sanitized_name}.md"
         
@@ -172,28 +176,37 @@ class NodeService:
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
         
-        # Create metadata
-        metadata = {
-            'id': self.generate_id(),
-            'title': sanitized_name.replace('.md', ''),
-            'type': node_type,
-            'created': datetime.now().isoformat(),
-            'modified': datetime.now().isoformat()
-        }
-        
-        if initial_metadata:
-            metadata.update(initial_metadata)
-        
-        # Create content
-        content = initial_content or f"# {metadata['title']}\n\n"
-        
-        # Write file
-        file_content = await self.stringify_markdown_with_frontmatter(metadata, content)
-        async with aiofiles.open(full_path, 'w', encoding='utf-8') as f:
-            await f.write(file_content)
-        
-        # Commit to Git
-        await self.git_service.add_and_commit([path], f"Created node: {metadata['title']}")
+        if raw:
+            # Write raw content without front matter
+            raw_content = initial_content or ''
+            async with aiofiles.open(full_path, 'w', encoding='utf-8') as f:
+                await f.write(raw_content)
+
+            # Commit to Git
+            await self.git_service.add_and_commit([path], f"Created raw file: {sanitized_name}")
+        else:
+            # Create metadata
+            metadata = {
+                'id': self.generate_id(),
+                'title': sanitized_name.replace('.md', ''),
+                'type': node_type,
+                'created': datetime.now().isoformat(),
+                'modified': datetime.now().isoformat()
+            }
+            
+            if initial_metadata:
+                metadata.update(initial_metadata)
+            
+            # Create content
+            content = initial_content or f"# {metadata['title']}\n\n"
+            
+            # Write file with front matter
+            file_content = await self.stringify_markdown_with_frontmatter(metadata, content)
+            async with aiofiles.open(full_path, 'w', encoding='utf-8') as f:
+                await f.write(file_content)
+            
+            # Commit to Git
+            await self.git_service.add_and_commit([path], f"Created node: {metadata['title']}")
         
         # Return the created node
         return await self.read_node(path)

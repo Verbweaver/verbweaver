@@ -1,7 +1,7 @@
 ---
-title: Empty
+title: Basic
 type: node
-description: A blank starting point.
+description: A basic starting point.
 tags: [empty, basic]
 ---
 

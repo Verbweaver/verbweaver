@@ -13,6 +13,7 @@ interface CustomNodeProps {
     hasTask?: boolean
     locked?: boolean
     collapsed?: boolean
+    hiddenCount?: number | undefined
     isNodesRoot?: boolean
     projectTitle?: string
   }
@@ -84,8 +85,13 @@ function CustomNode({ data, selected }: CustomNodeProps) {
         </div>
       )}
       {data.isDirectory && data.collapsed && (
-        <div className="absolute -top-2 -left-2">
+        <div className="absolute -top-2 -left-2 flex items-center gap-1">
           <span className="text-blue-600 font-bold text-xs" title="Collapsed">▸</span>
+          {typeof data.hiddenCount === 'number' && data.hiddenCount > 0 && (
+            <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${data.hiddenCount} items hidden`}>
+              {data.hiddenCount}
+            </span>
+          )}
         </div>
       )}
       {/* Top Handles */}

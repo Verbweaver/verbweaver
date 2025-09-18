@@ -108,6 +108,9 @@ function TasksView() {
   const [showUnscheduled, setShowUnscheduled] = useState<boolean>(false)
   const [statusFilter, setStatusFilter] = useState<string[] | null>(null)
   const [tagsFilter, setTagsFilter] = useState<string[] | null>(null)
+	// Charts date range (YYYY-MM-DD)
+	const [chartsFrom, setChartsFrom] = useState<string | null>(null)
+	const [chartsTo, setChartsTo] = useState<string | null>(null)
   const [defaultDue, setDefaultDue] = useState<string | undefined>(undefined)
   const calendarRef = useRef<any>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -215,6 +218,8 @@ function TasksView() {
         if (Array.isArray(parsed?.statusFilter)) setStatusFilter(parsed.statusFilter)
         if (Array.isArray(parsed?.tagsFilter)) setTagsFilter(parsed.tagsFilter)
         if (typeof parsed?.todoShowCompleted === 'boolean') setShowCompleted(parsed.todoShowCompleted)
+				if (typeof parsed?.chartsFrom === 'string' && parsed.chartsFrom) setChartsFrom(parsed.chartsFrom)
+				if (typeof parsed?.chartsTo === 'string' && parsed.chartsTo) setChartsTo(parsed.chartsTo)
       }
     } catch {}
   }, [currentProject?.id])
@@ -222,9 +227,9 @@ function TasksView() {
   useEffect(() => {
     const key = `${currentProject?.id || 'global'}:tasks-view`
     try {
-      localStorage.setItem(key, JSON.stringify({ subView, calendarMode, calendarDate, statusFilter, tagsFilter, todoShowCompleted: showCompleted }))
+			localStorage.setItem(key, JSON.stringify({ subView, calendarMode, calendarDate, statusFilter, tagsFilter, todoShowCompleted: showCompleted, chartsFrom, chartsTo }))
     } catch {}
-  }, [subView, calendarMode, calendarDate, statusFilter, tagsFilter, showCompleted, currentProject?.id])
+	}, [subView, calendarMode, calendarDate, statusFilter, tagsFilter, showCompleted, chartsFrom, chartsTo, currentProject?.id])
 
   // Enable dragging from Unscheduled list into FullCalendar
   useEffect(() => {
@@ -429,40 +434,63 @@ function TasksView() {
     })
   }, [tasksByStatus, statusFilter, tagsFilter, defaultColumnId])
 
-  const ganttData = useMemo(() => {
+	const ganttData = useMemo(() => {
     // Prepare tasks with start and end dates
     type Row = { title: string; start: string; end: string; status?: string }
-    const rows: Row[] = []
-    for (const t of filteredTaskList) {
+		const rows: Row[] = []
+		// Filter tasks by charts date range (intersection)
+		const intersectsRange = (start?: string, end?: string) => {
+			if (!start && !end) return false
+			const s = start || end!
+			const e = end || start!
+			if (chartsFrom && e < chartsFrom) return false
+			if (chartsTo && s > chartsTo) return false
+			return true
+		}
+		for (const t of filteredTaskList) {
       const md = (t.metadata?.task || {}) as any
       const due = md.dueDate as string | undefined
       const start = md.startDate as string | undefined
-      if (!due && !start) continue
+			if (!intersectsRange(start, due)) continue
       const s = start || due!
       const e = due || start!
       rows.push({ title: t.metadata?.title || t.name, start: s, end: e, status: t.taskStatus || md.status })
     }
     if (rows.length === 0) return { rows, min: '', max: '' }
-    const dates = rows.flatMap(r => [r.start, r.end]).filter(Boolean) as string[]
-    const min = dates.reduce((a, b) => (a < b ? a : b))
-    const max = dates.reduce((a, b) => (a > b ? a : b))
+		const dates = rows.flatMap(r => [r.start, r.end]).filter(Boolean) as string[]
+		let min = dates.reduce((a, b) => (a < b ? a : b))
+		let max = dates.reduce((a, b) => (a > b ? a : b))
+		// Clamp domain to selected range if provided
+		if (chartsFrom && chartsFrom > min) min = chartsFrom
+		if (chartsTo && chartsTo < max) max = chartsTo
     return { rows, min, max }
-  }, [filteredTaskList])
+	}, [filteredTaskList, chartsFrom, chartsTo])
 
-  const burndownData = useMemo(() => {
+	const burndownData = useMemo(() => {
     // Simple burndown: remaining tasks per day between min(start) and max(due)
-    const tasks = filteredTaskList.map(t => ({
+		// Consider only tasks intersecting selected charts range
+		const rawTasks = filteredTaskList.map(t => ({
       start: (t.metadata?.task?.startDate as string | undefined) || (t.metadata?.task?.dueDate as string | undefined) || undefined,
       due: t.metadata?.task?.dueDate as string | undefined,
       completed: !!t.metadata?.task?.completedDate,
       completedDate: t.metadata?.task?.completedDate as string | undefined,
     }))
+		const tasks = rawTasks.filter(t => {
+			if (!t.start && !t.due) return false
+			const s = t.start || t.due!
+			const e = t.due || t.start!
+			if (chartsFrom && e < chartsFrom) return false
+			if (chartsTo && s > chartsTo) return false
+			return true
+		})
     const allDates = tasks.flatMap(t => [t.start, t.due].filter(Boolean) as string[])
     if (allDates.length === 0) return { labels: [] as string[], values: [] as number[] }
-    const min = allDates.reduce((a, b) => (a < b ? a : b))
-    const max = allDates.reduce((a, b) => (a > b ? a : b))
-    const startDate = new Date(min)
-    const endDate = new Date(max)
+		let min = allDates.reduce((a, b) => (a < b ? a : b))
+		let max = allDates.reduce((a, b) => (a > b ? a : b))
+		if (chartsFrom && chartsFrom > min) min = chartsFrom
+		if (chartsTo && chartsTo < max) max = chartsTo
+		const startDate = new Date(min)
+		const endDate = new Date(max)
     const labels: string[] = []
     const values: number[] = []
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
@@ -478,7 +506,7 @@ function TasksView() {
       values.push(remaining)
     }
     return { labels, values }
-  }, [filteredTaskList])
+	}, [filteredTaskList, chartsFrom, chartsTo])
 
   const drawGantt = useCallback(() => {
     const canvas = ganttCanvasRef.current
@@ -1057,8 +1085,41 @@ function TasksView() {
                 </div>
               </div>
             ) : (
-              // Charts view
-              <div className="flex-1 p-3 overflow-auto flex flex-col gap-4">
+				// Charts view
+				<div className="flex-1 p-3 overflow-auto flex flex-col gap-4">
+					{/* Charts controls */}
+					<div className="flex items-center justify-between">
+						<div className="flex items-center gap-2">
+							<label className="text-sm">Date Range</label>
+							<div className="relative">
+								<CalendarDays className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+								<input
+									type="date"
+									className="pl-8 pr-2 py-1 w-40 rounded border border-border text-sm bg-background"
+									value={chartsFrom || ''}
+									onClick={(e)=>{ const el = e.currentTarget as HTMLInputElement; (el as any).showPicker?.() }}
+									onChange={(e)=> setChartsFrom(e.target.value ? e.target.value : null)}
+								/>
+							</div>
+							<span className="text-sm text-muted-foreground">to</span>
+							<div className="relative">
+								<CalendarDays className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+								<input
+									type="date"
+									className="pl-8 pr-2 py-1 w-40 rounded border border-border text-sm bg-background"
+									value={chartsTo || ''}
+									onClick={(e)=>{ const el = e.currentTarget as HTMLInputElement; (el as any).showPicker?.() }}
+									onChange={(e)=> setChartsTo(e.target.value ? e.target.value : null)}
+								/>
+							</div>
+							<button
+								className="px-2 py-1 rounded border border-border text-sm hover:bg-accent"
+								onClick={()=>{ setChartsFrom(null); setChartsTo(null) }}
+							>
+								Clear
+							</button>
+						</div>
+					</div>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-medium">Gantt Chart</h3>
                   <button className="px-2 py-1 text-xs rounded border border-border hover:bg-accent" onClick={() => exportCanvas(ganttCanvasRef, 'gantt.png')}>Export PNG</button>

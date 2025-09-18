@@ -53,18 +53,19 @@ export const editorApi = {
     return response.data
   },
 
-  createFile: async (projectId: string, path: string, content: string = ''): Promise<any> => {
+  createFile: async (projectId: string, path: string, content: string = '', options?: { raw?: boolean; metadata?: any; nameOverride?: string }): Promise<any> => {
     const fileName = path.split('/').pop() || 'untitled.md'
     const filePath = path
     
     const response = await apiClient.post(`/editor/${projectId}/files`, {
       path: filePath,
-      name: fileName,
+      name: options?.nameOverride || fileName,
       content: content,
-      metadata: {
+      metadata: options?.metadata ?? {
         type: 'file',
         created_at: new Date().toISOString()
-      }
+      },
+      raw: !!options?.raw
     })
     return response.data
   },

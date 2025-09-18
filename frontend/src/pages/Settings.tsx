@@ -10,7 +10,8 @@ const isElectron = typeof window !== 'undefined' && window.electronAPI !== undef
 const settingsTabs = [
   { name: 'Profile', href: '/settings', icon: UserCircle, exact: true },
   { name: 'Appearance', href: '/settings/appearance', icon: Palette, exact: false },
-  { name: 'Security', href: '/settings/security', icon: Shield, exact: false },
+  // Security is web-only; hide on Electron desktop
+  ...(!isElectron ? [{ name: 'Security', href: '/settings/security', icon: Shield, exact: false }] : []),
   { name: 'Project', href: '/settings/project', icon: FolderOpen, exact: false },
   { name: 'Templates', href: '/settings/templates', icon: FileCode, exact: false },
   ...(isElectron ? [{ name: 'Dependencies', href: '/settings/dependencies', icon: AlertTriangle, exact: false }] : []),

@@ -101,6 +101,55 @@ function GraphView() {
       return true
     }
   })
+  // Hide completed tasks (Mind Map)
+  const HIDE_COMPLETED_LOCAL_KEY = 'verbweaver_graph_hide_completed_tasks'
+  const [hideCompletedTasks, setHideCompletedTasks] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(HIDE_COMPLETED_LOCAL_KEY)
+      return raw === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  // Task columns config (to determine completed status per project)
+  const [taskColumns, setTaskColumns] = useState<any[]>([])
+  const [completedColumnId, setCompletedColumnId] = useState<string | null>(null)
+  const effectiveCompletedId = useMemo(() => {
+    if (completedColumnId) return completedColumnId
+    const byTitle = taskColumns.find((c: any) => /done|complete/i.test(c?.title))?.id
+    if (byTitle) return byTitle
+    const doneId = taskColumns.find((c: any) => c?.id === 'done')?.id
+    return doneId || null
+  }, [completedColumnId, taskColumns])
+  const isTaskCompleted = useCallback((n: any): boolean => {
+    const status = (n.taskStatus || n.metadata?.task?.status) as string | undefined
+    if (effectiveCompletedId && status === effectiveCompletedId) return true
+    if (n.metadata?.task?.completedDate) return true
+    return false
+  }, [effectiveCompletedId])
+
+  // Counts for UI badges
+  const uploadsHiddenCount = useMemo(() => {
+    let count = 0
+    verbweaverNodes.forEach((n) => {
+      const normPath = n.path.replace(/\\/g, '/')
+      const isUploadsRoot = normPath === 'uploads'
+      const isUnderUploads = normPath.startsWith('uploads/')
+      if (!(isUploadsRoot || isUnderUploads)) return
+      if (normPath.startsWith('uploads/nodes/')) return
+      count++
+    })
+    return count
+  }, [verbweaverNodes])
+
+  const completedHiddenCount = useMemo(() => {
+    let count = 0
+    verbweaverNodes.forEach((n) => {
+      if (!n.isDirectory && n.hasTask && isTaskCompleted(n)) count++
+    })
+    return count
+  }, [verbweaverNodes, isTaskCompleted])
 
   // Persisted per-project positions for folders (and optionally special nodes)
   const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({})
@@ -176,6 +225,25 @@ function GraphView() {
     }
     loadOutline()
   }, [currentProject?.id, currentProjectPath])
+
+  // Load per-project Tasks settings (columns + completed column)
+  useEffect(() => {
+    const loadTasksSettings = async () => {
+      if (!currentProject?.id) return
+      try {
+        const tasksSettings = await projectsApi.getTasksSettings(currentProject.id)
+        if (Array.isArray(tasksSettings?.columns)) setTaskColumns(tasksSettings.columns)
+        if (tasksSettings?.completedColumnId) setCompletedColumnId(tasksSettings.completedColumnId)
+        else {
+          const done = (tasksSettings?.columns || []).find((c: any) => /done|complete/i.test(c?.title))
+          if (done) setCompletedColumnId(done.id)
+        }
+      } catch {
+        // ignore: fall back to defaults via effectiveCompletedId
+      }
+    }
+    loadTasksSettings()
+  }, [currentProject?.id])
 
   // Initialize subview from active tab metadata
   useEffect(() => {
@@ -404,6 +472,33 @@ function GraphView() {
       // First pass: Create all nodes we want on the graph
       // Build collapsed folder prefixes for quick filtering
       const collapsedFolders = new Set<string>(Object.entries(graphCollapsed).filter(([_, v]) => !!v).map(([k]) => k.replace(/\\/g, '/')))
+      // Pre-compute how many descendants are hidden by each collapsed folder (excluding items hidden by other toggles)
+      const collapsedHiddenCountByFolder = new Map<string, number>()
+      const isEligibleWithoutCollapse = (node: any) => {
+        const normPath = node.path.replace(/\\/g, '/')
+        const isNodesRoot = normPath === 'nodes'
+        const isUnderNodes = normPath.startsWith('nodes/')
+        const isUploadsRoot = normPath === 'uploads'
+        const isUnderUploads = normPath.startsWith('uploads/')
+        if (normPath.startsWith('uploads/nodes/')) return false
+        if (!(isNodesRoot || isUnderNodes || isUploadsRoot || isUnderUploads)) return false
+        if (hideUploads && (isUploadsRoot || isUnderUploads)) return false
+        if (hideCompletedTasks && !node.isDirectory && node.hasTask && isTaskCompleted(node)) return false
+        return true
+      }
+      // Count descendants per collapsed folder among nodes that would otherwise be visible
+      if (collapsedFolders.size > 0) {
+        const collapsedArray = Array.from(collapsedFolders)
+        verbweaverNodes.forEach((n) => {
+          if (!isEligibleWithoutCollapse(n)) return
+          const p = n.path.replace(/\\/g, '/')
+          for (const cf of collapsedArray) {
+            if (p !== cf && p.startsWith(cf + '/')) {
+              collapsedHiddenCountByFolder.set(cf, (collapsedHiddenCountByFolder.get(cf) || 0) + 1)
+            }
+          }
+        })
+      }
       verbweaverNodes.forEach((node) => {
         const normPath = node.path.replace(/\\/g, '/')
 
@@ -425,6 +520,9 @@ function GraphView() {
         // Hide descendants of collapsed folders (but still show the folder itself)
         const isDescendantOfCollapsed = Array.from(collapsedFolders).some(prefix => prefix !== normPath && (normPath.startsWith(prefix + '/')))
         if (isDescendantOfCollapsed) return
+
+        // Hide completed Tasks (files only) when enabled
+        if (hideCompletedTasks && !node.isDirectory && node.hasTask && isTaskCompleted(node)) return
 
         // Compute position
         const position = (() => {
@@ -462,6 +560,7 @@ function GraphView() {
             isMarkdown: node.isMarkdown,
             locked,
             collapsed: !!graphCollapsed[node.path],
+            hiddenCount: node.isDirectory && graphCollapsed[node.path] ? (collapsedHiddenCountByFolder.get(node.path) || 0) : undefined,
             isNodesRoot: isNodes,
             projectTitle: isNodes ? (currentProject?.name || 'Project') : undefined,
           },
@@ -579,7 +678,7 @@ function GraphView() {
       setNodes(flowNodes)
       setEdges(flowEdges)
     }
-  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads, graphCollapsed])
+  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads, graphCollapsed, hideCompletedTasks, isTaskCompleted])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
@@ -818,7 +917,18 @@ function GraphView() {
       try {
         let nodeResponseData; // To store the response from either API
   
-        if (window.electronAPI && currentProjectPath) {
+        if (templatePath === '__EMPTY__') {
+          // Create raw empty file
+          const rel = `${targetParentPath}/${nodeName.endsWith('.md') ? nodeName : nodeName + '.md'}`.replace(/\\/g,'/').replace(/\/\//g,'/')
+          if (window.electronAPI && currentProjectPath) {
+            const abs = `${currentProjectPath}/${rel}`.replace(/\\/g,'/').replace(/\/\//g,'/')
+            await window.electronAPI.writeFile(abs, '')
+          } else if (!window.electronAPI && currentProject?.id) {
+            await editorApi.createFile(currentProject.id, rel, '', { raw: true, metadata: undefined })
+          } else {
+            throw new Error('Project context not available')
+          }
+        } else if (window.electronAPI && currentProjectPath) {
           // --- DESKTOP Path ---
           console.log('Using desktop API to create node from template', { 
             templatePath,          // e.g., "templates/Empty.md"
@@ -1447,7 +1557,33 @@ function GraphView() {
                 try { localStorage.setItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS, String(v)) } catch {}
               }}
             />
-            Hide uploads
+            <span className="inline-flex items-center gap-1">
+              <span>Hide uploads</span>
+              {hideUploads && uploadsHiddenCount > 0 && (
+                <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${uploadsHiddenCount} items hidden`}>
+                  {uploadsHiddenCount}
+                </span>
+              )}
+            </span>
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm" title="When enabled: completed Tasks are hidden from the Mind Map.">
+            <input
+              type="checkbox"
+              checked={hideCompletedTasks}
+              onChange={(e) => {
+                const v = e.target.checked
+                setHideCompletedTasks(v)
+                try { localStorage.setItem(HIDE_COMPLETED_LOCAL_KEY, String(v)) } catch {}
+              }}
+            />
+            <span className="inline-flex items-center gap-1">
+              <span>Hide completed Tasks</span>
+              {hideCompletedTasks && completedHiddenCount > 0 && (
+                <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${completedHiddenCount} tasks hidden`}>
+                  {completedHiddenCount}
+                </span>
+              )}
+            </span>
           </label>
           <label className="inline-flex items-center gap-2 text-sm" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
             <input

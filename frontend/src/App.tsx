@@ -139,7 +139,7 @@ function App() {
             <Route path="settings" element={<Settings />}>
             <Route index element={<ProfileSettingsPage />} />
             <Route path="appearance" element={<AppearanceSettingsPage />} />
-            <Route path="security" element={<SecuritySettingsPage />} />
+            {!window.electronAPI && <Route path="security" element={<SecuritySettingsPage />} />}
             <Route path="project" element={<ProjectSettingsPage />} />
             <Route path="templates" element={<TemplatesSettingsPage />} />
             <Route path="dependencies" element={<DependenciesSettingsPage />} />

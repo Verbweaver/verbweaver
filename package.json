@@ -1,6 +1,6 @@
 {
   "name": "verbweaver",
-  "version": "1.0.0",
+  "version": "0.9.0",
   "description": "A writing and design platform that thinks in relationships (graphs)",
   "private": true,
   "workspaces": [
