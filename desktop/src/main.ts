@@ -2794,6 +2794,34 @@ interface DependencyCheck {
   installInstructions?: string;
 }
 
+function buildAugmentedEnvForSpawns(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const isWindows = process.platform === 'win32';
+  const pathSeparator = isWindows ? ';' : ':';
+
+  const additions: string[] = [];
+  if (process.platform === 'darwin') {
+    // Common locations for Homebrew, MacPorts, and TeX binaries on macOS
+    additions.push('/usr/local/bin', '/opt/homebrew/bin', '/Library/TeX/texbin', '/opt/local/bin');
+  } else if (process.platform === 'linux') {
+    // Ensure standard binary locations are present for GUI sessions
+    additions.push('/usr/local/bin', '/usr/bin', '/bin', '/snap/bin');
+  }
+
+  const currentPath = process.env.PATH || (process.env as any).Path || '';
+  const currentParts = currentPath.split(pathSeparator).filter(Boolean);
+  const uniqueAdditions = additions.filter(p => !currentParts.includes(p));
+  const newPath = [...uniqueAdditions, ...currentParts].join(pathSeparator);
+
+  env.PATH = newPath;
+  if (isWindows) {
+    // Some Windows environments read Path instead of PATH
+    (env as any).Path = newPath;
+  }
+
+  return env;
+}
+
 async function checkDependencies(): Promise<DependencyCheck[]> {
   const dependencies: DependencyCheck[] = [];
   
@@ -2801,7 +2829,8 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
   try {
     const result = await new Promise<{ success: boolean; version?: string }>((resolve) => {
       const child = require('child_process').spawn('pandoc', ['--version'], {
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: buildAugmentedEnvForSpawns()
       });
       
       let output = '';
@@ -2844,7 +2873,8 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
     const checkEngine = async (cmd: string) => {
       return await new Promise<{ success: boolean; version?: string }>((resolve) => {
         const child = require('child_process').spawn(cmd, ['--version'], {
-          stdio: ['pipe', 'pipe', 'pipe']
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: buildAugmentedEnvForSpawns()
         });
         let output = '';
         child.stdout.on('data', (data: Buffer) => { output += data.toString(); });
