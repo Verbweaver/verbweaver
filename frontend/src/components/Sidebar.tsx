@@ -5,6 +5,7 @@ import {
   Package,
   HelpCircle,
   Settings,
+  LifeBuoy,
   User,
   LayoutDashboard,
   MessageSquare,
@@ -79,7 +80,7 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
     navigate(item.href)
   }
 
-  const handleBottomNavClick = (e: React.MouseEvent, href: string, name: string, type: 'help' | 'settings') => {
+  const handleBottomNavClick = (e: React.MouseEvent, href: string, name: string, type: 'help' | 'settings' | 'support') => {
     e.preventDefault()
     
     // Check if tab already exists
@@ -177,6 +178,19 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
         >
           <Settings className="w-5 h-5 flex-shrink-0" />
           {!isCollapsed && <span>Settings</span>}
+        </a>
+
+        <a
+          href="/support"
+          onClick={(e) => handleBottomNavClick(e, '/support', 'Support', 'support')}
+          className={clsx(
+            'flex items-center gap-3 px-3 py-2 rounded-md transition-colors w-full cursor-pointer',
+            'hover:bg-accent hover:text-accent-foreground',
+            isCollapsed && 'justify-center'
+          )}
+        >
+          <LifeBuoy className="w-5 h-5 flex-shrink-0" />
+          {!isCollapsed && <span>Support</span>}
         </a>
 
         {/* User info section */}
