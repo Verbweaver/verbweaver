@@ -10,6 +10,7 @@ import Version from './pages/Version'
 import Compiler from './pages/Compiler'
 import Settings from './pages/Settings'
 import Help from './pages/Help'
+import Support from './pages/Support'
 import Login from './pages/Login'
 import RequestPasswordReset from './pages/RequestPasswordReset'
 import ResetPassword from './pages/ResetPassword'
@@ -145,6 +146,7 @@ function App() {
             <Route path="dependencies" element={<DependenciesSettingsPage />} />
           </Route>
           <Route path="help" element={<Help />} />
+          <Route path="support" element={<Support />} />
         </Route>
         <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
       </Routes>
