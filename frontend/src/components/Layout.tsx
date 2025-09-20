@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import TabBar from './TabBar'
 import NewProjectDialog from './NewProjectDialog'
+import DonationPromptDialog from './DonationPromptDialog'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX } from '@verbweaver/shared'
 import { useProjectStore } from '../store/projectStore'
@@ -16,9 +17,48 @@ function Layout() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const groupRef = useRef<any>(null)
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false)
+  const [showDonationPrompt, setShowDonationPrompt] = useState(false)
   const { setCurrentProjectPath, currentProject, currentProjectPath } = useProjectStore()
   const tabStore = useTabStore()
   const navigate = useNavigate()
+  // One-time donation prompt on 5th app open (idempotent per session)
+  useEffect(() => {
+    try {
+      // Prevent double-increment within a single app session (e.g., StrictMode/dev remounts)
+      const sessionGuardKey = 'verbweaver_session_incremented'
+      if (sessionStorage.getItem(sessionGuardKey) === 'true') return
+      sessionStorage.setItem(sessionGuardKey, 'true')
+
+      const alreadyShown = localStorage.getItem('verbweaver_donation_prompt_shown') === 'true'
+      const raw = localStorage.getItem('verbweaver_open_count')
+      const prev = raw ? parseInt(raw, 10) || 0 : 0
+      const next = prev + 1
+      localStorage.setItem('verbweaver_open_count', String(next))
+      if (!alreadyShown && next === 5) {
+        localStorage.setItem('verbweaver_donation_prompt_shown', 'true')
+        setShowDonationPrompt(true)
+      }
+    } catch {}
+  }, [])
+
+  const handleDonate = () => {
+    try {
+      if (isElectron && (window as any).electronAPI?.openExternal) {
+        ;(window as any).electronAPI.openExternal('https://verbweaver.design/donate')
+      } else {
+        window.open('https://verbweaver.design/donate', '_blank', 'noopener,noreferrer')
+      }
+    } catch {
+      try { window.open('https://verbweaver.design/donate', '_blank', 'noopener,noreferrer') } catch {}
+    }
+    setShowDonationPrompt(false)
+  }
+
+  const handleCloseDonationPrompt = () => {
+    try { localStorage.setItem('verbweaver_donation_prompt_shown', 'true') } catch {}
+    setShowDonationPrompt(false)
+  }
+
 
   useEffect(() => {
     // Per-project tab persistence: on project change, load tab set for that project from localStorage
@@ -164,6 +204,11 @@ function Layout() {
       <NewProjectDialog 
         isOpen={showNewProjectDialog}
         onClose={() => setShowNewProjectDialog(false)}
+      />
+      <DonationPromptDialog
+        isOpen={showDonationPrompt}
+        onDonate={handleDonate}
+        onClose={handleCloseDonationPrompt}
       />
     </div>
   )
