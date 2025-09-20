@@ -166,6 +166,10 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     const gitRoot = (preferences.gitProjectsRoot as string) || process.env.GIT_PROJECTS_ROOT || defaultGitRoot;
     const globalTemplatesDir = (store.get('globalTemplatesDir') as string) || process.env.GLOBAL_TEMPLATES_DIR || defaultGlobalTemplates;
 
+    // Sanitize environment for backend: Electron/Node often set DEBUG=electron*, which breaks Pydantic bool parsing
+    const envBase: NodeJS.ProcessEnv = { ...process.env };
+    delete envBase.DEBUG;
+
     if (useBundledBinary) {
       const platformDir = process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux');
       const exeName = process.platform === 'win32' ? 'verbweaver-backend.exe' : 'verbweaver-backend';
@@ -178,7 +182,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       // Spawn bundled backend directly (no shell) so we track the real PID and can terminate it reliably
       backendProcess = spawn(binaryPath, [], {
         env: {
-          ...process.env,
+          ...envBase,
           PORT: port.toString(),
           DATABASE_URL: dbUrl,
           GIT_PROJECTS_ROOT: gitRoot,
@@ -229,7 +233,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       ], {
         cwd: backendPath,
         env: {
-          ...process.env,
+          ...envBase,
           PYTHONUNBUFFERED: '1',
           DATABASE_URL: dbUrl,
           GIT_PROJECTS_ROOT: gitRoot,
