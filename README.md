@@ -21,7 +21,7 @@ Currently, the desktop application is in Beta. The web server version is under d
 
 ### 🖥️ Desktop Application (Recommended for Individual Writers)
 
-The desktop application provides the best offline experience and bundles the frontend, a lightweight local backend, and default templates. It offers unique advantages:
+The desktop application provides the best offline experience and bundles the frontend, a lightweight local backend, and default templates. It offers unique advantages compared to the web application:
 
 #### Features
 - **Offline Mode**: Work without internet connection
