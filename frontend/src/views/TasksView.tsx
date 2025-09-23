@@ -676,10 +676,41 @@ function TasksView() {
 
     if (!over || !currentProject) return
 
-    const nodePath = active.id as string
-    const newStatus = over.id as string
+    const nodePath = String(active.id)
+    const node = useNodeStore.getState().nodes.get(nodePath)
+    if (!node) return
 
-    updateTaskStatus(nodePath, newStatus as TaskState)
+    // Determine previous status for comparison
+    const prevStatus = (node.taskStatus || (node.metadata?.task?.status as string) || defaultColumnId || columns[0]?.id || 'todo') as string
+
+    // Determine target column id robustly
+    let targetColumnId: string | null = null
+    const overData: any = (over as any)?.data?.current
+    const sortable = overData?.sortable
+    if (sortable?.containerId) {
+      targetColumnId = String(sortable.containerId)
+    } else {
+      targetColumnId = String(over.id)
+    }
+
+    // If over.id is actually a task id (node path), infer its containing column
+    if (targetColumnId && !columns.some(c => c.id === targetColumnId)) {
+      for (const col of columns) {
+        const list = getTasksByStatus(col.id)
+        if (list.some(t => t.path === targetColumnId)) {
+          targetColumnId = col.id
+          break
+        }
+      }
+    }
+
+    // If target is still unknown or invalid, do nothing
+    if (!targetColumnId || !columns.some(c => c.id === targetColumnId)) return
+
+    // No-op if dropping back into the same column
+    if (targetColumnId === prevStatus) return
+
+    updateTaskStatus(nodePath, targetColumnId as TaskState)
   }
 
   const getTasksByStatus = (status: string) => {
