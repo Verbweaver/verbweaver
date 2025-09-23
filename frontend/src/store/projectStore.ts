@@ -15,6 +15,8 @@ interface ProjectState {
   isLoading: boolean
   error: string | null
   hasLoadedOnce: boolean // Add flag to track if projects have been loaded at least once
+  _pullTimer?: number | null
+  _pushTimer?: number | null
   
   loadProjects: () => Promise<void>
   selectProject: (projectId: string) => void
@@ -22,6 +24,8 @@ interface ProjectState {
   createProject: (project: Omit<ProjectConfig, 'id' | 'created' | 'modified'>) => Promise<void>
   updateProject: (projectId: string, updates: Partial<ProjectConfig>) => Promise<void>
   deleteProject: (projectId: string) => Promise<void>
+  startCollaborationSchedulers: () => Promise<void>
+  stopCollaborationSchedulers: () => void
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -31,6 +35,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   isLoading: false,
   error: null,
   hasLoadedOnce: false,
+  _pullTimer: null,
+  _pushTimer: null,
 
   loadProjects: async () => {
     // For web: check auth status from useAuthStore
@@ -101,6 +107,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (project) {
       set({ currentProject: project })
       localStorage.setItem('verbweaver_active_project', projectId)
+      get().stopCollaborationSchedulers()
+      get().startCollaborationSchedulers()
     }
   },
 
@@ -170,6 +178,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         }))
         
         existingProject = projectConfig
+        get().stopCollaborationSchedulers()
+        get().startCollaborationSchedulers()
       } else {
         // Convert backend Project to ProjectConfig format
         const projectConfig: ProjectConfig = {
@@ -329,6 +339,74 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set({ error: (error as Error).message, isLoading: false })
       toast.error('Failed to delete project')
     }
+  }
+  ,
+  startCollaborationSchedulers: async () => {
+    const { currentProject, currentProjectPath } = get()
+    if (!currentProject && !currentProjectPath) return
+    try {
+      let collab: any = {}
+      if (isElectron && (window as any).electronAPI) {
+        // Electron: read per-user preferences only
+        try {
+          const prefs = await (window as any).electronAPI.getPreferences()
+          collab = prefs?.collaboration || {}
+        } catch {}
+      } else {
+        // Web: merge project defaults and user overrides
+        const settings = currentProject ? await projectsApi.getProjectSettings((currentProject as any)?.id || '') : {}
+        collab = (settings?.collaboration || {}) as any
+        try {
+          const token = (await import('../services/auth')).useAuthStore.getState().accessToken
+          if (token) {
+            const res = await fetch(`${location.origin}/api/v1/users/me/preferences`, { headers: { 'Authorization': `Bearer ${token}` } })
+            if (res.ok) {
+              const data = await res.json()
+              if (data?.preferences?.collaboration) {
+                collab = { ...collab, ...data.preferences.collaboration }
+              }
+            }
+          }
+        } catch {}
+      }
+      // Clear existing timers
+      const s = get()
+      if (s._pullTimer) { clearInterval(s._pullTimer as any); set({ _pullTimer: null }) }
+      if (s._pushTimer) { clearInterval(s._pushTimer as any); set({ _pushTimer: null }) }
+      const unitToMs = (n: number, u: 'seconds'|'minutes'|'hours') => u==='seconds'?n*1000:u==='minutes'?n*60000:n*3600000
+      const schedule = (kind: 'pull'|'push') => {
+        const cfg = kind==='pull'?collab?.autoPull:collab?.autoPush
+        if (!cfg?.enabled) return
+        const ms = unitToMs(Math.max(1, Number(cfg.interval||1)), cfg.unit||'minutes')
+        const timer = setInterval(async () => {
+          try {
+            if (isElectron && (window as any).electronAPI && currentProjectPath) {
+              if (kind==='pull') await (window as any).electronAPI.gitPull(currentProjectPath)
+              else await (window as any).electronAPI.gitPush(currentProjectPath)
+            } else if (currentProject) {
+              const api = (await import('../api/gitApi')).gitApi
+              if (kind==='pull') await api.pull(currentProject.id)
+              else await api.push(currentProject.id)
+            }
+          } catch (e: any) {
+            try {
+              const { default: toast } = await import('react-hot-toast')
+              const msg = (e?.response?.data?.detail) || e?.message || String(e)
+              toast.error(`Git ${kind} failed: ${msg}`)
+            } catch {}
+          }
+        }, ms) as any
+        if (kind==='pull') set({ _pullTimer: timer })
+        else set({ _pushTimer: timer })
+      }
+      schedule('pull')
+      schedule('push')
+    } catch {}
+  },
+  stopCollaborationSchedulers: () => {
+    const s = get()
+    if (s._pullTimer) { clearInterval(s._pullTimer as any); set({ _pullTimer: null }) }
+    if (s._pushTimer) { clearInterval(s._pushTimer as any); set({ _pushTimer: null }) }
   }
 }))
 

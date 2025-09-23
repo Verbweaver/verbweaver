@@ -13,6 +13,7 @@ const settingsTabs = [
   // Security is web-only; hide on Electron desktop
   ...(!isElectron ? [{ name: 'Security', href: '/settings/security', icon: Shield, exact: false }] : []),
   { name: 'Project', href: '/settings/project', icon: FolderOpen, exact: false },
+  { name: 'Collaboration', href: '/settings/collaboration', icon: GitBranch, exact: false },
   { name: 'Templates', href: '/settings/templates', icon: FileCode, exact: false },
   ...(isElectron ? [{ name: 'Dependencies', href: '/settings/dependencies', icon: AlertTriangle, exact: false }] : []),
 ];

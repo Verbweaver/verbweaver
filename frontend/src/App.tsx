@@ -19,6 +19,7 @@ import ProfileSettingsPage from './pages/UserSettings/ProfileSettingsPage'
 import AppearanceSettingsPage from './pages/UserSettings/AppearanceSettingsPage'
 import ProjectSettingsPage from './pages/UserSettings/ProjectSettingsPage'
 import TemplatesSettingsPage from './pages/UserSettings/TemplatesSettingsPage'
+import CollaborationSettingsPage from './pages/UserSettings/CollaborationSettingsPage'
 import DependenciesSettingsPage from './pages/UserSettings/DependenciesSettingsPage'
 import DependencyChecker from './components/DependencyChecker'
 import { useProjectStore } from './store/projectStore'
@@ -142,6 +143,7 @@ function App() {
             <Route path="appearance" element={<AppearanceSettingsPage />} />
             {!window.electronAPI && <Route path="security" element={<SecuritySettingsPage />} />}
             <Route path="project" element={<ProjectSettingsPage />} />
+            <Route path="collaboration" element={<CollaborationSettingsPage />} />
             <Route path="templates" element={<TemplatesSettingsPage />} />
             <Route path="dependencies" element={<DependenciesSettingsPage />} />
           </Route>
