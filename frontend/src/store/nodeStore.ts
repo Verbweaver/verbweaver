@@ -5,6 +5,7 @@ import { useProjectStore } from './projectStore'
 import * as yaml from 'js-yaml'
 import { getApiUrl } from '@verbweaver/shared'
 import { apiClient } from '../api/client'
+import { gitApi } from '../api/gitApi'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
@@ -365,7 +366,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
   },
 
   updateNode: async (path: string, updates: { metadata?: Partial<MarkdownMetadata>, content?: string }) => {
-    const { currentProjectPath } = useProjectStore.getState();
+    const { currentProject, currentProjectPath } = useProjectStore.getState();
     const node = get().nodes.get(path);
     if (!node) throw new Error('Node not found');
     
@@ -377,6 +378,15 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     
     const updatedContent = updates.content !== undefined ? updates.content : node.content;
     
+    const wasTask = (node.metadata as any)?.task
+    const willBeTask = (updatedMetadata as any)?.task
+    const taskChanged = (() => {
+      try {
+        if (!wasTask && !willBeTask) return false
+        return JSON.stringify(wasTask || {}) !== JSON.stringify(willBeTask || {})
+      } catch { return false }
+    })()
+
     if (node.isMarkdown && updatedContent !== null) {
       const fileContent = stringifyMarkdownWithFrontMatter(updatedMetadata, updatedContent);
       
@@ -401,7 +411,29 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         set(state => ({
           nodes: new Map(state.nodes).set(path, updatedNode)
         }));
-        
+        // Optional auto-commit when task details change
+        if (taskChanged) {
+          try {
+            // Read tasks settings to check flag; tolerate failures silently
+            const projectId = currentProject?.id
+            if (isElectron && window.electronAPI && currentProjectPath) {
+              // Desktop: read settings file via backend API (same as web) since client is configured
+              // If no currentProject (desktop), skip auto-commit
+              if (projectId) {
+                const ts = await (await apiClient.get(`/projects/${projectId}/settings/tasks`)).data?.tasks
+                if (ts?.autoCommitOnTaskUpdate) {
+                  // Stage and commit this file only
+                  await window.electronAPI.gitCommit(currentProjectPath, `chore(task): update ${node.metadata?.title || node.name}`, [path])
+                }
+              }
+            } else if (!isElectron && projectId) {
+              const ts = await (await apiClient.get(`/projects/${projectId}/settings/tasks`)).data?.tasks
+              if (ts?.autoCommitOnTaskUpdate) {
+                await gitApi.commit(projectId, `chore(task): update ${node.metadata?.title || node.name}`, [path])
+              }
+            }
+          } catch {}
+        }
       } catch (error) {
         toast.error('Failed to update node');
         throw error;
@@ -431,6 +463,26 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         set(state => ({
           nodes: new Map(state.nodes).set(path, updatedNode)
         }));
+
+        // Optional auto-commit when task-only metadata changes (non-markdown files)
+        if (taskChanged) {
+          try {
+            const projectId = currentProject?.id
+            if (isElectron && window.electronAPI && currentProjectPath) {
+              if (projectId) {
+                const ts = await (await apiClient.get(`/projects/${projectId}/settings/tasks`)).data?.tasks
+                if (ts?.autoCommitOnTaskUpdate) {
+                  await window.electronAPI.gitCommit(currentProjectPath, `chore(task): update ${node.metadata?.title || node.name}`, [metadataPath])
+                }
+              }
+            } else if (!isElectron && projectId) {
+              const ts = await (await apiClient.get(`/projects/${projectId}/settings/tasks`)).data?.tasks
+              if (ts?.autoCommitOnTaskUpdate) {
+                await gitApi.commit(projectId, `chore(task): update ${node.metadata?.title || node.name}`, [path])
+              }
+            }
+          } catch {}
+        }
         
       } catch (error) {
         toast.error('Failed to update node metadata');

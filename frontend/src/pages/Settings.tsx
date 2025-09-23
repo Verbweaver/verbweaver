@@ -26,7 +26,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="p-4 md:p-6 max-w-none w-full flex flex-col md:flex-row md:space-x-6">
+    <div className="p-4 md:p-6 max-w-none w-full h-full flex flex-col md:flex-row md:space-x-6 overflow-hidden">
       <div className="md:w-1/4 mb-6 md:mb-0 md:max-h-[calc(100vh-2rem)] md:overflow-auto">
         <h1 className="text-2xl font-bold mb-6 text-foreground">Settings</h1>
         <nav className="space-y-1">
@@ -61,7 +61,7 @@ export default function Settings() {
         )}
       </div>
 
-      <div className="md:w-3/4 md:max-h-[calc(100vh-2rem)] md:overflow-auto">
+      <div className="md:w-3/4 flex-1 min-h-0 overflow-auto">
         <Outlet />
       </div>
     </div>
