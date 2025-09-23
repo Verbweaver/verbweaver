@@ -358,7 +358,7 @@ export default function VersionControlView() {
                   onChange={() => handleFileToggle(change.path)}
                   className="rounded"
                 />
-                <span className="flex-1 text-sm truncate">{change.path}</span>
+                <span className="flex-1 text-sm truncate" title={change.path}>{change.path}</span>
                 <span className={`text-xs px-1 rounded ${
                   change.status === 'added' ? 'bg-green-500/20 text-green-500' :
                   change.status === 'deleted' ? 'bg-red-500/20 text-red-500' :
