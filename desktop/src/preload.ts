@@ -187,6 +187,8 @@ const electronAPI = {
     ipcRenderer.on('update:available', callback);
     return () => ipcRenderer.removeListener('update:available', callback);
   },
+  // Manual update check
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
   onProjectOpened: (callback: (event: IpcRendererEvent, path: string) => void) => {
     ipcRenderer.on('project:opened', callback);
     return () => ipcRenderer.removeListener('project:opened', callback);
