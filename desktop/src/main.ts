@@ -613,6 +613,22 @@ function createMenu() {
 
 // IPC Handlers with error handling
 function setupIpcHandlers() {
+  // Manual update check from renderer
+  ipcMain.handle('update:check', async () => {
+    try {
+      autoUpdater.autoDownload = true;
+      const result = await autoUpdater.checkForUpdates();
+      const update = result?.updateInfo;
+      const current = app.getVersion();
+      if (update && update.version && update.version !== current) {
+        // Will prompt when downloaded, as in menu handler
+        return { updateAvailable: true, version: update.version };
+      }
+      return { updateAvailable: false, version: current };
+    } catch (e: any) {
+      return { error: String(e) };
+    }
+  });
   // File operations
   ipcMain.handle('dialog:openFile', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
