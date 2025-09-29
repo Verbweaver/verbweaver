@@ -124,6 +124,17 @@ jobs:
             npx electron-builder --linux --publish never
           fi
 
+      - name: Staple notarization ticket (macOS, branches)
+        if: startsWith(github.ref, 'refs/heads/') && runner.os == 'macOS'
+        working-directory: desktop
+        shell: bash
+        run: |
+          set -e
+          echo "Stapling .app bundles..."
+          find dist-app -type d -name "*.app" -print0 | xargs -0 -I{} xcrun stapler staple -v "{}" || true
+          echo "Stapling DMG/ZIP artifacts..."
+          find dist-app -type f \( -name "*.dmg" -o -name "*.zip" \) -print0 | xargs -0 -I{} xcrun stapler staple -v "{}" || true
+
       - name: Package desktop MSIX (no publish for branches)
         if: startsWith(github.ref, 'refs/heads/') && runner.os == 'Windows'
         working-directory: desktop
@@ -153,6 +164,17 @@ jobs:
           else
             npm run dist:linux
           fi
+
+      - name: Staple notarization ticket (macOS, tags)
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'macOS'
+        working-directory: desktop
+        shell: bash
+        run: |
+          set -e
+          echo "Stapling .app bundles..."
+          find dist-app -type d -name "*.app" -print0 | xargs -0 -I{} xcrun stapler staple -v "{}" || true
+          echo "Stapling DMG/ZIP artifacts..."
+          find dist-app -type f \( -name "*.dmg" -o -name "*.zip" \) -print0 | xargs -0 -I{} xcrun stapler staple -v "{}" || true
 
       - name: Package and publish Windows MSIX (tags/releases)
         if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
