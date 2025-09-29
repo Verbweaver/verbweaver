@@ -2813,6 +2813,32 @@ function buildAugmentedEnvForSpawns(): NodeJS.ProcessEnv {
     additions.push('/usr/local/bin', '/usr/bin', '/bin', '/snap/bin');
   }
 
+  // Include bundled tools directory, platform subdir, and arch subdir when present
+  try {
+    const toolsPath = join(process.resourcesPath, 'tools');
+    if (existsSync(toolsPath)) {
+      const platformDir = process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux');
+      const platformTools = path.join(toolsPath, platformDir);
+
+      // Determine arch-specific folder naming by platform
+      let archSegment: string | null = null;
+      if (process.platform === 'darwin') {
+        archSegment = process.arch === 'arm64' ? 'arm64' : 'x86_64';
+      } else if (process.platform === 'linux') {
+        if (process.arch === 'arm64') archSegment = 'arm64';
+        else if (process.arch === 'x64') archSegment = 'amd64';
+      }
+
+      if (archSegment) {
+        const archTools = path.join(platformTools, archSegment);
+        if (existsSync(archTools)) additions.unshift(archTools);
+      }
+
+      if (existsSync(platformTools)) additions.unshift(platformTools);
+      additions.unshift(toolsPath);
+    }
+  } catch {}
+
   const currentPath = process.env.PATH || (process.env as any).Path || '';
   const currentParts = currentPath.split(pathSeparator).filter(Boolean);
   const uniqueAdditions = additions.filter(p => !currentParts.includes(p));
@@ -2827,13 +2853,48 @@ function buildAugmentedEnvForSpawns(): NodeJS.ProcessEnv {
   return env;
 }
 
+// Prefer bundled executable if present; otherwise fall back to system PATH
+function resolveBundledExecutable(binaryName: string): string | null {
+  try {
+    const toolsRoot = join(process.resourcesPath, 'tools');
+    if (!existsSync(toolsRoot)) return null;
+
+    const platformDir = process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux');
+    const platformTools = path.join(toolsRoot, platformDir);
+
+    // Determine arch-specific folder naming by platform
+    let archSegment: string | null = null;
+    if (process.platform === 'darwin') {
+      archSegment = process.arch === 'arm64' ? 'arm64' : 'x86_64';
+    } else if (process.platform === 'linux') {
+      if (process.arch === 'arm64') archSegment = 'arm64';
+      else if (process.arch === 'x64') archSegment = 'amd64';
+    }
+
+    const candidates: string[] = [];
+    const fileName = process.platform === 'win32' ? `${binaryName}.exe` : binaryName;
+
+    if (archSegment) {
+      candidates.push(path.join(platformTools, archSegment, fileName));
+    }
+    candidates.push(path.join(platformTools, fileName));
+    candidates.push(path.join(toolsRoot, fileName));
+
+    for (const c of candidates) {
+      if (existsSync(c)) return c;
+    }
+  } catch {}
+  return null;
+}
+
 async function checkDependencies(): Promise<DependencyCheck[]> {
   const dependencies: DependencyCheck[] = [];
   
   // Check Pandoc
   try {
     const result = await new Promise<{ success: boolean; version?: string }>((resolve) => {
-      const child = require('child_process').spawn('pandoc', ['--version'], {
+      const pandocCmd = resolveBundledExecutable('pandoc') || 'pandoc';
+      const child = require('child_process').spawn(pandocCmd, ['--version'], {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: buildAugmentedEnvForSpawns()
       });
@@ -2877,7 +2938,8 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
   try {
     const checkEngine = async (cmd: string) => {
       return await new Promise<{ success: boolean; version?: string }>((resolve) => {
-        const child = require('child_process').spawn(cmd, ['--version'], {
+        const bin = resolveBundledExecutable(cmd) || cmd;
+        const child = require('child_process').spawn(bin, ['--version'], {
           stdio: ['pipe', 'pipe', 'pipe'],
           env: buildAugmentedEnvForSpawns()
         });
