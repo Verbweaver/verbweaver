@@ -14,7 +14,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+          - os: ubuntu-latest
+          - os: macos-latest
+            mac_arch: arm64
+          - os: macos-latest
+            mac_arch: x64
 
     steps:
       - name: Checkout
@@ -70,6 +76,34 @@ jobs:
         working-directory: desktop
         run: npm run build
 
+      - name: Prune bundled tools for target platform
+        shell: bash
+        run: |
+          set -e
+          TOOLS_DIR="desktop/resources/tools"
+          if [ ! -d "$TOOLS_DIR" ]; then
+            echo "No tools directory to prune"
+            exit 0
+          fi
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            rm -rf "$TOOLS_DIR/mac" "$TOOLS_DIR/linux"
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            rm -rf "$TOOLS_DIR/win" "$TOOLS_DIR/linux"
+            if [ "${{ matrix.mac_arch }}" = "arm64" ]; then
+              rm -rf "$TOOLS_DIR/mac/x86_64"
+            else
+              rm -rf "$TOOLS_DIR/mac/arm64"
+            fi
+          else
+            rm -rf "$TOOLS_DIR/win" "$TOOLS_DIR/mac"
+            ARCH="$(uname -m)"
+            if [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then
+              rm -rf "$TOOLS_DIR/linux/arm64"
+            else
+              rm -rf "$TOOLS_DIR/linux/amd64"
+            fi
+          fi
+
       - name: Expose git metadata to desktop (for publish)
         shell: bash
         run: |
@@ -111,7 +145,11 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             npx electron-builder --win --publish never
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            npx electron-builder --mac --publish never
+            if [[ "${{ matrix.mac_arch }}" == "arm64" ]]; then
+              npx electron-builder --mac --arm64 --publish never
+            else
+              npx electron-builder --mac --x64 --publish never
+            fi
           else
             npx electron-builder --linux --publish never
           fi
@@ -139,7 +177,11 @@ jobs:
             if [[ -n "$WIN_CSC_KEY_PASSWORD" ]]; then export CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"; fi
             npx electron-builder --win --publish never
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            npx electron-builder --mac --publish never
+            if [[ "${{ matrix.mac_arch }}" == "arm64" ]]; then
+              npx electron-builder --mac --arm64 --publish never
+            else
+              npx electron-builder --mac --x64 --publish never
+            fi
           else
             npx electron-builder --linux --publish never
           fi
@@ -184,7 +226,11 @@ jobs:
             if [[ -n "$WIN_CSC_KEY_PASSWORD" ]]; then export CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"; fi
             npm run dist:win
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            npm run dist:mac
+            if [[ "${{ matrix.mac_arch }}" == "arm64" ]]; then
+              npx electron-builder --mac --arm64
+            else
+              npx electron-builder --mac --x64
+            fi
           else
             npm run dist:linux
           fi
