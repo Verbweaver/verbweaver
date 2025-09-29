@@ -307,7 +307,10 @@ This project is licensed under the MIT License + Commons Clause - see the [LICEN
 The MIT License ensures that you have unrestricted rights to use, modify, and redistribute Verbweaver free of charge. However, the Commons Clause rider prohibits you from selling Verbweaver or a providing a service (such as a cloud-hosting solution) "whose value derives, entirely or substantially" from Verbweaver. If you wish to purchase a license exception to this clause, then please contact us with your offer.
 
 ## 🙏 Acknowledgments
-
+- [Pandoc](https://pandoc.org/) for the document file type conversion
+  - Pandoc is a separate program invoked by Verbweaver to generate documents in various formats. It is not "part of" Verbweaver in any way.
+  - The source code to the exact version of Pandoc that Verbweaver uses may be found at: https://github.com/jgm/pandoc/tree/3.8.1
+- [Tectonic](https://tectonic-typesetting.github.io/en-US/) for the LaTeX typesetting system that can be run all as one binary
 - [FastAPI](https://fastapi.tiangolo.com/) for the excellent Python web framework
 - [React](https://reactjs.org/) for the UI library
 - [React Flow](https://reactflow.dev/) for graph visualization
