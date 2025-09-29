@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { templatesApi, Template } from '../api/templates'
 import { desktopTemplatesApi } from '../api/desktop-templates'
 import { useProjectStore } from '../store/projectStore'
+import { projectsApi } from '../api/projects'
 import toast from 'react-hot-toast'
 import { X, Loader2 } from 'lucide-react'
 
@@ -26,6 +27,7 @@ export function TemplateSelectionDialog({
   const [nodeName, setNodeName] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [contentPreview, setContentPreview] = useState<string>('')
+  const [defaultTemplatePath, setDefaultTemplatePath] = useState<string | null>(null)
 
   useEffect(() => {
     if (isOpen && (currentProject || currentProjectPath)) {
@@ -79,7 +81,33 @@ export function TemplateSelectionDialog({
       }
       const combined = [emptyTemplate, ...templateList]
       setTemplates(combined)
-      // Default select Empty
+
+      // Load project default template (web path only)
+      try {
+        if (!isElectron && currentProject?.id) {
+          const ts = await projectsApi.getTasksSettings(currentProject.id)
+          if (typeof ts.defaultTemplatePath === 'string') {
+            setDefaultTemplatePath(ts.defaultTemplatePath)
+          }
+        }
+      } catch {}
+
+      // Determine initial selection:
+      // 1) Prefer configured default if present in list
+      if (defaultTemplatePath) {
+        const found = combined.find(t => t.path === defaultTemplatePath)
+        if (found) {
+          setSelectedTemplate(found)
+          return
+        }
+      }
+      // 2) Else prefer Basic.md if present
+      const basic = combined.find(t => /(^|\/)Basic\.md$/i.test(t.path))
+      if (basic) {
+        setSelectedTemplate(basic)
+        return
+      }
+      // 3) Else fall back to special Empty
       setSelectedTemplate(emptyTemplate)
     } catch (error) {
       console.error('Failed to load templates:', error)

@@ -91,7 +91,7 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
     loadTemplates()
   }, [currentProjectPath, projectId, defaultDueDate])
 
-  // Choose default template if configured or if Empty.md exists
+  // Choose default template if configured or if Basic.md exists
   useEffect(() => {
     if (selectedTemplatePath) return
     // Prefer configured defaultTemplatePath if it exists in the list
@@ -99,10 +99,10 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
       setSelectedTemplatePath(defaultTemplatePath)
       return
     }
-    // Else prefer templates/Empty.md if present
-    const empty = templates.find(t => /(^|\/)Empty\.md$/i.test(t.path))
-    if (empty) {
-      setSelectedTemplatePath(empty.path)
+    // Else prefer templates/Basic.md if present
+    const basic = templates.find(t => /(^|\/)Basic\.md$/i.test(t.path))
+    if (basic) {
+      setSelectedTemplatePath(basic.path)
       return
     }
     // Else leave as null to require user selection

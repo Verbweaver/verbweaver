@@ -265,7 +265,7 @@ export default function ProjectSettingsPage() {
         <div>
           <h3 className="text-md font-medium text-foreground mb-2">Default Template</h3>
           <p className="text-sm text-muted-foreground mb-3">
-            The template pre-selected when creating a new task/node. If not set, we'll try <code>templates/Empty.md</code> if it exists.
+            The template pre-selected when creating a new task/node. If not set, we'll try <code>templates/Basic.md</code> if it exists.
           </p>
           <div className="flex items-center gap-2">
             <select
