@@ -1069,22 +1069,7 @@ function setupIpcHandlers() {
         await copyTemplatesRecursive(srcCompiler, join(templatesDir, 'compiler'));
       }
 
-      // If no template was copied, ensure at least a minimal Empty.md exists
-      const defaultEmptyPath = join(templatesDir, 'nodes', 'Empty.md');
-      if (!existsSync(defaultEmptyPath)) {
-        const emptyTemplateContent = `---
-title: Empty
-type: node
-description: A blank starting point.
-tags: [empty, basic]
----
-
-# Empty Node
-
-Start your content here.
-`;
-        await writeFile(defaultEmptyPath, emptyTemplateContent, 'utf-8');
-      }
+      // Do not auto-generate Empty.md; only copy templates that exist in defaults
       
       // Initialize Git repository
       const { spawn } = require('child_process');
