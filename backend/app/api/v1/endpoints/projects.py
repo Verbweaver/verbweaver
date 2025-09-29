@@ -458,11 +458,12 @@ async def get_tasks_settings(
     try:
         with open(settings_file, 'r', encoding='utf-8') as f:
             settings = yaml.safe_load(f) or {}
-        
-        tasks_settings = settings.get('tasks') or settings.get('threads', {})
+
+        # Read tasks settings (fallback to legacy key) and pass through all values,
+        # while ensuring required defaults for columns and defaultColumnId.
+        tasks_settings = settings.get('tasks') or settings.get('threads', {}) or {}
         columns = tasks_settings.get('columns', [])
-        
-        # Return default columns if none are configured
+
         if not columns:
             default_columns = [
                 {"id": "todo", "title": "Todo", "color": "bg-blue-500"},
@@ -470,10 +471,16 @@ async def get_tasks_settings(
                 {"id": "review", "title": "Review", "color": "bg-purple-500"},
                 {"id": "done", "title": "Done", "color": "bg-green-500"}
             ]
-            return {"tasks": {"columns": default_columns, "defaultColumnId": default_columns[0]['id']}}
-        
-        return {"tasks": {"columns": columns, "defaultColumnId": tasks_settings.get('defaultColumnId', columns[0]['id'] if columns else None)}}
-        
+            return {"tasks": {**tasks_settings, "columns": default_columns, "defaultColumnId": tasks_settings.get('defaultColumnId', default_columns[0]['id'])}}
+
+        # Ensure defaultColumnId is set if missing
+        tasks_response = {**tasks_settings}
+        if 'defaultColumnId' not in tasks_response:
+            tasks_response['defaultColumnId'] = columns[0]['id'] if columns else None
+        tasks_response['columns'] = columns
+
+        return {"tasks": tasks_response}
+
     except Exception as e:
         logger.error(f"Error reading tasks settings: {e}")
         raise HTTPException(
@@ -533,20 +540,20 @@ async def update_tasks_settings(
                 settings = yaml.safe_load(f) or {}
         else:
             settings = {}
-        
+
         # Update tasks settings and mirror to legacy
         settings['tasks'] = tasks_settings
         settings['threads'] = tasks_settings
-        
+
         # Write back to file
         with open(settings_file, 'w', encoding='utf-8') as f:
             yaml.dump(settings, f, default_flow_style=False, allow_unicode=True)
-        
+
         # Commit changes to git
         await git_service.commit_changes("Update tasks settings", [str(settings_file)])
-        
+
         return {"message": "Tasks settings updated successfully"}
-        
+
     except Exception as e:
         logger.error(f"Error updating tasks settings: {e}")
         raise HTTPException(

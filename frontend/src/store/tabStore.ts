@@ -30,7 +30,7 @@ export interface Tab {
   id: string
   path: string
   title: string
-  type: 'graph' | 'editor' | 'tasks' | 'version' | 'compiler' | 'dashboard' | 'settings' | 'help'
+  type: 'graph' | 'editor' | 'tasks' | 'version' | 'compiler' | 'dashboard' | 'settings' | 'help' | 'support'
   metadata?: {
     filePath?: string // For editor tabs
     isModified?: boolean // Track if file has unsaved changes

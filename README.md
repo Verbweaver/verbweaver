@@ -21,7 +21,7 @@ Currently, the desktop application is in Beta. The web server version is under d
 
 ### 🖥️ Desktop Application (Recommended for Individual Writers)
 
-The desktop application provides the best offline experience and bundles the frontend, a lightweight local backend, and default templates. It offers unique advantages:
+The desktop application provides the best offline experience and bundles the frontend, a lightweight local backend, and default templates. It offers unique advantages compared to the web application:
 
 #### Features
 - **Offline Mode**: Work without internet connection
@@ -35,7 +35,8 @@ The desktop application provides the best offline experience and bundles the fro
 
 Installers are available for each release:
 - Windows: `.exe` installer
-- macOS: `.dmg` installer  
+- macOS: `.dmg` installer
+  - If the MacOS `.app` that you have is unsigned (such as by downloading the version automatically compiled by GitHub Actions), you may need to removed the quarantined attribute in order to run it: `xattr -dr com.apple.quarantine Verbweaver.app`
 - Linux: `.AppImage` (or `.deb` / `.rpm` installers)
 
 #### Building the Desktop mode manually

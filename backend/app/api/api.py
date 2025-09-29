@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.endpoints import auth, projects, graph, editor, tasks, git, compiler, templates
+from app.api.endpoints import auth, projects, graph, editor, tasks, git, compiler, templates, users
 
 api_router = APIRouter()
 
@@ -12,3 +12,4 @@ api_router.include_router(tasks.router, tags=["tasks"])
 api_router.include_router(git.router, tags=["git"])
 api_router.include_router(compiler.router, tags=["compiler"])
 api_router.include_router(templates.router, tags=["templates"]) 
+api_router.include_router(users.router)

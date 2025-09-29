@@ -166,6 +166,10 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     const gitRoot = (preferences.gitProjectsRoot as string) || process.env.GIT_PROJECTS_ROOT || defaultGitRoot;
     const globalTemplatesDir = (store.get('globalTemplatesDir') as string) || process.env.GLOBAL_TEMPLATES_DIR || defaultGlobalTemplates;
 
+    // Sanitize environment for backend: Electron/Node often set DEBUG=electron*, which breaks Pydantic bool parsing
+    const envBase: NodeJS.ProcessEnv = { ...process.env };
+    delete envBase.DEBUG;
+
     if (useBundledBinary) {
       const platformDir = process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux');
       const exeName = process.platform === 'win32' ? 'verbweaver-backend.exe' : 'verbweaver-backend';
@@ -178,7 +182,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       // Spawn bundled backend directly (no shell) so we track the real PID and can terminate it reliably
       backendProcess = spawn(binaryPath, [], {
         env: {
-          ...process.env,
+          ...envBase,
           PORT: port.toString(),
           DATABASE_URL: dbUrl,
           GIT_PROJECTS_ROOT: gitRoot,
@@ -229,7 +233,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       ], {
         cwd: backendPath,
         env: {
-          ...process.env,
+          ...envBase,
           PYTHONUNBUFFERED: '1',
           DATABASE_URL: dbUrl,
           GIT_PROJECTS_ROOT: gitRoot,
@@ -609,6 +613,22 @@ function createMenu() {
 
 // IPC Handlers with error handling
 function setupIpcHandlers() {
+  // Manual update check from renderer
+  ipcMain.handle('update:check', async () => {
+    try {
+      autoUpdater.autoDownload = true;
+      const result = await autoUpdater.checkForUpdates();
+      const update = result?.updateInfo;
+      const current = app.getVersion();
+      if (update && update.version && update.version !== current) {
+        // Will prompt when downloaded, as in menu handler
+        return { updateAvailable: true, version: update.version };
+      }
+      return { updateAvailable: false, version: current };
+    } catch (e: any) {
+      return { error: String(e) };
+    }
+  });
   // File operations
   ipcMain.handle('dialog:openFile', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
@@ -2794,6 +2814,34 @@ interface DependencyCheck {
   installInstructions?: string;
 }
 
+function buildAugmentedEnvForSpawns(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const isWindows = process.platform === 'win32';
+  const pathSeparator = isWindows ? ';' : ':';
+
+  const additions: string[] = [];
+  if (process.platform === 'darwin') {
+    // Common locations for Homebrew, MacPorts, and TeX binaries on macOS
+    additions.push('/usr/local/bin', '/opt/homebrew/bin', '/Library/TeX/texbin', '/opt/local/bin');
+  } else if (process.platform === 'linux') {
+    // Ensure standard binary locations are present for GUI sessions
+    additions.push('/usr/local/bin', '/usr/bin', '/bin', '/snap/bin');
+  }
+
+  const currentPath = process.env.PATH || (process.env as any).Path || '';
+  const currentParts = currentPath.split(pathSeparator).filter(Boolean);
+  const uniqueAdditions = additions.filter(p => !currentParts.includes(p));
+  const newPath = [...uniqueAdditions, ...currentParts].join(pathSeparator);
+
+  env.PATH = newPath;
+  if (isWindows) {
+    // Some Windows environments read Path instead of PATH
+    (env as any).Path = newPath;
+  }
+
+  return env;
+}
+
 async function checkDependencies(): Promise<DependencyCheck[]> {
   const dependencies: DependencyCheck[] = [];
   
@@ -2801,7 +2849,8 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
   try {
     const result = await new Promise<{ success: boolean; version?: string }>((resolve) => {
       const child = require('child_process').spawn('pandoc', ['--version'], {
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: buildAugmentedEnvForSpawns()
       });
       
       let output = '';
@@ -2844,7 +2893,8 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
     const checkEngine = async (cmd: string) => {
       return await new Promise<{ success: boolean; version?: string }>((resolve) => {
         const child = require('child_process').spawn(cmd, ['--version'], {
-          stdio: ['pipe', 'pipe', 'pipe']
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: buildAugmentedEnvForSpawns()
         });
         let output = '';
         child.stdout.on('data', (data: Buffer) => { output += data.toString(); });

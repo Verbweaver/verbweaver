@@ -3,12 +3,13 @@ import clsx from 'clsx'
 import { TAB_HEIGHT } from '@verbweaver/shared'
 import { useTabStore } from '../store/tabStore'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 function TabBar() {
   const navigate = useNavigate()
   const location = useLocation()
   const { tabs, activeTabId, addTab, removeTab, setActiveTab } = useTabStore()
+  const containerRef = useRef<HTMLDivElement>(null)
 
   // Sync current route with active tab
   useEffect(() => {
@@ -78,9 +79,27 @@ function TabBar() {
     navigate('/graph')
   }
 
+  // Enable horizontal scrolling with the mouse wheel (vertical delta -> horizontal scroll)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (e.shiftKey) return
+      if (Math.abs(e.deltaY) > 0 && Math.abs(e.deltaX) === 0) {
+        e.preventDefault()
+        el.scrollLeft += e.deltaY
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+    }
+  }, [])
+
   return (
     <div 
-      className="flex items-center bg-muted/30 border-b border-border overflow-x-auto scrollbar-thin"
+      ref={containerRef}
+      className="flex items-center bg-muted/30 border-b border-border overflow-x-auto overflow-y-hidden scrollbar-thin"
       style={{ height: `${TAB_HEIGHT}px` }}
     >
       {tabs.map((tab) => (

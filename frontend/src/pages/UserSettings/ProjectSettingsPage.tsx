@@ -33,6 +33,7 @@ export default function ProjectSettingsPage() {
   const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [defaultTemplatePath, setDefaultTemplatePath] = useState<string | ''>('');
+  const [autoCommitOnTaskUpdate, setAutoCommitOnTaskUpdate] = useState<boolean>(false);
   const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined;
 
   const supportedFormats = [
@@ -96,6 +97,7 @@ export default function ProjectSettingsPage() {
       if (ts.defaultColumnId) setDefaultColumnId(ts.defaultColumnId);
       if (typeof ts.completedColumnId !== 'undefined') setCompletedColumnId(ts.completedColumnId || null);
       if (typeof ts.defaultTemplatePath === 'string') setDefaultTemplatePath(ts.defaultTemplatePath);
+      if (typeof ts.autoCommitOnTaskUpdate === 'boolean') setAutoCommitOnTaskUpdate(!!ts.autoCommitOnTaskUpdate);
     } catch (e) {
       // Non-fatal; keep defaults
       console.warn('Failed to load tasks settings', e);
@@ -113,6 +115,7 @@ export default function ProjectSettingsPage() {
         defaultColumnId: defId,
         completedColumnId: compId,
         defaultTemplatePath: defaultTemplatePath || undefined,
+        autoCommitOnTaskUpdate: autoCommitOnTaskUpdate,
       });
     } catch (e) {
       console.error('Failed to save tasks settings', e);
@@ -218,35 +221,7 @@ export default function ProjectSettingsPage() {
       )}
 
       <div className="space-y-6">
-        <div>
-          <h3 className="text-md font-medium text-foreground mb-4">Compiler Default Templates</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            Set default templates for each export format. These will be used when no template is selected during export.
-          </p>
-
-          <div className="space-y-4">
-            {supportedFormats.map((format) => (
-              <div key={format.id} className="flex items-center justify-between p-4 border border-border rounded-lg">
-                <div>
-                  <label className="text-sm font-medium text-foreground">
-                    {format.name}
-                  </label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Default template for {format.name} exports
-                  </p>
-                </div>
-                <input
-                  type="text"
-                  value={compilerSettings.defaultTemplates?.[format.id] || ''}
-                  onChange={(e) => handleDefaultTemplateChange(format.id, e.target.value)}
-                  placeholder="e.g., templates/compiler/simple.md"
-                  className="flex-1 ml-4 px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-
+        {/* Tasks section first */}
         <div>
           <h3 className="text-md font-medium text-foreground mb-2">Tasks</h3>
           <p className="text-sm text-muted-foreground mb-3">Manage task statuses (Kanban columns) for this project.</p>
@@ -258,6 +233,32 @@ export default function ProjectSettingsPage() {
             >
               Manage Statuses
             </Button>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              id="vw-auto-commit"
+              type="checkbox"
+              checked={autoCommitOnTaskUpdate}
+              onChange={async (e) => {
+                const next = e.target.checked;
+                setAutoCommitOnTaskUpdate(next);
+                // Persist immediately alongside existing tasks settings
+                if (currentProject) {
+                  try {
+                    await projectsApi.updateTasksSettings(currentProject.id, {
+                      columns: taskColumns,
+                      defaultColumnId,
+                      completedColumnId,
+                      defaultTemplatePath: defaultTemplatePath || undefined,
+                      autoCommitOnTaskUpdate: next,
+                    })
+                  } catch (err) {
+                    console.error('Failed to save auto-commit setting', err)
+                  }
+                }
+              }}
+            />
+            <label htmlFor="vw-auto-commit" className="text-sm select-none">Automatically git commit when Task details change</label>
           </div>
         </div>
 
@@ -304,6 +305,38 @@ export default function ProjectSettingsPage() {
           </button>
         </div>
 
+        {/* Divider for compiler-related settings */}
+        <div className="border-t border-border my-6" />
+
+        <div>
+          <h3 className="text-md font-medium text-foreground mb-4">Compiler Default Templates</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Set default templates for each export format. These will be used when no template is selected during export.
+          </p>
+
+          <div className="space-y-4">
+            {supportedFormats.map((format) => (
+              <div key={format.id} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    {format.name}
+                  </label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Default template for {format.name} exports
+                  </p>
+                </div>
+                <input
+                  type="text"
+                  value={compilerSettings.defaultTemplates?.[format.id] || ''}
+                  onChange={(e) => handleDefaultTemplateChange(format.id, e.target.value)}
+                  placeholder="e.g., templates/compiler/simple.md"
+                  className="flex-1 ml-4 px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
         {isColumnManagerOpen && (
           <ColumnManager
             columns={taskColumns}
@@ -323,7 +356,7 @@ export default function ProjectSettingsPage() {
             className="flex items-center gap-2"
           >
             <Save className="h-4 w-4" />
-            {isSaving ? 'Saving...' : 'Save Settings'}
+            {isSaving ? 'Saving...' : 'Save Compiler Settings'}
           </Button>
         </div>
       </div>
