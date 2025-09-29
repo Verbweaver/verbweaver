@@ -923,8 +923,10 @@ function GraphView() {
           if (window.electronAPI && currentProjectPath) {
             const abs = `${currentProjectPath}/${rel}`.replace(/\\/g,'/').replace(/\/\//g,'/')
             await window.electronAPI.writeFile(abs, '')
+            nodeResponseData = { path: rel }
           } else if (!window.electronAPI && currentProject?.id) {
             await editorApi.createFile(currentProject.id, rel, '', { raw: true, metadata: undefined })
+            nodeResponseData = { path: rel }
           } else {
             throw new Error('Project context not available')
           }
@@ -987,7 +989,7 @@ function GraphView() {
           // Ensure nodeResponseData is used if needed to update the graph, 
           // or that loadNodes() correctly picks up the new node.
           await loadNodes(); // Reload graph nodes
-          toast.success('Node created from template');
+          toast.success(templatePath === '__EMPTY__' ? 'Empty file created' : 'Node created from template');
         } else {
           console.error('Node creation call succeeded but returned no data.');
           toast.error('Failed to create node: No data received.');
