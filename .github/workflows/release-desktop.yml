@@ -86,7 +86,7 @@ jobs:
           fi
 
       - name: Set code signing env (macOS)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
         shell: bash
         run: |
           # Import Developer ID cert from secrets for signing
@@ -103,18 +103,10 @@ jobs:
             echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> $GITHUB_ENV
           fi
 
-      - name: Package desktop app (no publish for branches)
-        if: startsWith(github.ref, 'refs/heads/')
+      - name: Package desktop app (unsigned mac; signed win/linux) on branches except main
+        if: startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main'
         working-directory: desktop
         shell: bash
-        env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             npx electron-builder --win --publish never
@@ -124,8 +116,36 @@ jobs:
             npx electron-builder --linux --publish never
           fi
 
-      - name: Staple notarization ticket (macOS, branches)
-        if: startsWith(github.ref, 'refs/heads/') && runner.os == 'macOS'
+      - name: Package desktop app (signed on main)
+        if: github.ref == 'refs/heads/main'
+        working-directory: desktop
+        shell: bash
+        env:
+          # mac signing/notarization
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # windows signing
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Map Windows-specific secrets to generic env expected by electron-builder
+            if [[ -n "$WIN_CSC_LINK" ]]; then export CSC_LINK="$WIN_CSC_LINK"; fi
+            if [[ -n "$WIN_CSC_KEY_PASSWORD" ]]; then export CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"; fi
+            npx electron-builder --win --publish never
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            npx electron-builder --mac --publish never
+          else
+            npx electron-builder --linux --publish never
+          fi
+
+      - name: Staple notarization ticket (macOS, main)
+        if: github.ref == 'refs/heads/main' && runner.os == 'macOS'
         working-directory: desktop
         shell: bash
         run: |
@@ -150,6 +170,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -158,6 +180,8 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
+            if [[ -n "$WIN_CSC_LINK" ]]; then export CSC_LINK="$WIN_CSC_LINK"; fi
+            if [[ -n "$WIN_CSC_KEY_PASSWORD" ]]; then export CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"; fi
             npm run dist:win
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
             npm run dist:mac
