@@ -34,7 +34,7 @@
     "@types/node": "^20.10.4",
     "cross-env": "^7.0.3",
     "electron": "^38.2.0",
-    "electron-builder": "^24.9.1",
+    "electron-builder": "^26.0.12",
     "electron-vite": "^3.1.0",
     "typescript": "^5.3.3"
   },
@@ -97,10 +97,7 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "resources/entitlements.mac.plist",
-      "entitlementsInherit": "resources/entitlements.mac.plist",
-      "notarize": {
-        "appBundleId": "com.verbweaver.app"
-      }
+      "entitlementsInherit": "resources/entitlements.mac.plist"
     },
     "win": {
       "target": [
