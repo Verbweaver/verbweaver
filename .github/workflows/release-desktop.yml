@@ -89,10 +89,19 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
+          # Import Developer ID cert from secrets for signing
+          if [[ -n "${{ secrets.CSC_LINK }}" ]]; then
+            echo "CSC_LINK=${{ secrets.CSC_LINK }}" >> $GITHUB_ENV
+          fi
+          if [[ -n "${{ secrets.CSC_KEY_PASSWORD }}" ]]; then
+            echo "CSC_KEY_PASSWORD=${{ secrets.CSC_KEY_PASSWORD }}" >> $GITHUB_ENV
+          fi
+          # Apple account creds for notarization (not needed for signing itself)
           if [[ -n "${{ secrets.APPLE_ID }}" ]]; then
             echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> $GITHUB_ENV
             echo "APPLE_APP_SPECIFIC_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> $GITHUB_ENV
             echo "ASC_PROVIDER=${{ secrets.ASC_PROVIDER }}" >> $GITHUB_ENV
+            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> $GITHUB_ENV
           fi
 
       - name: Package desktop app (no publish for branches)
