@@ -910,9 +910,8 @@ class TemplateService:
                            output_file: str, working_dir: str = None, options: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
         """Convert markdown content to target format using Pandoc"""
         try:
-            # Check if Pandoc is available
-            result = subprocess.run(['pandoc', '--version'], 
-                                  capture_output=True, text=True)
+            # Check if Pandoc is available (PATH is augmented by Electron main)
+            result = subprocess.run(['pandoc', '--version'], capture_output=True, text=True)
             if result.returncode != 0:
                 return False, "Pandoc is not installed. Please install Pandoc to use this feature."
             
@@ -950,8 +949,15 @@ class TemplateService:
                 
                 # Add format-specific options
                 if output_format == 'pdf':
-                    # Use xelatex for better Unicode support, fallback to pdflatex
-                    cmd.extend(['--pdf-engine=xelatex'])
+                    # Prefer tectonic if available on PATH (bundled or system), otherwise xelatex/pdflatex
+                    try:
+                        tect = subprocess.run(['tectonic', '--version'], capture_output=True, text=True)
+                        if tect.returncode == 0:
+                            cmd.extend(['--pdf-engine=tectonic'])
+                        else:
+                            cmd.extend(['--pdf-engine=xelatex'])
+                    except Exception:
+                        cmd.extend(['--pdf-engine=xelatex'])
                 elif output_format == 'html':
                     cmd.extend(['--standalone', '--self-contained', '--mathml'])
                 elif output_format == 'docx':
@@ -981,7 +987,7 @@ class TemplateService:
                     logger.error(f"Pandoc stderr: {error_msg}")
                     logger.error(f"Pandoc stdout: {result.stdout.strip()}")
                     
-                    if "xelatex" in error_msg and output_format == 'pdf':
+                    if output_format == 'pdf' and ("xelatex" in error_msg or "tectonic" in error_msg):
                         # Try with pdflatex as fallback
                         cmd = ['pandoc', temp_file_path, '-o', output_file, '--pdf-engine=pdflatex']
                         logger.debug(f"Retrying with pdflatex: {' '.join(cmd)}")

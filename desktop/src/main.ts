@@ -167,7 +167,7 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     const globalTemplatesDir = (store.get('globalTemplatesDir') as string) || process.env.GLOBAL_TEMPLATES_DIR || defaultGlobalTemplates;
 
     // Sanitize environment for backend: Electron/Node often set DEBUG=electron*, which breaks Pydantic bool parsing
-    const envBase: NodeJS.ProcessEnv = { ...process.env };
+    const envBase: NodeJS.ProcessEnv = { ...buildAugmentedEnvForSpawns() };
     delete envBase.DEBUG;
 
     if (useBundledBinary) {
