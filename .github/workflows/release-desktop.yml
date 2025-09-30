@@ -39,13 +39,15 @@ jobs:
           python-version: '3.11'
 
       - name: Ensure LFS files are present
+        shell: bash
         run: |
+          set -e
           git lfs install
           git lfs pull
           # Sanity check sizes to avoid packaging LFS pointers
           if [ -d desktop/resources/tools ]; then
-            echo "Listing tools (sizes):"
-            find desktop/resources/tools -type f -maxdepth 3 -printf "%p %k KB\n" 2>/dev/null || true
+            echo "Listing tools disk usage:"
+            du -k desktop/resources/tools | head -n 50 || true
           fi
 
       - name: Install backend dependencies
