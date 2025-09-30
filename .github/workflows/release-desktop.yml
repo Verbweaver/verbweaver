@@ -23,8 +23,10 @@ jobs:
             mac_arch: x64
 
     steps:
-      - name: Checkout
+      - name: Checkout (with LFS)
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -35,6 +37,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Ensure LFS files are present
+        run: |
+          git lfs install
+          git lfs pull
+          # Sanity check sizes to avoid packaging LFS pointers
+          if [ -d desktop/resources/tools ]; then
+            echo "Listing tools (sizes):"
+            find desktop/resources/tools -type f -maxdepth 3 -printf "%p %k KB\n" 2>/dev/null || true
+          fi
 
       - name: Install backend dependencies
         working-directory: backend
