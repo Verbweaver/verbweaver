@@ -17,6 +17,14 @@ class PreviewRequest(BaseModel):
 async def preview_markdown(request: PreviewRequest):
     """Convert Pandoc-flavoured Markdown to standalone HTML for live preview."""
     try:
+        # Verify pandoc availability (PATH is augmented by Electron main when packaged)
+        try:
+            _chk = subprocess.run(["pandoc", "--version"], text=True, capture_output=True)
+            if _chk.returncode != 0:
+                raise FileNotFoundError("pandoc --version returned non-zero")
+        except FileNotFoundError:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Pandoc not installed on server")
+
         # Build pandoc command
         cmd = [
             "pandoc",
@@ -123,7 +131,8 @@ async def preview_markdown(request: PreviewRequest):
                     cmd + [temp_file_path],
                     text=True,
                     capture_output=True,
-                    cwd=request.project_path
+                    cwd=request.project_path,
+                    env=os.environ
                 )
             else:
                 # Fallback to stdin method if no project path
@@ -131,11 +140,15 @@ async def preview_markdown(request: PreviewRequest):
                     cmd,
                     input=normalized_markdown,
                     text=True,
-                    capture_output=True
+                    capture_output=True,
+                    env=os.environ
                 )
             
             if result.returncode != 0:
-                raise RuntimeError(result.stderr.strip() or "Pandoc conversion failed")
+                err = (result.stderr or "").strip()
+                # Return a minimal HTML with error so preview pane shows feedback instead of blank
+                error_html = f"""<!doctype html><html><body style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; color:#e5e7eb; background:transparent;'><pre>Preview conversion failed:\n{err or 'Pandoc conversion failed'}</pre></body></html>"""
+                return Response(content=error_html, media_type="text/html", status_code=200)
             
             # Get the output
             output = result.stdout or ''
