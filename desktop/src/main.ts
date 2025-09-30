@@ -2797,6 +2797,8 @@ interface DependencyCheck {
   version?: string;
   installUrl?: string;
   installInstructions?: string;
+  // Indicates where the binary was resolved from
+  source?: 'bundled' | 'system';
 }
 
 function buildAugmentedEnvForSpawns(): NodeJS.ProcessEnv {
@@ -2892,8 +2894,9 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
   
   // Check Pandoc
   try {
-    const result = await new Promise<{ success: boolean; version?: string }>((resolve) => {
-      const pandocCmd = resolveBundledExecutable('pandoc') || 'pandoc';
+    const result = await new Promise<{ success: boolean; version?: string; source?: 'bundled' | 'system' }>((resolve) => {
+      const resolvedPath = resolveBundledExecutable('pandoc');
+      const pandocCmd = resolvedPath || 'pandoc';
       const child = require('child_process').spawn(pandocCmd, ['--version'], {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: buildAugmentedEnvForSpawns()
@@ -2907,7 +2910,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
       child.on('close', (code: number) => {
         if (code === 0) {
           const versionMatch = output.match(/pandoc\s+(\d+\.\d+\.\d+)/);
-          resolve({ success: true, version: versionMatch?.[1] });
+          resolve({ success: true, version: versionMatch?.[1], source: resolvedPath ? 'bundled' : 'system' });
         } else {
           resolve({ success: false });
         }
@@ -2922,6 +2925,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
       name: 'Pandoc',
       available: result.success,
       version: result.version,
+      source: result.source,
       installUrl: 'https://pandoc.org/installing.html',
       installInstructions: getPandocInstallInstructions()
     });
@@ -2937,8 +2941,9 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
   // Check LaTeX engines for PDF support
   try {
     const checkEngine = async (cmd: string) => {
-      return await new Promise<{ success: boolean; version?: string }>((resolve) => {
-        const bin = resolveBundledExecutable(cmd) || cmd;
+      return await new Promise<{ success: boolean; version?: string; source?: 'bundled' | 'system' }>((resolve) => {
+        const resolvedPath = resolveBundledExecutable(cmd);
+        const bin = resolvedPath || cmd;
         const child = require('child_process').spawn(bin, ['--version'], {
           stdio: ['pipe', 'pipe', 'pipe'],
           env: buildAugmentedEnvForSpawns()
@@ -2948,7 +2953,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
         child.on('close', (code: number) => {
           if (code === 0) {
             const ver = (output.split('\n')[0] || '').trim();
-            resolve({ success: true, version: ver });
+            resolve({ success: true, version: ver, source: resolvedPath ? 'bundled' : 'system' });
           } else {
             resolve({ success: false });
           }
@@ -2962,6 +2967,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
       name: 'LaTeX (xelatex/pdflatex)',
       available: pdf.success,
       version: pdf.version,
+      source: pdf.source,
       installUrl: 'https://miktex.org/download/',
       installInstructions: process.platform === 'linux'
         ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'

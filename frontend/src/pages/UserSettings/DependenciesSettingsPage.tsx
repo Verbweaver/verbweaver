@@ -8,6 +8,7 @@ interface Dependency {
   version?: string;
   installUrl?: string;
   installInstructions?: string;
+  source?: 'bundled' | 'system';
 }
 
 export default function DependenciesSettingsPage() {
@@ -117,6 +118,9 @@ export default function DependenciesSettingsPage() {
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-600" />
                     <span className="font-medium">{dep.name}</span>
+                    {dep.available && dep.source === 'bundled' && (
+                      <span className="ml-2 text-xs text-muted-foreground">(using bundled)</span>
+                    )}
                   </div>
                 </div>
                 
