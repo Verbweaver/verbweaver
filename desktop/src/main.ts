@@ -2917,6 +2917,20 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
       });
       
       child.on('error', () => {
+        // Fallback on Windows: try execFile if direct spawn fails
+        if (process.platform === 'win32' && resolvedPath) {
+          try {
+            execFile(resolvedPath, ['--version'], { env: buildAugmentedEnvForSpawns() }, (error, stdout) => {
+              if (!error) {
+                const vm = stdout.match(/pandoc\s+(\d+\.\d+\.\d+)/);
+                resolve({ success: true, version: vm?.[1], source: 'bundled' });
+              } else {
+                resolve({ success: false });
+              }
+            });
+            return;
+          } catch {}
+        }
         resolve({ success: false });
       });
     });
@@ -2938,7 +2952,7 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
     });
   }
   
-  // Check LaTeX engines for PDF support
+  // Check PDF engine for PDF support (prefer bundled Tectonic, then xelatex/pdflatex)
   try {
     const checkEngine = async (cmd: string) => {
       return await new Promise<{ success: boolean; version?: string; source?: 'bundled' | 'system' }>((resolve) => {
@@ -2961,10 +2975,12 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
         child.on('error', () => resolve({ success: false }));
       });
     };
-    const xe = await checkEngine('xelatex');
+    // Prefer tectonic first if present, then xelatex, then pdflatex
+    const tec = await checkEngine('tectonic');
+    const xe = tec.success ? tec : await checkEngine('xelatex');
     const pdf = xe.success ? xe : await checkEngine('pdflatex');
     dependencies.push({
-      name: 'LaTeX (xelatex/pdflatex)',
+      name: 'PDF engine (tectonic/xelatex/pdflatex)',
       available: pdf.success,
       version: pdf.version,
       source: pdf.source,
