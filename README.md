@@ -8,6 +8,8 @@ Currently, the desktop application is in Beta. The web server version is under d
 
 ## 🌟 Features
 
+![Verbweaver Logo](.github/images/Graph.png)
+
 - **Graph-based Design**: Visualize relationships between your ideas, documents, and tasks
 - **Task Management**: Turn any idea into a trackable task with Kanban boards
 - **Markdown-powered**: All content is stored as Markdown files with metadata headers. The [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown) format is used to enable exporting to many file formats using Pandoc with advanced formatting.
