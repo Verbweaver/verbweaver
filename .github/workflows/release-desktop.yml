@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - release-testing
+      - main
     tags:
       - 'v*.*.*'
 
