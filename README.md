@@ -2,7 +2,7 @@
 
 *Verbweaver* is a writing and design platform that thinks in relationships (graphs). It's designed for writers, artists, engineers, developers, analysts, and anyone who wants to design things while linking every idea together and turning those ideas into manageable tasks. Think and take notes in a way that is natural to you. Then, when it comes time to communicate your ideas or information to other people, use the Compiler and the powerful templating engine to generate a linear document in various common filetypes.
 
-Currently, the desktop application is in Beta. The web server version is under development and is not yet ready for use.
+Currently, the desktop application is in Beta. The web server version with enhanced collaboration features is under development and is not yet ready for use.
 
 ![Verbweaver Logo](docs/images/logo.png)
 
@@ -14,7 +14,7 @@ Currently, the desktop application is in Beta. The web server version is under d
 - **Task Management**: Turn any idea into a trackable task with Kanban boards
 - **Markdown-powered**: All content is stored as Markdown files with metadata headers. The [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown) format is used to enable exporting to many file formats using Pandoc with advanced formatting.
 - **Write to your heart's content**: Use the built-in Editor or your favorite Markdown editor application to write chapters, notes, data, findings, or anything else.
-- **Real-time Collaboration**: Work together with your team in real-time
+- **Unified Data Model**: Everything is a node; a node is everything. A single file can be a written document, tracked as a Task, and visualized as a node on a graph. 
 - **Export Anywhere**: Compile your non-linear notes into linear documents (PDF, Word, ePub, etc.)
 - **Git Version Control**: Built-in version control for all your projects
 - **Multi-platform**: Available as a web app and desktop app (Windows, Mac, Linux)
