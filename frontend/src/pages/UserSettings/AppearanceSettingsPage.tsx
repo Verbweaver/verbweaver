@@ -76,6 +76,50 @@ const AppearanceSettingsPage: React.FC = () => {
     setTheme('custom' as Theme as any)
   }
 
+  const exportTheme = () => {
+    const data = {
+      name: 'custom',
+      variables: { ...customVars },
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'verbweaver-theme.json'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const importTheme = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/json,.json'
+    input.onchange = async () => {
+      const file = input.files && input.files[0]
+      if (!file) return
+      try {
+        const text = await file.text()
+        const parsed = JSON.parse(text || '{}')
+        const vars = (parsed && parsed.variables && typeof parsed.variables === 'object') ? parsed.variables : {}
+        // Basic sanitize: keep only known keys
+        const allowed = new Set(Object.keys(readVars()))
+        const next: Record<string,string> = {}
+        Object.entries(vars).forEach(([k,v]) => {
+          if (allowed.has(k) && typeof v === 'string') next[k] = v
+        })
+        setCustomVars(next)
+        // Persist and apply as custom
+        useThemeStore.getState().setCustomVars(next)
+        setTheme('custom' as Theme as any)
+      } catch (e) {
+        // noop: invalid file
+      }
+    }
+    input.click()
+  }
+
   return (
     <div className="bg-card p-6 rounded-lg shadow-sm border space-y-6">
       <div>
@@ -115,9 +159,11 @@ const AppearanceSettingsPage: React.FC = () => {
                 </div>
               ))}
             </div>
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <button onClick={applyCustom} className="px-3 py-1.5 rounded bg-primary text-primary-foreground">Save as Custom</button>
-              <span className="text-xs text-muted-foreground">Edits apply to this device. Original themes remain selectable.</span>
+              <button onClick={exportTheme} className="px-3 py-1.5 rounded border border-border">Export Theme</button>
+              <button onClick={importTheme} className="px-3 py-1.5 rounded border border-border">Import Theme</button>
+              <span className="text-xs text-muted-foreground">Exports/Imports JSON with HSL triplets for the Custom theme.</span>
             </div>
           </div>
         </div>
