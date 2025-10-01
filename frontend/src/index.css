@@ -66,4 +66,32 @@
   --input: 210 20% 25%;
   --ring: 217 91% 60%;
   --radius: 0.5rem;
+<<<<<<< HEAD
 } 
+=======
+} 
+
+/* Ensure High Contrast defaults to dark-friendly values as defined above; light override if needed */
+.light.high-contrast {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 0%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 0%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 0%;
+  --primary: 0 0% 0%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 90%;
+  --secondary-foreground: 0 0% 0%;
+  --muted: 0 0% 90%;
+  --muted-foreground: 0 0% 30%;
+  --accent: 0 0% 80%;
+  --accent-foreground: 0 0% 0%;
+  --destructive: 0 100% 40%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 70%;
+  --input: 0 0% 70%;
+  --ring: 0 0% 0%;
+  --radius: 0.5rem;
+}
+>>>>>>> release-testing

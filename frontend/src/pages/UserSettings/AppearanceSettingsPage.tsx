@@ -1,8 +1,131 @@
+<<<<<<< HEAD
 import React from 'react';
+=======
+import React, { useEffect, useMemo, useState } from 'react';
+>>>>>>> release-testing
 import { useThemeStore, Theme } from '../../store/themeStore'; // Adjusted path
 
 const AppearanceSettingsPage: React.FC = () => {
   const { theme, setTheme } = useThemeStore();
+<<<<<<< HEAD
+=======
+  const [customVars, setCustomVars] = useState<Record<string, string>>({})
+
+  const readVars = () => {
+    const root = document.documentElement
+    const get = (name: string) => getComputedStyle(root).getPropertyValue(name).trim()
+    return {
+      background: get('--background'),
+      foreground: get('--foreground'),
+      primary: get('--primary'),
+      primaryForeground: get('--primary-foreground'),
+      secondary: get('--secondary'),
+      secondaryForeground: get('--secondary-foreground'),
+      accent: get('--accent'),
+      accentForeground: get('--accent-foreground'),
+      muted: get('--muted'),
+      mutedForeground: get('--muted-foreground'),
+      border: get('--border'),
+      input: get('--input'),
+      ring: get('--ring'),
+      card: get('--card'),
+      cardForeground: get('--card-foreground'),
+      popover: get('--popover'),
+      popoverForeground: get('--popover-foreground'),
+    } as const
+  }
+
+  const [themeVars, setThemeVars] = useState(readVars())
+
+  // Refresh variables after theme changes (wait for DOM class update)
+  useEffect(() => {
+    let raf1 = 0, raf2 = 0
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setThemeVars(readVars()))
+    })
+    return () => { if (raf1) cancelAnimationFrame(raf1); if (raf2) cancelAnimationFrame(raf2) }
+  }, [theme])
+
+  // Also update if the documentElement class changes (e.g., other code toggles classes)
+  useEffect(() => {
+    const target = document.documentElement
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === 'attributes' && m.attributeName === 'class') {
+          setThemeVars(readVars())
+          break
+        }
+      }
+    })
+    observer.observe(target, { attributes: true, attributeFilter: ['class'] })
+    return () => observer.disconnect()
+  }, [])
+
+  // Reset or load custom values when theme changes so inputs reflect the active theme
+  useEffect(() => {
+    if (theme === 'custom') {
+      const persisted = useThemeStore.getState().customVars || {}
+      setCustomVars(persisted)
+    } else {
+      setCustomVars({})
+    }
+  }, [theme])
+
+  const onEditVar = (key: string, val: string) => {
+    setCustomVars(prev => ({ ...prev, [key]: val }))
+  }
+
+  const applyCustom = () => {
+    // Persist first, then switch theme so App effect applies exactly those values
+    const next = { ...customVars }
+    useThemeStore.getState().setCustomVars(next)
+    setTheme('custom' as Theme as any)
+  }
+
+  const exportTheme = () => {
+    const data = {
+      name: 'custom',
+      variables: { ...customVars },
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'verbweaver-theme.json'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const importTheme = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/json,.json'
+    input.onchange = async () => {
+      const file = input.files && input.files[0]
+      if (!file) return
+      try {
+        const text = await file.text()
+        const parsed = JSON.parse(text || '{}')
+        const vars = (parsed && parsed.variables && typeof parsed.variables === 'object') ? parsed.variables : {}
+        // Basic sanitize: keep only known keys
+        const allowed = new Set(Object.keys(readVars()))
+        const next: Record<string,string> = {}
+        Object.entries(vars).forEach(([k,v]) => {
+          if (allowed.has(k) && typeof v === 'string') next[k] = v
+        })
+        setCustomVars(next)
+        // Persist and apply as custom
+        useThemeStore.getState().setCustomVars(next)
+        setTheme('custom' as Theme as any)
+      } catch (e) {
+        // noop: invalid file
+      }
+    }
+    input.click()
+  }
+>>>>>>> release-testing
 
   return (
     <div className="bg-card p-6 rounded-lg shadow-sm border space-y-6">
@@ -21,11 +144,41 @@ const AppearanceSettingsPage: React.FC = () => {
               <option value="dark">Dark</option>
               <option value="high-contrast">High Contrast</option>
               <option value="colorblind">Colorblind Friendly</option>
+<<<<<<< HEAD
+=======
+              <option value="custom">Custom</option>
+>>>>>>> release-testing
             </select>
             <p className="text-sm text-muted-foreground mt-1">
               Choose a color theme for the interface. The colorblind theme uses colors optimized for deuteranopia.
             </p>
           </div>
+<<<<<<< HEAD
+=======
+          <div className="border rounded-md p-3">
+            <h3 className="text-sm font-medium mb-2 text-foreground">Current theme color codes (HSL triplets)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {Object.entries(themeVars).map(([k, v]) => (
+                <div key={k} className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded border border-border" style={{ backgroundColor: k.toLowerCase().includes('foreground') ? `hsl(${themeVars[k.replace('Foreground','') as keyof typeof themeVars] || v})` : `hsl(${v})` }} />
+                  <label className="w-44 text-sm text-muted-foreground capitalize">{k.replace(/([A-Z])/g,' $1')}</label>
+                  <input
+                    className="flex-1 px-2 py-1 text-sm rounded border border-input bg-background"
+                    placeholder="e.g. 217 91% 60%"
+                    value={customVars[k] ?? v}
+                    onChange={(e)=> onEditVar(k, e.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <button onClick={applyCustom} className="px-3 py-1.5 rounded bg-primary text-primary-foreground">Save as Custom</button>
+              <button onClick={exportTheme} className="px-3 py-1.5 rounded border border-border">Export Theme</button>
+              <button onClick={importTheme} className="px-3 py-1.5 rounded border border-border">Import Theme</button>
+              <span className="text-xs text-muted-foreground">Exports/Imports JSON with HSL triplets for the Custom theme.</span>
+            </div>
+          </div>
+>>>>>>> release-testing
         </div>
       </div>
 

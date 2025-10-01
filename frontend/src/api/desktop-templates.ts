@@ -38,6 +38,7 @@ export const desktopTemplatesApi = {
       }
       
       if (templatesDirExists) {
+<<<<<<< HEAD
         // Ensure templates/nodes exists and seed Empty.md there (no flat fallback)
         try {
           await window.electronAPI.createDirectory(nodeTemplatesPath);
@@ -67,6 +68,12 @@ export const desktopTemplatesApi = {
             console.error(`[desktopTemplatesApi] Failed to write Empty.md at "${emptyTemplatePath}":`, writeError.message);
           }
         }
+=======
+        // Ensure templates/nodes exists; do not seed Empty.md automatically
+        try {
+          await window.electronAPI.createDirectory(nodeTemplatesPath);
+        } catch {}
+>>>>>>> release-testing
       }
       
       // Gather templates from both templates/ and templates/nodes/
@@ -148,6 +155,7 @@ export const desktopTemplatesApi = {
       return templates;
     } catch (error: any) {
       console.error('[desktopTemplatesApi] Error reading templates overall:', error.message, error.stack);
+<<<<<<< HEAD
       console.warn('[desktopTemplatesApi] Falling back to default Empty template due to error.');
       return [{
         path: 'templates/Empty.md',
@@ -168,6 +176,10 @@ export const desktopTemplatesApi = {
         },
         content: '# {title}\n\n{description}'
       }];
+=======
+      // Do not synthesize an Empty.md template; surface the error to the caller
+      throw error;
+>>>>>>> release-testing
     }
   },
 

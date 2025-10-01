@@ -1,0 +1,6 @@
+desktop/resources/tools/mac/x86_64/pandoc filter=lfs diff=lfs merge=lfs -text
+desktop/resources/tools/win/pandoc.exe filter=lfs diff=lfs merge=lfs -text
+desktop/resources/tools/mac/arm64/pandoc filter=lfs diff=lfs merge=lfs -text
+desktop/resources/tools/linux/arm64/pandoc filter=lfs diff=lfs merge=lfs -text
+desktop/resources/tools/linux/amd64/pandoc filter=lfs diff=lfs merge=lfs -text
+desktop/resources/tools/**/pandoc* filter=lfs diff=lfs merge=lfs -text
