@@ -29,10 +29,11 @@ async def preview_markdown(request: PreviewRequest):
         cmd = [
             "pandoc",
             "-f", "markdown+tex_math_dollars+tex_math_single_backslash",
-            "-t", "html",
+            "-t", "html5",
             "--standalone",
             "--self-contained",  # inline images so preview can render without extra network fetches
             "--mathml",  # render LaTeX math to MathML for in-browser preview without external scripts
+            "-o", "-",  # ensure stdout output
         ]
         # Configure resource-path for resolving images
         resource_paths: List[str] = []
@@ -167,11 +168,12 @@ async def preview_markdown(request: PreviewRequest):
             clean_html = f"""<!DOCTYPE html>
 <html>
 <head>
+    <meta charset=\"utf-8\" />
     <style>
+        :root {{ color-scheme: light dark; }}
         .markdown-preview {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
-            color: #e5e7eb;
             background: transparent;
             margin: 0;
             padding: 0;
@@ -182,35 +184,33 @@ async def preview_markdown(request: PreviewRequest):
             margin-top: 1.5em;
             margin-bottom: 0.5em;
             font-weight: 600;
-            color: #f3f4f6;
         }}
         .markdown-preview h1 {{ font-size: 2em; }}
         .markdown-preview h2 {{ font-size: 1.5em; }}
         .markdown-preview h3 {{ font-size: 1.25em; }}
-        .markdown-preview p {{ margin-bottom: 1em; color: #e5e7eb; }}
-        .markdown-preview ul, .markdown-preview ol {{ margin-bottom: 1em; padding-left: 2em; color: #e5e7eb; }}
-        .markdown-preview li {{ margin-bottom: 0.5em; color: #e5e7eb; }}
+        .markdown-preview p {{ margin-bottom: 1em; }}
+        .markdown-preview ul, .markdown-preview ol {{ margin-bottom: 1em; padding-left: 2em; }}
+        .markdown-preview li {{ margin-bottom: 0.5em; }}
         .markdown-preview code {{
             background-color: transparent;
-            color: #fbbf24;
+            color: inherit;
             padding: 0.2em 0.4em;
             border-radius: 3px;
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
         }}
         .markdown-preview pre {{
-            background-color: rgba(255, 255, 255, 0.05);
-            color: #fbbf24;
+            background-color: rgba(127, 127, 127, 0.12);
+            color: inherit;
             padding: 1em;
             border-radius: 5px;
             overflow-x: auto;
             margin: 1em 0;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(127, 127, 127, 0.2);
         }}
         .markdown-preview blockquote {{
-            border-left: 4px solid rgba(255, 255, 255, 0.3);
+            border-left: 4px solid rgba(127, 127, 127, 0.4);
             margin: 1em 0;
             padding-left: 1em;
-            color: #d1d5db;
             opacity: 0.8;
         }}
         .markdown-preview table {{
@@ -219,23 +219,12 @@ async def preview_markdown(request: PreviewRequest):
             margin: 1em 0;
         }}
         .markdown-preview th, .markdown-preview td {{
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(127, 127, 127, 0.2);
             padding: 0.5em;
             text-align: left;
-            color: #e5e7eb;
         }}
         .markdown-preview th {{
-            background-color: rgba(255, 255, 255, 0.1);
-        }}
-        .markdown-preview a {{
-            color: #60a5fa;
-            text-decoration: underline;
-        }}
-        .markdown-preview a:hover {{
-            color: #93c5fd;
-        }}
-        .markdown-preview strong {{
-            color: #f3f4f6;
+            background-color: rgba(127, 127, 127, 0.1);
         }}
         .markdown-preview img {{
             max-width: 100%;
