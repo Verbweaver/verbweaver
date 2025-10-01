@@ -28,7 +28,7 @@ import { useAuthStore } from './services/auth'
 
 function App() {
   const navigate = useNavigate()
-  const { theme } = useThemeStore()
+  const { theme, customVars } = useThemeStore()
   const { loadProjects } = useProjectStore()
   const isAuthenticated = useAuthStore(state => state.isAuthenticated)
   const isAuthHydrated = useAuthStore(state => state.isHydrated)
@@ -39,9 +39,18 @@ function App() {
 
   useEffect(() => {
     // Apply theme to document
-    document.documentElement.classList.remove('light', 'dark', 'high-contrast', 'colorblind')
+    document.documentElement.classList.remove('light', 'dark', 'high-contrast', 'colorblind', 'custom')
+    // Default colorblind and high-contrast to dark
+    if (theme === 'colorblind' || theme === 'high-contrast') {
+      document.documentElement.classList.add('dark')
+    }
     document.documentElement.classList.add(theme)
-  }, [theme])
+    if (theme === 'custom' && customVars) {
+      Object.entries(customVars).forEach(([k, v]) => {
+        if (v && v.length > 0) document.documentElement.style.setProperty(`--${k}`, v)
+      })
+    }
+  }, [theme, customVars])
 
   useEffect(() => {
     if (isAuthHydrated && isAuthenticated && !hasLoadedProjects.current) {

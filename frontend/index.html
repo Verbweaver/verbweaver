@@ -16,7 +16,10 @@
           theme = 'dark';
         }
         var classes = document.documentElement.classList;
-        classes.remove('light','dark','high-contrast','colorblind');
+        classes.remove('light','dark','high-contrast','colorblind','custom');
+        if (theme === 'colorblind' || theme === 'high-contrast') {
+          classes.add('dark');
+        }
         classes.add(theme);
       } catch (e) {
         document.documentElement.classList.add('dark');

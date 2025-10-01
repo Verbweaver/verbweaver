@@ -65,7 +65,7 @@ function GraphView() {
               source: node.hardLinks.parent,
               target: node.path,
               type: 'straight',
-              style: { stroke: '#6b7280', strokeWidth: 2 },
+              style: { stroke: 'hsl(var(--muted-foreground))', strokeWidth: 2 },
               markerEnd: {
                 type: MarkerType.ArrowClosed,
               },
@@ -87,7 +87,7 @@ function GraphView() {
                 target: targetNode.path,
                 type: 'smoothstep',
                 animated: true,
-                style: { stroke: '#3b82f6', strokeWidth: 2 },
+                style: { stroke: 'hsl(var(--primary))', strokeWidth: 2 },
                 // Remove arrows since links are bidirectional
               })
             }

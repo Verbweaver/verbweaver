@@ -171,11 +171,11 @@
 
 /* Syntax highlighting adjustments for dark mode */
 .dark .prose pre {
-  background-color: #1e1e1e;
+  background-color: hsl(var(--muted));
 }
 
 .dark .prose code {
-  color: #d4d4d4;
+  color: hsl(var(--muted-foreground));
 }
 
 /* Task lists */
