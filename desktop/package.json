@@ -1,6 +1,6 @@
 {
   "name": "@verbweaver/desktop",
-  "version": "1.0.0",
+  "version": "0.9.0",
   "private": true,
   "description": "Verbweaver Desktop application",
   "author": "Verbweaver Team",

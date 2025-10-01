@@ -940,10 +940,10 @@ function setupIpcHandlers() {
       // Create project configuration file
       const projectConfig = {
         name: projectName,
-        version: "1.0.0",
+        version: app.getVersion(),
         created: new Date().toISOString(),
         verbweaver: {
-          version: "1.0.0",
+          version: app.getVersion(),
           type: "project"
         }
       };
