@@ -1,14 +1,8 @@
-<<<<<<< HEAD
-import React from 'react';
-=======
 import React, { useEffect, useMemo, useState } from 'react';
->>>>>>> release-testing
 import { useThemeStore, Theme } from '../../store/themeStore'; // Adjusted path
 
 const AppearanceSettingsPage: React.FC = () => {
   const { theme, setTheme } = useThemeStore();
-<<<<<<< HEAD
-=======
   const [customVars, setCustomVars] = useState<Record<string, string>>({})
 
   const readVars = () => {
@@ -125,7 +119,6 @@ const AppearanceSettingsPage: React.FC = () => {
     }
     input.click()
   }
->>>>>>> release-testing
 
   return (
     <div className="bg-card p-6 rounded-lg shadow-sm border space-y-6">
@@ -144,17 +137,12 @@ const AppearanceSettingsPage: React.FC = () => {
               <option value="dark">Dark</option>
               <option value="high-contrast">High Contrast</option>
               <option value="colorblind">Colorblind Friendly</option>
-<<<<<<< HEAD
-=======
               <option value="custom">Custom</option>
->>>>>>> release-testing
             </select>
             <p className="text-sm text-muted-foreground mt-1">
               Choose a color theme for the interface. The colorblind theme uses colors optimized for deuteranopia.
             </p>
           </div>
-<<<<<<< HEAD
-=======
           <div className="border rounded-md p-3">
             <h3 className="text-sm font-medium mb-2 text-foreground">Current theme color codes (HSL triplets)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -178,7 +166,6 @@ const AppearanceSettingsPage: React.FC = () => {
               <span className="text-xs text-muted-foreground">Exports/Imports JSON with HSL triplets for the Custom theme.</span>
             </div>
           </div>
->>>>>>> release-testing
         </div>
       </div>
 

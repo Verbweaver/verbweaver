@@ -66,9 +66,6 @@
   --input: 210 20% 25%;
   --ring: 217 91% 60%;
   --radius: 0.5rem;
-<<<<<<< HEAD
-} 
-=======
 } 
 
 /* Ensure High Contrast defaults to dark-friendly values as defined above; light override if needed */
@@ -94,4 +91,3 @@
   --ring: 0 0% 0%;
   --radius: 0.5rem;
 }
->>>>>>> release-testing

@@ -2,10 +2,7 @@ import { useEffect, useState } from 'react'
 import { templatesApi, Template } from '../api/templates'
 import { desktopTemplatesApi } from '../api/desktop-templates'
 import { useProjectStore } from '../store/projectStore'
-<<<<<<< HEAD
-=======
 import { projectsApi } from '../api/projects'
->>>>>>> release-testing
 import toast from 'react-hot-toast'
 import { X, Loader2 } from 'lucide-react'
 
@@ -30,10 +27,7 @@ export function TemplateSelectionDialog({
   const [nodeName, setNodeName] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [contentPreview, setContentPreview] = useState<string>('')
-<<<<<<< HEAD
-=======
   const [defaultTemplatePath, setDefaultTemplatePath] = useState<string | null>(null)
->>>>>>> release-testing
 
   useEffect(() => {
     if (isOpen && (currentProject || currentProjectPath)) {
@@ -87,9 +81,6 @@ export function TemplateSelectionDialog({
       }
       const combined = [emptyTemplate, ...templateList]
       setTemplates(combined)
-<<<<<<< HEAD
-      // Default select Empty
-=======
 
       // Load project default template (web path only)
       try {
@@ -117,7 +108,6 @@ export function TemplateSelectionDialog({
         return
       }
       // 3) Else fall back to special Empty
->>>>>>> release-testing
       setSelectedTemplate(emptyTemplate)
     } catch (error) {
       console.error('Failed to load templates:', error)

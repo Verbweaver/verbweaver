@@ -14,11 +14,7 @@ After installing Verbweaver, you can find these scripts in the installation dire
 When you download the Verbweaver installer, the files are typically organized like this:
 ```
 desktop-windows-latest/
-<<<<<<< HEAD
-├── Verbweaver-Setup-1.0.0.exe          # The installer
-=======
 ├── Verbweaver-Setup-0.9.0.exe          # The installer
->>>>>>> release-testing
 ├── win-unpacked/                       # Unpacked application
 │   ├── Verbweaver.exe                  # Main application
 │   └── resources/                      # Application resources

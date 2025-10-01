@@ -2,30 +2,19 @@
 
 *Verbweaver* is a writing and design platform that thinks in relationships (graphs). It's designed for writers, artists, engineers, developers, analysts, and anyone who wants to design things while linking every idea together and turning those ideas into manageable tasks. Think and take notes in a way that is natural to you. Then, when it comes time to communicate your ideas or information to other people, use the Compiler and the powerful templating engine to generate a linear document in various common filetypes.
 
-<<<<<<< HEAD
-Currently, the desktop application is in Beta. The web server version is under development and is not yet ready for use.
-=======
 Currently, the desktop application is in Beta. The web server version with enhanced collaboration features is under development and is not yet ready for use.
->>>>>>> release-testing
 
 ![Verbweaver Logo](docs/images/logo.png)
 
 ## 🌟 Features
 
-<<<<<<< HEAD
-=======
 ![Verbweaver Logo](.github/images/Graph.png)
 
->>>>>>> release-testing
 - **Graph-based Design**: Visualize relationships between your ideas, documents, and tasks
 - **Task Management**: Turn any idea into a trackable task with Kanban boards
 - **Markdown-powered**: All content is stored as Markdown files with metadata headers. The [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown) format is used to enable exporting to many file formats using Pandoc with advanced formatting.
 - **Write to your heart's content**: Use the built-in Editor or your favorite Markdown editor application to write chapters, notes, data, findings, or anything else.
-<<<<<<< HEAD
-- **Real-time Collaboration**: Work together with your team in real-time
-=======
 - **Unified Data Model**: Everything is a node; a node is everything. A single file can be a written document, tracked as a Task, and visualized as a node on a graph. 
->>>>>>> release-testing
 - **Export Anywhere**: Compile your non-linear notes into linear documents (PDF, Word, ePub, etc.)
 - **Git Version Control**: Built-in version control for all your projects
 - **Multi-platform**: Available as a web app and desktop app (Windows, Mac, Linux)
@@ -320,14 +309,10 @@ This project is licensed under the MIT License + Commons Clause - see the [LICEN
 The MIT License ensures that you have unrestricted rights to use, modify, and redistribute Verbweaver free of charge. However, the Commons Clause rider prohibits you from selling Verbweaver or a providing a service (such as a cloud-hosting solution) "whose value derives, entirely or substantially" from Verbweaver. If you wish to purchase a license exception to this clause, then please contact us with your offer.
 
 ## 🙏 Acknowledgments
-<<<<<<< HEAD
-
-=======
 - [Pandoc](https://pandoc.org/) for the document file type conversion
   - Pandoc is a separate program invoked by Verbweaver to generate documents in various formats. It is not "part of" Verbweaver in any way.
   - The source code to the exact version of Pandoc that Verbweaver uses may be found at: https://github.com/jgm/pandoc/tree/3.8.1
 - [Tectonic](https://tectonic-typesetting.github.io/en-US/) for the LaTeX typesetting system that can be run all as one binary
->>>>>>> release-testing
 - [FastAPI](https://fastapi.tiangolo.com/) for the excellent Python web framework
 - [React](https://reactjs.org/) for the UI library
 - [React Flow](https://reactflow.dev/) for graph visualization

@@ -535,11 +535,7 @@ function TasksView() {
     const leftPad = 160
     const chartW = width - leftPad - 20
     // grid
-<<<<<<< HEAD
-    ctx.strokeStyle = '#444'
-=======
     ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--border') ? `hsl(${getComputedStyle(document.documentElement).getPropertyValue('--border')})` : '#444'
->>>>>>> release-testing
     ctx.lineWidth = 1
     for (let i = 0; i <= totalDays; i++) {
       const x = leftPad + (i * chartW) / totalDays
@@ -552,11 +548,7 @@ function TasksView() {
     rows.forEach((r, idx) => {
       const y = 20 + idx * rowH
       // label
-<<<<<<< HEAD
-      ctx.fillStyle = '#bbb'
-=======
       ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--muted-foreground') ? `hsl(${getComputedStyle(document.documentElement).getPropertyValue('--muted-foreground')})` : '#bbb'
->>>>>>> release-testing
       ctx.fillText(r.title, 8, y + 12)
       // bar
       const s = new Date(r.start)
@@ -564,11 +556,7 @@ function TasksView() {
       const sx = leftPad + ((+s - +minD) / (86400000 * totalDays)) * chartW
       const ex = leftPad + ((+e - +minD) / (86400000 * totalDays)) * chartW
       const w = Math.max(6, ex - sx)
-<<<<<<< HEAD
-      ctx.fillStyle = '#3b82f6'
-=======
       ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--primary') ? `hsl(${getComputedStyle(document.documentElement).getPropertyValue('--primary')})` : '#3b82f6'
->>>>>>> release-testing
       ctx.fillRect(sx, y, w, 12)
     })
   }, [ganttData])
@@ -587,11 +575,7 @@ function TasksView() {
     ctx.scale(DPR, DPR)
     ctx.clearRect(0, 0, width, height)
     ctx.font = '12px sans-serif'
-<<<<<<< HEAD
-    ctx.fillStyle = '#bbb'
-=======
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--muted-foreground') ? `hsl(${getComputedStyle(document.documentElement).getPropertyValue('--muted-foreground')})` : '#bbb'
->>>>>>> release-testing
     if (labels.length === 0) {
       ctx.fillText('No tasks with dates to chart', 12, 20)
       return
@@ -601,17 +585,10 @@ function TasksView() {
     const chartH = height - topPad - bottomPad
     const maxY = Math.max(1, ...values)
     // axes
-<<<<<<< HEAD
-    ctx.strokeStyle = '#444'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(leftPad, topPad); ctx.lineTo(leftPad, height - bottomPad); ctx.lineTo(width - rightPad, height - bottomPad); ctx.stroke()
-    // data line
-    ctx.strokeStyle = '#10b981'; ctx.lineWidth = 2
-=======
     ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--border') ? `hsl(${getComputedStyle(document.documentElement).getPropertyValue('--border')})` : '#444'; ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(leftPad, topPad); ctx.lineTo(leftPad, height - bottomPad); ctx.lineTo(width - rightPad, height - bottomPad); ctx.stroke()
     // data line
     ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--secondary') ? `hsl(${getComputedStyle(document.documentElement).getPropertyValue('--secondary')})` : '#10b981'; ctx.lineWidth = 2
->>>>>>> release-testing
     ctx.beginPath()
     values.forEach((v, i) => {
       const x = leftPad + (i * chartW) / Math.max(1, values.length - 1)
@@ -620,11 +597,7 @@ function TasksView() {
     })
     ctx.stroke()
     // ideal line
-<<<<<<< HEAD
-    ctx.strokeStyle = '#f59e0b'; ctx.setLineDash([4, 4])
-=======
     ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent') ? `hsl(${getComputedStyle(document.documentElement).getPropertyValue('--accent')})` : '#f59e0b'; ctx.setLineDash([4, 4])
->>>>>>> release-testing
     ctx.beginPath()
     for (let i = 0; i < values.length; i++) {
       const x = leftPad + (i * chartW) / Math.max(1, values.length - 1)

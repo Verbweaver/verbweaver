@@ -437,56 +437,6 @@ class NodeService:
         # Destination template file
         dest_template = os.path.join(templates_dir, 'Empty.md')
         
-<<<<<<< HEAD
-        # Only copy if destination doesn't exist
-        if not os.path.exists(dest_template):
-            if os.path.exists(source_template):
-                # Copy the template file
-                shutil.copy2(source_template, dest_template)
-                
-                # Update the timestamps in the copied file
-                async with aiofiles.open(dest_template, 'r', encoding='utf-8') as f:
-                    content = await f.read()
-                
-                # Replace the placeholder timestamps with current time
-                now = datetime.now().isoformat()
-                content = content.replace("created: '2024-01-01T00:00:00'", f"created: '{now}'")
-                content = content.replace("modified: '2024-01-01T00:00:00'", f"modified: '{now}'")
-                
-                async with aiofiles.open(dest_template, 'w', encoding='utf-8') as f:
-                    await f.write(content)
-                
-                # Commit to Git
-                await self.git_service.add_and_commit(['templates/Empty.md'], 'Created Empty template')
-            else:
-                # Fallback to generating the template if source doesn't exist
-                metadata = {
-                    'id': '',
-                    'title': 'Empty',
-                    'type': 'file',
-                    'created': datetime.now().isoformat(),
-                    'modified': datetime.now().isoformat(),
-                    'description': '',
-                    'tags': [],
-                    'links': [],
-                    'task': {
-                        'status': 'todo',
-                        'priority': 'medium',
-                        'assignee': None,
-                        'dueDate': None,
-                        'completedDate': None,
-                        'description': ''
-                    }
-                }
-                
-                content = "# {title}\n\n{description}"
-                
-                file_content = await self.stringify_markdown_with_frontmatter(metadata, content)
-                async with aiofiles.open(dest_template, 'w', encoding='utf-8') as f:
-                    await f.write(file_content)
-                
-                await self.git_service.add_and_commit(['templates/Empty.md'], 'Created Empty template')
-=======
         # Do not auto-create Empty.md. Only copy if an Empty.md template actually exists in defaults.
         if not os.path.exists(dest_template) and os.path.exists(source_template):
             shutil.copy2(source_template, dest_template)
@@ -499,7 +449,6 @@ class NodeService:
             async with aiofiles.open(dest_template, 'w', encoding='utf-8') as f:
                 await f.write(content)
             await self.git_service.add_and_commit(['templates/Empty.md'], 'Copied Empty template from defaults')
->>>>>>> release-testing
     
     async def list_templates(self) -> List[Dict[str, Any]]:
         """List all templates in the project."""

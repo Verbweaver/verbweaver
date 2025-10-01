@@ -17,8 +17,6 @@ class PreviewRequest(BaseModel):
 async def preview_markdown(request: PreviewRequest):
     """Convert Pandoc-flavoured Markdown to standalone HTML for live preview."""
     try:
-<<<<<<< HEAD
-=======
         # Verify pandoc availability (PATH is augmented by Electron main when packaged)
         try:
             _chk = subprocess.run(["pandoc", "--version"], text=True, capture_output=True)
@@ -27,23 +25,15 @@ async def preview_markdown(request: PreviewRequest):
         except FileNotFoundError:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Pandoc not installed on server")
 
->>>>>>> release-testing
         # Build pandoc command
         cmd = [
             "pandoc",
             "-f", "markdown+tex_math_dollars+tex_math_single_backslash",
-<<<<<<< HEAD
-            "-t", "html",
-            "--standalone",
-            "--self-contained",  # inline images so preview can render without extra network fetches
-            "--mathml",  # render LaTeX math to MathML for in-browser preview without external scripts
-=======
             "-t", "html5",
             "--standalone",
             "--self-contained",  # inline images so preview can render without extra network fetches
             "--mathml",  # render LaTeX math to MathML for in-browser preview without external scripts
             "-o", "-",  # ensure stdout output
->>>>>>> release-testing
         ]
         # Configure resource-path for resolving images
         resource_paths: List[str] = []
@@ -142,12 +132,8 @@ async def preview_markdown(request: PreviewRequest):
                     cmd + [temp_file_path],
                     text=True,
                     capture_output=True,
-<<<<<<< HEAD
-                    cwd=request.project_path
-=======
                     cwd=request.project_path,
                     env=os.environ
->>>>>>> release-testing
                 )
             else:
                 # Fallback to stdin method if no project path
@@ -155,13 +141,6 @@ async def preview_markdown(request: PreviewRequest):
                     cmd,
                     input=normalized_markdown,
                     text=True,
-<<<<<<< HEAD
-                    capture_output=True
-                )
-            
-            if result.returncode != 0:
-                raise RuntimeError(result.stderr.strip() or "Pandoc conversion failed")
-=======
                     capture_output=True,
                     env=os.environ
                 )
@@ -171,7 +150,6 @@ async def preview_markdown(request: PreviewRequest):
                 # Return a minimal HTML with error so preview pane shows feedback instead of blank
                 error_html = f"""<!doctype html><html><body style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; color:#e5e7eb; background:transparent;'><pre>Preview conversion failed:\n{err or 'Pandoc conversion failed'}</pre></body></html>"""
                 return Response(content=error_html, media_type="text/html", status_code=200)
->>>>>>> release-testing
             
             # Get the output
             output = result.stdout or ''
@@ -190,20 +168,12 @@ async def preview_markdown(request: PreviewRequest):
             clean_html = f"""<!DOCTYPE html>
 <html>
 <head>
-<<<<<<< HEAD
-    <style>
-        .markdown-preview {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            line-height: 1.6;
-            color: #e5e7eb;
-=======
     <meta charset=\"utf-8\" />
     <style>
         :root {{ color-scheme: light dark; }}
         .markdown-preview {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
->>>>>>> release-testing
             background: transparent;
             margin: 0;
             padding: 0;
@@ -214,61 +184,33 @@ async def preview_markdown(request: PreviewRequest):
             margin-top: 1.5em;
             margin-bottom: 0.5em;
             font-weight: 600;
-<<<<<<< HEAD
-            color: #f3f4f6;
-=======
->>>>>>> release-testing
         }}
         .markdown-preview h1 {{ font-size: 2em; }}
         .markdown-preview h2 {{ font-size: 1.5em; }}
         .markdown-preview h3 {{ font-size: 1.25em; }}
-<<<<<<< HEAD
-        .markdown-preview p {{ margin-bottom: 1em; color: #e5e7eb; }}
-        .markdown-preview ul, .markdown-preview ol {{ margin-bottom: 1em; padding-left: 2em; color: #e5e7eb; }}
-        .markdown-preview li {{ margin-bottom: 0.5em; color: #e5e7eb; }}
-        .markdown-preview code {{
-            background-color: transparent;
-            color: #fbbf24;
-=======
         .markdown-preview p {{ margin-bottom: 1em; }}
         .markdown-preview ul, .markdown-preview ol {{ margin-bottom: 1em; padding-left: 2em; }}
         .markdown-preview li {{ margin-bottom: 0.5em; }}
         .markdown-preview code {{
             background-color: transparent;
             color: inherit;
->>>>>>> release-testing
             padding: 0.2em 0.4em;
             border-radius: 3px;
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
         }}
         .markdown-preview pre {{
-<<<<<<< HEAD
-            background-color: rgba(255, 255, 255, 0.05);
-            color: #fbbf24;
-=======
             background-color: rgba(127, 127, 127, 0.12);
             color: inherit;
->>>>>>> release-testing
             padding: 1em;
             border-radius: 5px;
             overflow-x: auto;
             margin: 1em 0;
-<<<<<<< HEAD
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }}
-        .markdown-preview blockquote {{
-            border-left: 4px solid rgba(255, 255, 255, 0.3);
-            margin: 1em 0;
-            padding-left: 1em;
-            color: #d1d5db;
-=======
             border: 1px solid rgba(127, 127, 127, 0.2);
         }}
         .markdown-preview blockquote {{
             border-left: 4px solid rgba(127, 127, 127, 0.4);
             margin: 1em 0;
             padding-left: 1em;
->>>>>>> release-testing
             opacity: 0.8;
         }}
         .markdown-preview table {{
@@ -277,32 +219,12 @@ async def preview_markdown(request: PreviewRequest):
             margin: 1em 0;
         }}
         .markdown-preview th, .markdown-preview td {{
-<<<<<<< HEAD
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            padding: 0.5em;
-            text-align: left;
-            color: #e5e7eb;
-        }}
-        .markdown-preview th {{
-            background-color: rgba(255, 255, 255, 0.1);
-        }}
-        .markdown-preview a {{
-            color: #60a5fa;
-            text-decoration: underline;
-        }}
-        .markdown-preview a:hover {{
-            color: #93c5fd;
-        }}
-        .markdown-preview strong {{
-            color: #f3f4f6;
-=======
             border: 1px solid rgba(127, 127, 127, 0.2);
             padding: 0.5em;
             text-align: left;
         }}
         .markdown-preview th {{
             background-color: rgba(127, 127, 127, 0.1);
->>>>>>> release-testing
         }}
         .markdown-preview img {{
             max-width: 100%;

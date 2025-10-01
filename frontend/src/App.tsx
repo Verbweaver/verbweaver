@@ -28,11 +28,7 @@ import { useAuthStore } from './services/auth'
 
 function App() {
   const navigate = useNavigate()
-<<<<<<< HEAD
-  const { theme } = useThemeStore()
-=======
   const { theme, customVars } = useThemeStore()
->>>>>>> release-testing
   const { loadProjects } = useProjectStore()
   const isAuthenticated = useAuthStore(state => state.isAuthenticated)
   const isAuthHydrated = useAuthStore(state => state.isHydrated)
@@ -42,12 +38,6 @@ function App() {
   console.log('Is Electron?', window.electronAPI !== undefined)
 
   useEffect(() => {
-<<<<<<< HEAD
-    // Apply theme to document
-    document.documentElement.classList.remove('light', 'dark', 'high-contrast', 'colorblind')
-    document.documentElement.classList.add(theme)
-  }, [theme])
-=======
     const root = document.documentElement
     // Apply theme class
     root.classList.remove('light', 'dark', 'high-contrast', 'colorblind', 'custom')
@@ -70,7 +60,6 @@ function App() {
       }
     }
   }, [theme, customVars])
->>>>>>> release-testing
 
   useEffect(() => {
     if (isAuthHydrated && isAuthenticated && !hasLoadedProjects.current) {
