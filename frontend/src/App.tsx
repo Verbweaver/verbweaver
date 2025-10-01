@@ -38,17 +38,26 @@ function App() {
   console.log('Is Electron?', window.electronAPI !== undefined)
 
   useEffect(() => {
-    // Apply theme to document
-    document.documentElement.classList.remove('light', 'dark', 'high-contrast', 'colorblind', 'custom')
+    const root = document.documentElement
+    // Apply theme class
+    root.classList.remove('light', 'dark', 'high-contrast', 'colorblind', 'custom')
     // Default colorblind and high-contrast to dark
     if (theme === 'colorblind' || theme === 'high-contrast') {
-      document.documentElement.classList.add('dark')
+      root.classList.add('dark')
     }
-    document.documentElement.classList.add(theme)
+    root.classList.add(theme)
+    // Manage inline custom variables
     if (theme === 'custom' && customVars) {
       Object.entries(customVars).forEach(([k, v]) => {
-        if (v && v.length > 0) document.documentElement.style.setProperty(`--${k}`, v)
+        if (v && v.length > 0) root.style.setProperty(`--${k}`, v)
       })
+    } else {
+      // Remove any previously applied custom overrides so built-in themes are unaffected
+      if (customVars) {
+        Object.keys(customVars).forEach((k) => {
+          root.style.removeProperty(`--${k}`)
+        })
+      }
     }
   }, [theme, customVars])
 

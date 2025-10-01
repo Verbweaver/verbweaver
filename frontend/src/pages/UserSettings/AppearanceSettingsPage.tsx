@@ -55,18 +55,24 @@ const AppearanceSettingsPage: React.FC = () => {
     return () => observer.disconnect()
   }, [])
 
+  // Reset or load custom values when theme changes so inputs reflect the active theme
+  useEffect(() => {
+    if (theme === 'custom') {
+      const persisted = useThemeStore.getState().customVars || {}
+      setCustomVars(persisted)
+    } else {
+      setCustomVars({})
+    }
+  }, [theme])
+
   const onEditVar = (key: string, val: string) => {
     setCustomVars(prev => ({ ...prev, [key]: val }))
   }
 
   const applyCustom = () => {
-    const root = document.documentElement
-    Object.entries(customVars).forEach(([k, v]) => {
-      if (v && v.length > 0) root.style.setProperty(`--${k}`, v)
-    })
-    // Persist custom vars in store
-    useThemeStore.getState().setCustomVars(customVars)
-    // Switch to custom theme class for persistence
+    // Persist first, then switch theme so App effect applies exactly those values
+    const next = { ...customVars }
+    useThemeStore.getState().setCustomVars(next)
     setTheme('custom' as Theme as any)
   }
 
@@ -103,7 +109,7 @@ const AppearanceSettingsPage: React.FC = () => {
                   <input
                     className="flex-1 px-2 py-1 text-sm rounded border border-input bg-background"
                     placeholder="e.g. 217 91% 60%"
-                    defaultValue={v}
+                    value={customVars[k] ?? v}
                     onChange={(e)=> onEditVar(k, e.target.value)}
                   />
                 </div>
