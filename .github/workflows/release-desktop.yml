@@ -14,11 +14,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+<<<<<<< HEAD
         os: [windows-latest, macos-latest, ubuntu-latest]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+=======
+        include:
+          - os: windows-latest
+          - os: ubuntu-latest
+          - os: macos-latest
+            mac_arch: arm64
+          - os: macos-latest
+            mac_arch: x64
+
+    steps:
+      - name: Checkout (with LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+>>>>>>> release-testing
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -30,6 +46,21 @@ jobs:
         with:
           python-version: '3.11'
 
+<<<<<<< HEAD
+=======
+      - name: Ensure LFS files are present
+        shell: bash
+        run: |
+          set -e
+          git lfs install
+          git lfs pull
+          # Sanity check sizes to avoid packaging LFS pointers
+          if [ -d desktop/resources/tools ]; then
+            echo "Listing tools disk usage:"
+            du -k desktop/resources/tools | head -n 50 || true
+          fi
+
+>>>>>>> release-testing
       - name: Install backend dependencies
         working-directory: backend
         run: |
@@ -70,6 +101,37 @@ jobs:
         working-directory: desktop
         run: npm run build
 
+<<<<<<< HEAD
+=======
+      - name: Prune bundled tools for target platform
+        shell: bash
+        run: |
+          set -e
+          TOOLS_DIR="desktop/resources/tools"
+          if [ ! -d "$TOOLS_DIR" ]; then
+            echo "No tools directory to prune"
+            exit 0
+          fi
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            rm -rf "$TOOLS_DIR/mac" "$TOOLS_DIR/linux"
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            rm -rf "$TOOLS_DIR/win" "$TOOLS_DIR/linux"
+            if [ "${{ matrix.mac_arch }}" = "arm64" ]; then
+              rm -rf "$TOOLS_DIR/mac/x86_64"
+            else
+              rm -rf "$TOOLS_DIR/mac/arm64"
+            fi
+          else
+            rm -rf "$TOOLS_DIR/win" "$TOOLS_DIR/mac"
+            ARCH="$(uname -m)"
+            if [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then
+              rm -rf "$TOOLS_DIR/linux/arm64"
+            else
+              rm -rf "$TOOLS_DIR/linux/amd64"
+            fi
+          fi
+
+>>>>>>> release-testing
       - name: Expose git metadata to desktop (for publish)
         shell: bash
         run: |
@@ -86,7 +148,11 @@ jobs:
           fi
 
       - name: Set code signing env (macOS)
+<<<<<<< HEAD
         if: runner.os == 'macOS'
+=======
+        if: runner.os == 'macOS' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+>>>>>>> release-testing
         shell: bash
         run: |
           # Import Developer ID cert from secrets for signing
@@ -103,11 +169,37 @@ jobs:
             echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> $GITHUB_ENV
           fi
 
+<<<<<<< HEAD
       - name: Package desktop app (no publish for branches)
         if: startsWith(github.ref, 'refs/heads/')
         working-directory: desktop
         shell: bash
         env:
+=======
+      - name: Package desktop app (unsigned mac; signed win/linux) on branches except main
+        if: startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main'
+        working-directory: desktop
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            npx electron-builder --win --publish never
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            if [[ "${{ matrix.mac_arch }}" == "arm64" ]]; then
+              npx electron-builder --mac --arm64 --publish never
+            else
+              npx electron-builder --mac --x64 --publish never
+            fi
+          else
+            npx electron-builder --linux --publish never
+          fi
+
+      - name: Package desktop app (signed on main)
+        if: github.ref == 'refs/heads/main'
+        working-directory: desktop
+        shell: bash
+        env:
+          # mac signing/notarization
+>>>>>>> release-testing
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -115,15 +207,47 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+<<<<<<< HEAD
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             npx electron-builder --win --publish never
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
             npx electron-builder --mac --publish never
+=======
+          # windows signing
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Map Windows-specific secrets to generic env expected by electron-builder
+            if [[ -n "$WIN_CSC_LINK" ]]; then export CSC_LINK="$WIN_CSC_LINK"; fi
+            if [[ -n "$WIN_CSC_KEY_PASSWORD" ]]; then export CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"; fi
+            npx electron-builder --win --publish never
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            if [[ "${{ matrix.mac_arch }}" == "arm64" ]]; then
+              npx electron-builder --mac --arm64 --publish never
+            else
+              npx electron-builder --mac --x64 --publish never
+            fi
+>>>>>>> release-testing
           else
             npx electron-builder --linux --publish never
           fi
 
+<<<<<<< HEAD
+=======
+      - name: Staple notarization ticket (macOS, main)
+        if: github.ref == 'refs/heads/main' && runner.os == 'macOS'
+        working-directory: desktop
+        shell: bash
+        run: |
+          set -e
+          echo "Stapling .app bundles..."
+          find dist-app -type d -name "*.app" -print0 | xargs -0 -I{} xcrun stapler staple -v "{}" || true
+          echo "Stapling DMG/ZIP artifacts..."
+          find dist-app -type f \( -name "*.dmg" -o -name "*.zip" \) -print0 | xargs -0 -I{} xcrun stapler staple -v "{}" || true
+
+>>>>>>> release-testing
       - name: Package desktop MSIX (no publish for branches)
         if: startsWith(github.ref, 'refs/heads/') && runner.os == 'Windows'
         working-directory: desktop
@@ -139,6 +263,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+<<<<<<< HEAD
+=======
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+>>>>>>> release-testing
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -147,13 +276,39 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
+<<<<<<< HEAD
             npm run dist:win
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
             npm run dist:mac
+=======
+            if [[ -n "$WIN_CSC_LINK" ]]; then export CSC_LINK="$WIN_CSC_LINK"; fi
+            if [[ -n "$WIN_CSC_KEY_PASSWORD" ]]; then export CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"; fi
+            npm run dist:win
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            if [[ "${{ matrix.mac_arch }}" == "arm64" ]]; then
+              npx electron-builder --mac --arm64
+            else
+              npx electron-builder --mac --x64
+            fi
+>>>>>>> release-testing
           else
             npm run dist:linux
           fi
 
+<<<<<<< HEAD
+=======
+      - name: Staple notarization ticket (macOS, tags)
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'macOS'
+        working-directory: desktop
+        shell: bash
+        run: |
+          set -e
+          echo "Stapling .app bundles..."
+          find dist-app -type d -name "*.app" -print0 | xargs -0 -I{} xcrun stapler staple -v "{}" || true
+          echo "Stapling DMG/ZIP artifacts..."
+          find dist-app -type f \( -name "*.dmg" -o -name "*.zip" \) -print0 | xargs -0 -I{} xcrun stapler staple -v "{}" || true
+
+>>>>>>> release-testing
       - name: Package and publish Windows MSIX (tags/releases)
         if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
         working-directory: desktop
@@ -167,8 +322,16 @@ jobs:
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@v4
         with:
+<<<<<<< HEAD
           name: ${{ matrix.os == 'ubuntu-latest' && 'desktop-linux-latest' || format('desktop-{0}', matrix.os) }}
           path: desktop/dist-app/**
+=======
+          name: ${{ matrix.os == 'ubuntu-latest' && 'desktop-linux-latest' || (matrix.os == 'macos-latest' && format('desktop-macos-latest-{0}', matrix.mac_arch) || format('desktop-{0}', matrix.os)) }}
+          path: |
+            desktop/dist-app/**
+            !desktop/dist-app/**/*.msix
+            !desktop/dist-app/**/*.appx
+>>>>>>> release-testing
           if-no-files-found: error
           retention-days: 7
 

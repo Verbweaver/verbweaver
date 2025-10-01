@@ -28,7 +28,11 @@ import { useAuthStore } from './services/auth'
 
 function App() {
   const navigate = useNavigate()
+<<<<<<< HEAD
   const { theme } = useThemeStore()
+=======
+  const { theme, customVars } = useThemeStore()
+>>>>>>> release-testing
   const { loadProjects } = useProjectStore()
   const isAuthenticated = useAuthStore(state => state.isAuthenticated)
   const isAuthHydrated = useAuthStore(state => state.isHydrated)
@@ -38,10 +42,35 @@ function App() {
   console.log('Is Electron?', window.electronAPI !== undefined)
 
   useEffect(() => {
+<<<<<<< HEAD
     // Apply theme to document
     document.documentElement.classList.remove('light', 'dark', 'high-contrast', 'colorblind')
     document.documentElement.classList.add(theme)
   }, [theme])
+=======
+    const root = document.documentElement
+    // Apply theme class
+    root.classList.remove('light', 'dark', 'high-contrast', 'colorblind', 'custom')
+    // Default colorblind and high-contrast to dark
+    if (theme === 'colorblind' || theme === 'high-contrast') {
+      root.classList.add('dark')
+    }
+    root.classList.add(theme)
+    // Manage inline custom variables
+    if (theme === 'custom' && customVars) {
+      Object.entries(customVars).forEach(([k, v]) => {
+        if (v && v.length > 0) root.style.setProperty(`--${k}`, v)
+      })
+    } else {
+      // Remove any previously applied custom overrides so built-in themes are unaffected
+      if (customVars) {
+        Object.keys(customVars).forEach((k) => {
+          root.style.removeProperty(`--${k}`)
+        })
+      }
+    }
+  }, [theme, customVars])
+>>>>>>> release-testing
 
   useEffect(() => {
     if (isAuthHydrated && isAuthenticated && !hasLoadedProjects.current) {

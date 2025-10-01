@@ -8,6 +8,10 @@ interface Dependency {
   version?: string;
   installUrl?: string;
   installInstructions?: string;
+<<<<<<< HEAD
+=======
+  source?: 'bundled' | 'system';
+>>>>>>> release-testing
 }
 
 interface DependencyCheckerProps {
@@ -36,8 +40,13 @@ export default function DependencyChecker({ onComplete, showOnStartup = false }:
       setLoading(true);
       const deps = await (window as any).electronAPI.checkDependencies();
       setDependencies(deps);
+<<<<<<< HEAD
       
              const missing = deps.some((dep: Dependency) => !dep.available);
+=======
+      // If a dependency is available via bundled source, we do not show startup prompt
+      const missing = deps.some((dep: Dependency) => !dep.available);
+>>>>>>> release-testing
       setHasMissingDependencies(missing);
       
       // Show dialog if there are missing dependencies and we should show on startup
@@ -146,6 +155,12 @@ export default function DependencyChecker({ onComplete, showOnStartup = false }:
                         <AlertTriangle className="w-4 h-4 text-amber-600" />
                       )}
                       <span className="font-medium">{dep.name}</span>
+<<<<<<< HEAD
+=======
+                      {dep.available && dep.source === 'bundled' && (
+                        <span className="ml-2 text-xs text-muted-foreground">(using bundled)</span>
+                      )}
+>>>>>>> release-testing
                     </div>
                     {dep.version && (
                       <span className="text-xs text-muted-foreground">

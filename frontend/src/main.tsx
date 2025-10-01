@@ -5,6 +5,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
 import './styles/index.css'
+<<<<<<< HEAD
+=======
+import './index.css'
+>>>>>>> release-testing
 
 // Create a query client
 const queryClient = new QueryClient({

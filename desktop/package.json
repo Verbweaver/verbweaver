@@ -1,6 +1,10 @@
 {
   "name": "@verbweaver/desktop",
+<<<<<<< HEAD
   "version": "1.0.0",
+=======
+  "version": "0.9.0",
+>>>>>>> release-testing
   "private": true,
   "description": "Verbweaver Desktop application",
   "author": "Verbweaver Team",
@@ -63,6 +67,13 @@
         "to": "backend"
       },
       {
+<<<<<<< HEAD
+=======
+        "from": "resources/tools",
+        "to": "tools"
+      },
+      {
+>>>>>>> release-testing
         "from": "../assets/templates",
         "to": "templates-defaults"
       },

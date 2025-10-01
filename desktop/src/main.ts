@@ -167,7 +167,11 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     const globalTemplatesDir = (store.get('globalTemplatesDir') as string) || process.env.GLOBAL_TEMPLATES_DIR || defaultGlobalTemplates;
 
     // Sanitize environment for backend: Electron/Node often set DEBUG=electron*, which breaks Pydantic bool parsing
+<<<<<<< HEAD
     const envBase: NodeJS.ProcessEnv = { ...process.env };
+=======
+    const envBase: NodeJS.ProcessEnv = { ...buildAugmentedEnvForSpawns() };
+>>>>>>> release-testing
     delete envBase.DEBUG;
 
     if (useBundledBinary) {
@@ -940,10 +944,17 @@ function setupIpcHandlers() {
       // Create project configuration file
       const projectConfig = {
         name: projectName,
+<<<<<<< HEAD
         version: "1.0.0",
         created: new Date().toISOString(),
         verbweaver: {
           version: "1.0.0",
+=======
+        version: app.getVersion(),
+        created: new Date().toISOString(),
+        verbweaver: {
+          version: app.getVersion(),
+>>>>>>> release-testing
           type: "project"
         }
       };
@@ -1069,6 +1080,7 @@ function setupIpcHandlers() {
         await copyTemplatesRecursive(srcCompiler, join(templatesDir, 'compiler'));
       }
 
+<<<<<<< HEAD
       // If no template was copied, ensure at least a minimal Empty.md exists
       const defaultEmptyPath = join(templatesDir, 'nodes', 'Empty.md');
       if (!existsSync(defaultEmptyPath)) {
@@ -1085,6 +1097,9 @@ Start your content here.
 `;
         await writeFile(defaultEmptyPath, emptyTemplateContent, 'utf-8');
       }
+=======
+      // Do not auto-generate Empty.md; only copy templates that exist in defaults
+>>>>>>> release-testing
       
       // Initialize Git repository
       const { spawn } = require('child_process');
@@ -2812,6 +2827,11 @@ interface DependencyCheck {
   version?: string;
   installUrl?: string;
   installInstructions?: string;
+<<<<<<< HEAD
+=======
+  // Indicates where the binary was resolved from
+  source?: 'bundled' | 'system';
+>>>>>>> release-testing
 }
 
 function buildAugmentedEnvForSpawns(): NodeJS.ProcessEnv {
@@ -2828,6 +2848,35 @@ function buildAugmentedEnvForSpawns(): NodeJS.ProcessEnv {
     additions.push('/usr/local/bin', '/usr/bin', '/bin', '/snap/bin');
   }
 
+<<<<<<< HEAD
+=======
+  // Include bundled tools directory, platform subdir, and arch subdir when present
+  try {
+    const toolsPath = join(process.resourcesPath, 'tools');
+    if (existsSync(toolsPath)) {
+      const platformDir = process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux');
+      const platformTools = path.join(toolsPath, platformDir);
+
+      // Determine arch-specific folder naming by platform
+      let archSegment: string | null = null;
+      if (process.platform === 'darwin') {
+        archSegment = process.arch === 'arm64' ? 'arm64' : 'x86_64';
+      } else if (process.platform === 'linux') {
+        if (process.arch === 'arm64') archSegment = 'arm64';
+        else if (process.arch === 'x64') archSegment = 'amd64';
+      }
+
+      if (archSegment) {
+        const archTools = path.join(platformTools, archSegment);
+        if (existsSync(archTools)) additions.unshift(archTools);
+      }
+
+      if (existsSync(platformTools)) additions.unshift(platformTools);
+      additions.unshift(toolsPath);
+    }
+  } catch {}
+
+>>>>>>> release-testing
   const currentPath = process.env.PATH || (process.env as any).Path || '';
   const currentParts = currentPath.split(pathSeparator).filter(Boolean);
   const uniqueAdditions = additions.filter(p => !currentParts.includes(p));
@@ -2842,13 +2891,57 @@ function buildAugmentedEnvForSpawns(): NodeJS.ProcessEnv {
   return env;
 }
 
+<<<<<<< HEAD
+=======
+// Prefer bundled executable if present; otherwise fall back to system PATH
+function resolveBundledExecutable(binaryName: string): string | null {
+  try {
+    const toolsRoot = join(process.resourcesPath, 'tools');
+    if (!existsSync(toolsRoot)) return null;
+
+    const platformDir = process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux');
+    const platformTools = path.join(toolsRoot, platformDir);
+
+    // Determine arch-specific folder naming by platform
+    let archSegment: string | null = null;
+    if (process.platform === 'darwin') {
+      archSegment = process.arch === 'arm64' ? 'arm64' : 'x86_64';
+    } else if (process.platform === 'linux') {
+      if (process.arch === 'arm64') archSegment = 'arm64';
+      else if (process.arch === 'x64') archSegment = 'amd64';
+    }
+
+    const candidates: string[] = [];
+    const fileName = process.platform === 'win32' ? `${binaryName}.exe` : binaryName;
+
+    if (archSegment) {
+      candidates.push(path.join(platformTools, archSegment, fileName));
+    }
+    candidates.push(path.join(platformTools, fileName));
+    candidates.push(path.join(toolsRoot, fileName));
+
+    for (const c of candidates) {
+      if (existsSync(c)) return c;
+    }
+  } catch {}
+  return null;
+}
+
+>>>>>>> release-testing
 async function checkDependencies(): Promise<DependencyCheck[]> {
   const dependencies: DependencyCheck[] = [];
   
   // Check Pandoc
   try {
+<<<<<<< HEAD
     const result = await new Promise<{ success: boolean; version?: string }>((resolve) => {
       const child = require('child_process').spawn('pandoc', ['--version'], {
+=======
+    const result = await new Promise<{ success: boolean; version?: string; source?: 'bundled' | 'system' }>((resolve) => {
+      const resolvedPath = resolveBundledExecutable('pandoc');
+      const pandocCmd = resolvedPath || 'pandoc';
+      const child = require('child_process').spawn(pandocCmd, ['--version'], {
+>>>>>>> release-testing
         stdio: ['pipe', 'pipe', 'pipe'],
         env: buildAugmentedEnvForSpawns()
       });
@@ -2861,13 +2954,34 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
       child.on('close', (code: number) => {
         if (code === 0) {
           const versionMatch = output.match(/pandoc\s+(\d+\.\d+\.\d+)/);
+<<<<<<< HEAD
           resolve({ success: true, version: versionMatch?.[1] });
+=======
+          resolve({ success: true, version: versionMatch?.[1], source: resolvedPath ? 'bundled' : 'system' });
+>>>>>>> release-testing
         } else {
           resolve({ success: false });
         }
       });
       
       child.on('error', () => {
+<<<<<<< HEAD
+=======
+        // Fallback on Windows: try execFile if direct spawn fails
+        if (process.platform === 'win32' && resolvedPath) {
+          try {
+            execFile(resolvedPath, ['--version'], { env: buildAugmentedEnvForSpawns() }, (error, stdout) => {
+              if (!error) {
+                const vm = stdout.match(/pandoc\s+(\d+\.\d+\.\d+)/);
+                resolve({ success: true, version: vm?.[1], source: 'bundled' });
+              } else {
+                resolve({ success: false });
+              }
+            });
+            return;
+          } catch {}
+        }
+>>>>>>> release-testing
         resolve({ success: false });
       });
     });
@@ -2876,6 +2990,10 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
       name: 'Pandoc',
       available: result.success,
       version: result.version,
+<<<<<<< HEAD
+=======
+      source: result.source,
+>>>>>>> release-testing
       installUrl: 'https://pandoc.org/installing.html',
       installInstructions: getPandocInstallInstructions()
     });
@@ -2888,11 +3006,21 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
     });
   }
   
+<<<<<<< HEAD
   // Check LaTeX engines for PDF support
   try {
     const checkEngine = async (cmd: string) => {
       return await new Promise<{ success: boolean; version?: string }>((resolve) => {
         const child = require('child_process').spawn(cmd, ['--version'], {
+=======
+  // Check PDF engine for PDF support (prefer bundled Tectonic, then xelatex/pdflatex)
+  try {
+    const checkEngine = async (cmd: string) => {
+      return await new Promise<{ success: boolean; version?: string; source?: 'bundled' | 'system' }>((resolve) => {
+        const resolvedPath = resolveBundledExecutable(cmd);
+        const bin = resolvedPath || cmd;
+        const child = require('child_process').spawn(bin, ['--version'], {
+>>>>>>> release-testing
           stdio: ['pipe', 'pipe', 'pipe'],
           env: buildAugmentedEnvForSpawns()
         });
@@ -2901,7 +3029,11 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
         child.on('close', (code: number) => {
           if (code === 0) {
             const ver = (output.split('\n')[0] || '').trim();
+<<<<<<< HEAD
             resolve({ success: true, version: ver });
+=======
+            resolve({ success: true, version: ver, source: resolvedPath ? 'bundled' : 'system' });
+>>>>>>> release-testing
           } else {
             resolve({ success: false });
           }
@@ -2909,12 +3041,24 @@ async function checkDependencies(): Promise<DependencyCheck[]> {
         child.on('error', () => resolve({ success: false }));
       });
     };
+<<<<<<< HEAD
     const xe = await checkEngine('xelatex');
     const pdf = xe.success ? xe : await checkEngine('pdflatex');
     dependencies.push({
       name: 'LaTeX (xelatex/pdflatex)',
       available: pdf.success,
       version: pdf.version,
+=======
+    // Prefer tectonic first if present, then xelatex, then pdflatex
+    const tec = await checkEngine('tectonic');
+    const xe = tec.success ? tec : await checkEngine('xelatex');
+    const pdf = xe.success ? xe : await checkEngine('pdflatex');
+    dependencies.push({
+      name: 'PDF engine (tectonic/xelatex/pdflatex)',
+      available: pdf.success,
+      version: pdf.version,
+      source: pdf.source,
+>>>>>>> release-testing
       installUrl: 'https://miktex.org/download/',
       installInstructions: process.platform === 'linux'
         ? 'Install TeX Live (e.g., sudo apt-get install texlive texlive-xetex)'
