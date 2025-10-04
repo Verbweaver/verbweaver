@@ -117,10 +117,16 @@ function resolveLinksToIds(rawLinks: unknown, nodesMap: Map<string, VerbweaverNo
   // Precompute indexes
   const idToId = new Set<string>()
   const pathToId = new Map<string, string>()
+  const pathToIdLower = new Map<string, string>()
   for (const n of nodesMap.values()) {
     const nid = String(n?.metadata?.id || '')
-    if (nid) idToId.add(nid)
-    pathToId.set(n.path.replace(/\\/g,'/'), nid)
+    if (nid) {
+      idToId.add(nid)
+      // Only index paths that have valid IDs to avoid capturing folders without IDs
+      const normPath = n.path.replace(/\\/g,'/')
+      pathToId.set(normPath, nid)
+      pathToIdLower.set(normPath.toLowerCase(), nid)
+    }
   }
   for (const entry of rawLinks) {
     const val = String(entry || '')
@@ -130,8 +136,22 @@ function resolveLinksToIds(rawLinks: unknown, nodesMap: Map<string, VerbweaverNo
     // Try as normalized path
     const norm = val.replace(/\\/g,'/')
     const withMd = norm.endsWith('.md') ? norm : `${norm}.md`
-    if (pathToId.has(norm)) { result.add(pathToId.get(norm)!); continue }
-    if (pathToId.has(withMd)) { result.add(pathToId.get(withMd)!); continue }
+    const normLower = norm.toLowerCase()
+    const withMdLower = withMd.toLowerCase()
+    // Prefer file variant first to avoid matching similarly named folder without ID
+    const mdHit = pathToId.get(withMd) || pathToIdLower.get(withMdLower)
+    if (mdHit) { result.add(mdHit); continue }
+    const normHit = pathToId.get(norm) || pathToIdLower.get(normLower)
+    if (normHit) { result.add(normHit); continue }
+    // Fallback: unique suffix match (case-insensitive)
+    const keys = Array.from(pathToId.keys())
+    const keysLower = keys.map(k => k.toLowerCase())
+    const suffixMatches: number[] = []
+    keysLower.forEach((k, idx) => { if (k.endsWith(withMdLower) || k.endsWith(normLower)) suffixMatches.push(idx) })
+    if (suffixMatches.length === 1) {
+      const id = pathToId.get(keys[suffixMatches[0]])
+      if (id) { result.add(id); continue }
+    }
   }
   return Array.from(result)
 }

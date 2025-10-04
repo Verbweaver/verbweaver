@@ -163,9 +163,9 @@ links: [node-abc, node-def]
 task:
   tracked: true
 
-## Linking to other nodes via path (new)
+## Linking to other nodes via path
 
-In addition to linking by node IDs, you can now link to other nodes by their repository-relative path. This is optional and additive; the app still writes IDs when creating links.
+In addition to linking by node IDs, you can now link to other nodes by their repository-relative path. This is optional; the app still writes IDs when creating links.
 
 Examples (all valid):
 

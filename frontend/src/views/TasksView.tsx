@@ -297,14 +297,20 @@ function TasksView() {
     }
   }
 
-  // Handle opening task from URL parameter
+  // Handle opening task from URL parameter (robustly resolve path variants)
   useEffect(() => {
     if (taskPath && nodes.size > 0) {
-      const decodedTaskPath = decodeURIComponent(taskPath)
-      const taskNode = nodes.get(decodedTaskPath)
-      
+      const decoded = decodeURIComponent(taskPath)
+      const norm = decoded.replace(/\\/g, '/').replace(/^\/+/, '')
+      const withMd = norm.endsWith('.md') ? norm : `${norm}.md`
+      // Try direct variants
+      let taskNode = nodes.get(norm) || nodes.get(withMd) || nodes.get(norm.replace(/^nodes\//, 'nodes/'))
+      // Fallback: unique suffix match
+      if (!taskNode) {
+        const matches = Array.from(nodes.values()).filter(n => n.path.replace(/\\/g,'/').endsWith(withMd) || n.path.replace(/\\/g,'/').endsWith(norm))
+        if (matches.length === 1) taskNode = matches[0]
+      }
       if (taskNode && taskNode.isMarkdown) {
-        console.log('Opening task from URL:', decodedTaskPath, taskNode)
         setSelectedTask(taskNode)
         setIsDetailModalOpen(true)
         // Clear the URL parameter after opening the task

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { X, Send, Paperclip, Link, User, Calendar, Tag, MessageSquare, Edit3, Download, Trash2, FileText, Eye, ChevronDown, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useNodeStore } from '../../store/nodeStore'
@@ -47,6 +47,7 @@ interface TaskDetailModalProps {
 
 function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, onDelete }: TaskDetailModalProps) {
   const { updateNode, getNode, loadNodes } = useNodeStore()
+  const nodesMap = useNodeStore((s) => s.nodes)
   const { addEditorTab } = useTabStore()
   const navigate = useNavigate()
   const [isEditing, setIsEditing] = useState(false)
@@ -73,6 +74,24 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   const [previewHtml, setPreviewHtml] = useState<string>('')
   const [previewError, setPreviewError] = useState<string>('')
   const { currentProjectPath } = useProjectStore()
+
+  // Resolve linked nodes (normalized to IDs in node.softLinks)
+  const linkedNodes = useMemo(() => {
+    if (!node) return [] as VerbweaverNode[]
+    const linkIds: string[] = Array.isArray(node.softLinks) ? node.softLinks : []
+    if (linkIds.length === 0) return []
+    const results: VerbweaverNode[] = []
+    for (const other of nodesMap.values()) {
+      if (!other.isDirectory && linkIds.includes(other.metadata?.id)) {
+        results.push(other as any)
+      }
+    }
+    const uniq = new Map<string, VerbweaverNode>()
+    results.forEach(r => uniq.set(r.path, r))
+    return Array.from(uniq.values()).sort((a, b) => (
+      (a.metadata?.title || a.name).localeCompare(b.metadata?.title || b.name)
+    ))
+  }, [node?.path, nodesMap])
 
   useEffect(() => {
     if (node) {
@@ -621,101 +640,93 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                   </button>
                 )}
               </div>
-                             {(node.metadata.links || []).length > 0 ? (
-                 <div className="space-y-2">
-                   {(node.metadata.links || []).map((linkId: string, index: number) => {
-                     // Find the linked node by ID
-                     const linkedNode = Array.from(useNodeStore.getState().nodes.values())
-                       .find(n => n.metadata.id === linkId)
+              {linkedNodes.length > 0 ? (
+                <div className="space-y-2">
+                  {linkedNodes.map((ln) => {
+                    const handleCopy = async () => {
+                      const idToCopy = ln.metadata?.id
+                      if (!idToCopy) return
+                      const core = String(idToCopy || '').replace(/^node-/, '')
+                      const tag = `node-${core}`
+                      try {
+                        if ((navigator as any)?.clipboard?.writeText) {
+                          await (navigator as any).clipboard.writeText(tag)
+                        } else {
+                          const ta = document.createElement('textarea')
+                          ta.value = tag
+                          ta.style.position = 'fixed'
+                          ta.style.opacity = '0'
+                          document.body.appendChild(ta)
+                          ta.focus(); ta.select(); try { document.execCommand('copy') } catch {}
+                          document.body.removeChild(ta)
+                        }
+                        toast.success('Copied node ID tag')
+                      } catch {
+                        toast.error('Copy failed')
+                      }
+                    }
 
-                     const handleCopy = async () => {
-                       const core = String(linkId || '').replace(/^node-/, '')
-                       const tag = `node-${core}`
-                       try {
-                         if ((navigator as any)?.clipboard?.writeText) {
-                           await navigator.clipboard.writeText(tag)
-                         } else {
-                           const ta = document.createElement('textarea')
-                           ta.value = tag
-                           ta.style.position = 'fixed'
-                           ta.style.opacity = '0'
-                           document.body.appendChild(ta)
-                           ta.focus()
-                           ta.select()
-                           try { document.execCommand('copy') } catch {}
-                           document.body.removeChild(ta)
-                         }
-                         toast.success('Copied node ID tag')
-                       } catch {
-                         toast.error('Copy failed')
-                       }
-                     }
-
-                     return (
-                       <div
-                         key={index}
-                         className="p-2 bg-muted rounded-md text-sm hover:bg-accent flex items-center justify-between"
-                         title={linkedNode?.path || linkId}
-                       >
-                         <div className="flex-1 flex items-center gap-2 min-w-0">
-                           <button
-                             onClick={() => {
-                               if (linkedNode) {
-                                 onClose()
-                                 const newPath = `/tasks/${encodeURIComponent(linkedNode.path)}`
-                                 navigate(newPath)
-                               }
-                             }}
-                             className="text-left truncate"
-                           >
-                             {linkedNode?.metadata.title || linkedNode?.name || linkId}
-                           </button>
-                           <button
-                             onClick={handleCopy}
-                             className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent text-muted-foreground whitespace-nowrap"
-                             title={`Copy node ID tag (${String(linkId).replace(/^node-/, '')})`}
-                           >
-                             {String(linkId).replace(/^node-/, '')}
-                           </button>
-                         </div>
-                         {isEditing && (
-                           <button
-                             onClick={async () => {
-                               if (linkedNode) {
-                                 try {
-                                   await useNodeStore.getState().removeSoftLink(node.path, linkedNode.path)
-                                   // Update local node metadata to remove the link so subsequent saves stay consistent
-                                   const updatedLinks = (node.metadata.links || []).filter((id: string) => id !== linkedNode.metadata.id)
-                                   const updatedNode = {
-                                     ...node,
-                                     metadata: {
-                                       ...node.metadata,
-                                       links: updatedLinks
-                                     }
-                                   }
-                                   onUpdate(updatedNode)
-                                   toast.success('Link removed')
-                                 } catch (error) {
-                                   console.error('Failed to remove link:', error)
-                                   toast.error('Failed to remove link')
-                                 }
-                               }
-                             }}
-                             className="p-1 text-muted-foreground hover:text-destructive"
-                             title="Remove link"
-                           >
-                             <X className="w-3 h-3" />
-                           </button>
-                         )}
-                       </div>
-                     )
-                   })}
-                 </div>
-               ) : (
-                 <p className="text-sm text-muted-foreground">
-                   No related content. {isEditing && "Click 'Create Link' to add connections to other nodes."}
-                 </p>
-               )}
+                    return (
+                      <div
+                        key={ln.path}
+                        className="p-2 bg-muted rounded-md text-sm hover:bg-accent flex items-center justify-between"
+                        title={ln.path}
+                      >
+                        <div className="flex-1 flex items-center gap-2 min-w-0">
+                          <button
+                            onClick={() => {
+                              onClose()
+                              navigate(`/tasks/${encodeURIComponent(ln.path)}`)
+                            }}
+                            className="text-left truncate"
+                          >
+                            {ln.metadata?.title || ln.name}
+                          </button>
+                          {ln.metadata?.id && (
+                            <button
+                              onClick={handleCopy}
+                              className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent text-muted-foreground whitespace-nowrap"
+                              title={`Copy node ID tag (${String(ln.metadata.id).replace(/^node-/, '')})`}
+                            >
+                              {String(ln.metadata.id).replace(/^node-/, '')}
+                            </button>
+                          )}
+                        </div>
+                        {isEditing && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await useNodeStore.getState().removeSoftLink(node.path, ln.path)
+                                const updatedLinks = (node.metadata.links || []).filter((v: string) => {
+                                  const s = String(v || '').replace(/\\/g,'/')
+                                  return s !== ln.metadata.id && s !== ln.path.replace(/\\/g,'/')
+                                })
+                                const updatedNode = {
+                                  ...node,
+                                  metadata: { ...node.metadata, links: updatedLinks }
+                                }
+                                onUpdate(updatedNode)
+                                toast.success('Link removed')
+                              } catch (error) {
+                                console.error('Failed to remove link:', error)
+                                toast.error('Failed to remove link')
+                              }
+                            }}
+                            className="p-1 text-muted-foreground hover:text-destructive"
+                            title="Remove link"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No related content. {isEditing && "Click 'Create Link' to add connections to other nodes."}
+                </p>
+              )}
             </div>
 
             {/* Save Button */}
