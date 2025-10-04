@@ -17,6 +17,7 @@ A sub-view switcher is available within each sub-view for quick navigation (Mind
 The Mind Map shows nodes as draggable items connected by links:
 
 - Drag nodes to rearrange; enable Rigid Mode to persist per-project folder positions.
+- Soft links can be authored by node ID or by repository-relative path in a node's YAML frontmatter. The graph resolves any path-based links to the appropriate targets at load time.
 - Use the left-side controls to hide uploads and toggle rigid layout.
 - The MiniMap in the corner provides an overview for large graphs.
 

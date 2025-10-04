@@ -123,7 +123,7 @@ function EditorView() {
     if (!resolvedNodePath) return [] as Array<{ path: string; name: string; title: string; id: string }>
     const node = s.nodes.get(resolvedNodePath)
     if (!node) return []
-    const linkIds: string[] = Array.isArray(node.metadata?.links) ? node.metadata.links : []
+    const linkIds: string[] = Array.isArray(node.softLinks) ? node.softLinks : []
     const results: Array<{ path: string; name: string; title: string; id: string }> = []
     if (linkIds.length === 0) return results
     for (const other of s.nodes.values()) {

@@ -1562,6 +1562,7 @@ function setupIpcHandlers() {
     const nodesDir = path.join(projectPath, 'nodes');
     const graphNodes: any[] = []; // Type later with Shared GraphNode
     const graphEdges: any[] = []; // Type later with Shared GraphEdge
+    const pathToId = new Map<string, string>();
 
     if (!existsSync(nodesDir)) {
       console.warn(`[graph:loadData] Nodes directory does not exist: ${nodesDir}`);
@@ -1619,17 +1620,25 @@ function setupIpcHandlers() {
               tags: frontmatter.tags || [],
               status: frontmatter.status
             });
+            if (frontmatter.id) {
+              pathToId.set(relativeEntryPath, String(frontmatter.id));
+            }
 
-            // Edge extraction from frontmatter.links
+            // Edge extraction from frontmatter.links (IDs or paths)
             if (frontmatter.links && Array.isArray(frontmatter.links)) {
               frontmatter.links.forEach((linkTarget: string) => {
                 if (linkTarget && typeof linkTarget === 'string') {
-                  const targetNodeId = linkTarget.replace(/\\/g, '/');
-                  const edgeId = `fm-${relativeEntryPath}-${targetNodeId}`.replace(/[^a-zA-Z0-9-_]/g, '-');
+                  const raw = linkTarget.replace(/\\/g, '/');
+                  const isIdLike = /^node-/.test(raw);
+                  let targetRef = raw;
+                  if (!isIdLike && !/\.md$/i.test(targetRef)) {
+                    targetRef += '.md';
+                  }
+                  const edgeId = `fm-${relativeEntryPath}-${targetRef}`.replace(/[^a-zA-Z0-9-_]/g, '-');
                   graphEdges.push({
                     id: edgeId,
                     source: relativeEntryPath,
-                    target: targetNodeId,
+                    target: isIdLike ? `__ID__:${raw}` : targetRef,
                     type: 'soft',
                     label: frontmatter.linkLabel || 'links to'
                   });
@@ -1670,6 +1679,16 @@ function setupIpcHandlers() {
     try {
       // Start processing from the nodes directory with empty relative base
       await processDirectory(nodesDir, '');
+      // Resolve any edges that carry ID placeholders to actual paths
+      const idToPath = new Map<string, string>();
+      pathToId.forEach((id, p) => idToPath.set(id, p));
+      for (const e of graphEdges) {
+        if (typeof e.target === 'string' && e.target.startsWith('__ID__:')) {
+          const id = e.target.slice('__ID__:'.length);
+          const p = idToPath.get(id);
+          if (p) e.target = p;
+        }
+      }
       console.log(`[graph:loadData] Loaded ${graphNodes.length} nodes and ${graphEdges.length} edges.`);
       return { nodes: graphNodes, edges: graphEdges };
     } catch (error) {
