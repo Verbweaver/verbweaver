@@ -110,6 +110,32 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[<>:"/\\|?*]/g, '-').trim();
 }
 
+// Normalize a list of link entries (IDs or paths) to a unique array of target IDs
+function resolveLinksToIds(rawLinks: unknown, nodesMap: Map<string, VerbweaverNode>): string[] {
+  const result = new Set<string>()
+  if (!Array.isArray(rawLinks)) return []
+  // Precompute indexes
+  const idToId = new Set<string>()
+  const pathToId = new Map<string, string>()
+  for (const n of nodesMap.values()) {
+    const nid = String(n?.metadata?.id || '')
+    if (nid) idToId.add(nid)
+    pathToId.set(n.path.replace(/\\/g,'/'), nid)
+  }
+  for (const entry of rawLinks) {
+    const val = String(entry || '')
+    if (!val) continue
+    // Prefer exact ID match
+    if (idToId.has(val)) { result.add(val); continue }
+    // Try as normalized path
+    const norm = val.replace(/\\/g,'/')
+    const withMd = norm.endsWith('.md') ? norm : `${norm}.md`
+    if (pathToId.has(norm)) { result.add(pathToId.get(norm)!); continue }
+    if (pathToId.has(withMd)) { result.add(pathToId.get(withMd)!); continue }
+  }
+  return Array.from(result)
+}
+
 // Helper to load a node from file (Electron only)
 async function loadNodeFromFile(filePath: string, isDirectory: boolean): Promise<VerbweaverNode | null> {
   if (!isElectron || !window.electronAPI) return null;
@@ -261,8 +287,19 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           }
         }
         
-        console.log('[NodeStore] Loaded nodes:', Array.from(nodes.keys()));
-        set({ nodes, isLoading: false });
+        // After initial load, normalize link entries to IDs for softLinks
+        try {
+          const normalized = new Map<string, VerbweaverNode>()
+          nodes.forEach((n, p) => {
+            const softIds = resolveLinksToIds((n.metadata as any)?.links || [], nodes)
+            normalized.set(p, { ...n, softLinks: softIds })
+          })
+          console.log('[NodeStore] Loaded nodes:', Array.from(normalized.keys()))
+          set({ nodes: normalized, isLoading: false })
+        } catch {
+          console.log('[NodeStore] Loaded nodes:', Array.from(nodes.keys()))
+          set({ nodes, isLoading: false })
+        }
       } else if (currentProject) {
         // Web: Fetch from API
         const response = await apiClient.get(`/projects/${currentProject.id}/nodes`);
@@ -272,8 +309,17 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         for (const node of data.nodes) {
           nodes.set(node.path, node);
         }
-        
-        set({ nodes, isLoading: false });
+        // Normalize softLinks from backend too, just in case older projects contain path links
+        try {
+          const normalized = new Map<string, VerbweaverNode>()
+          nodes.forEach((n, p) => {
+            const softIds = resolveLinksToIds((n.metadata as any)?.links || n.softLinks || [], nodes)
+            normalized.set(p, { ...n, softLinks: softIds })
+          })
+          set({ nodes: normalized, isLoading: false })
+        } catch {
+          set({ nodes, isLoading: false })
+        }
       }
     } catch (error) {
       console.error('[NodeStore] Failed to load nodes:', error);
@@ -403,7 +449,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           ...node,
           metadata: updatedMetadata,
           content: updatedContent,
-          softLinks: updatedMetadata.links || [],
+          softLinks: resolveLinksToIds((updatedMetadata as any)?.links || [], get().nodes),
           hasTask: !node.isDirectory && ((updatedMetadata as any)?.task?.tracked !== false),
           taskStatus: (updatedMetadata as any).task?.status
         };
@@ -455,7 +501,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         const updatedNode: VerbweaverNode = {
           ...node,
           metadata: updatedMetadata,
-          softLinks: updatedMetadata.links || [],
+          softLinks: resolveLinksToIds((updatedMetadata as any)?.links || [], get().nodes),
           hasTask: !node.isDirectory && ((updatedMetadata as any)?.task?.tracked !== false),
           taskStatus: (updatedMetadata as any).task?.status
         };
@@ -493,7 +539,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       const updatedNode: VerbweaverNode = {
         ...node,
         metadata: updatedMetadata,
-        softLinks: updatedMetadata.links || [],
+        softLinks: resolveLinksToIds((updatedMetadata as any)?.links || [], get().nodes),
         hasTask: !node.isDirectory && ((updatedMetadata as any)?.task?.tracked !== false),
         taskStatus: (updatedMetadata as any).task?.status
       };
@@ -530,15 +576,16 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         if (deletedId) {
           for (const [nodePath, node] of newNodes) {
             const links = Array.isArray(node.metadata?.links) ? node.metadata.links : [];
-            if (links.includes(deletedId)) {
-              const filtered = links.filter((id: string) => id !== deletedId);
+            const removeBy = new Set<string>([deletedId, path.replace(/\\/g,'/')])
+            const filtered = links.filter((v: string) => !removeBy.has(String(v)) && !removeBy.has(String(v).replace(/\\/g,'/')))
+            if (filtered.length !== links.length) {
               const updated = {
                 ...node,
                 metadata: {
                   ...node.metadata,
                   links: filtered,
                 },
-                softLinks: filtered,
+                softLinks: resolveLinksToIds(filtered, newNodes as any),
               } as any;
               newNodes.set(nodePath, updated);
             }
@@ -626,13 +673,19 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       const targetId = targetNode.metadata.id;
       
       // Remove link from source node
-      const updatedSourceLinks = (sourceNode.metadata.links || []).filter(id => id !== targetId);
+      const updatedSourceLinks = (sourceNode.metadata.links || []).filter(v => {
+        const s = String(v).replace(/\\/g,'/')
+        return s !== targetId && s !== targetPath.replace(/\\/g,'/')
+      });
       await get().updateNode(sourcePath, {
         metadata: { links: updatedSourceLinks }
       });
       
       // Remove link from target node
-      const updatedTargetLinks = (targetNode.metadata.links || []).filter(id => id !== sourceId);
+      const updatedTargetLinks = (targetNode.metadata.links || []).filter(v => {
+        const s = String(v).replace(/\\/g,'/')
+        return s !== sourceId && s !== sourcePath.replace(/\\/g,'/')
+      });
       await get().updateNode(targetPath, {
         metadata: { links: updatedTargetLinks }
       });

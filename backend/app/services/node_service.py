@@ -148,6 +148,7 @@ class NodeService:
                 'parent': parent,
                 'children': children
             },
+            # Preserve raw metadata.links; softLinks will be normalized where nodes are aggregated
             'softLinks': metadata.get('links', []),
             'hasTask': 'task' in metadata,
             'taskStatus': metadata.get('task', {}).get('status') if 'task' in metadata else None
@@ -356,7 +357,7 @@ class NodeService:
         if directory is None:
             directory = "nodes"
 
-        nodes = []
+        nodes: List[Dict[str, Any]] = []
         start_path = os.path.join(self.project_path, directory)
         
         for root, dirs, files in os.walk(start_path):
@@ -395,7 +396,43 @@ class NodeService:
                 node = await self.read_node(file_path)
                 if node:
                     nodes.append(node)
-        
+
+        # Normalize softLinks: allow entries to be either node IDs or repository-relative paths
+        try:
+            # Build path->id index
+            path_to_id = {}
+            id_set = set()
+            for n in nodes:
+                nid = str(n.get('metadata', {}).get('id') or '')
+                if nid:
+                    id_set.add(nid)
+                p = str(n.get('path') or '').replace('\\', '/')
+                if p:
+                    path_to_id[p] = nid
+            for n in nodes:
+                raw = n.get('metadata', {}).get('links', []) or []
+                resolved: List[str] = []
+                for entry in raw if isinstance(raw, list) else []:
+                    try:
+                        s = str(entry or '')
+                        if not s:
+                            continue
+                        if s in id_set:
+                            if s not in resolved:
+                                resolved.append(s)
+                            continue
+                        norm = s.replace('\\', '/')
+                        with_md = norm if norm.endswith('.md') else f"{norm}.md"
+                        tid = path_to_id.get(norm) or path_to_id.get(with_md)
+                        if tid and tid not in resolved:
+                            resolved.append(tid)
+                    except Exception:
+                        continue
+                n['softLinks'] = resolved
+        except Exception:
+            # On any failure, leave softLinks as-is
+            pass
+
         return nodes
     
     async def search_nodes(self, query: str, node_type: Optional[str] = None, 

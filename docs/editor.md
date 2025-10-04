@@ -162,6 +162,30 @@ title: Chapter 1
 links: [node-abc, node-def]
 task:
   tracked: true
+
+## Linking to other nodes via path (new)
+
+In addition to linking by node IDs, you can now link to other nodes by their repository-relative path. This is optional and additive; the app still writes IDs when creating links.
+
+Examples (all valid):
+
+```yaml
+---
+id: node-123
+title: Chapter 1
+links:
+  # By ID (preferred by system)
+  - node-abc
+  # By path (with extension)
+  - nodes/Characters/Alice.md
+  # By path (extension optional; .md assumed)
+  - nodes/Places/Village
+---
+```
+
+Notes:
+- Path values are resolved project‑relative and normalized; `.md` is assumed if omitted.
+- At load time, Verbweaver resolves any path entries to their target node IDs. Your existing ID-based links continue to work.
 ---
 ```
 

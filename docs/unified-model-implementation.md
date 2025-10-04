@@ -86,6 +86,8 @@ position:
   y: 150
 links:
   - node-0987654321-xyz789ghi
+  # You may also link by repository-relative path (extension optional)
+  - nodes/Appendix/Glossary
 task:
   status: in-progress
   priority: high
