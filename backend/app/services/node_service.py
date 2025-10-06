@@ -45,6 +45,39 @@ class NodeService:
         if match:
             try:
                 metadata = yaml.safe_load(match.group(1)) or {}
+                # Normalize position keys: accept quoted or coerced keys and ensure numeric values
+                try:
+                    pos = metadata.get('position')
+                    if isinstance(pos, dict):
+                        normalized: Dict[str, Any] = {}
+                        keys = list(pos.keys())
+                        x_key = next((k for k in keys if str(k).lower() == 'x'), None)
+                        y_key = next((k for k in keys if str(k).lower() == 'y'), None)
+                        # Sometimes YAML 1.1 may coerce 'y' into True; capture that if present
+                        if y_key is None and True in pos:
+                            y_key = True  # type: ignore
+                        if x_key is not None:
+                            xv = pos.get(x_key)
+                            try:
+                                xv_num = float(xv) if isinstance(xv, str) else xv
+                            except Exception:
+                                xv_num = xv
+                            normalized['x'] = xv_num
+                        if y_key is not None:
+                            yv = pos.get(y_key)
+                            try:
+                                yv_num = float(yv) if isinstance(yv, str) else yv
+                            except Exception:
+                                yv_num = yv
+                            normalized['y'] = yv_num
+                        # Preserve any additional custom keys
+                        for k in keys:
+                            kl = str(k).lower()
+                            if kl not in ('x', 'y') and k is not True:
+                                normalized[k] = pos.get(k)
+                        metadata['position'] = normalized
+                except Exception:
+                    pass
                 return metadata, match.group(2)
             except yaml.YAMLError:
                 # Invalid YAML, return empty metadata
@@ -53,6 +86,7 @@ class NodeService:
     
     async def stringify_markdown_with_frontmatter(self, metadata: Dict[str, Any], content: str) -> str:
         """Convert metadata and content back to Markdown with YAML front matter."""
+        # Prefer YAML 1.2-friendly dumping to avoid quoting simple keys like 'y'
         yaml_str = yaml.dump(metadata, default_flow_style=False, allow_unicode=True, sort_keys=False)
         return f"---\n{yaml_str}---\n{content}"
     
