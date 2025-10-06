@@ -264,14 +264,41 @@ class NodeService:
         try:
             node_to_delete = await self.read_node(path)
             target_id = node_to_delete['metadata'].get('id') if node_to_delete else None
-            if target_id:
+            # Build a removal set including id and path variants
+            norm_path = str(path or '').replace('\\', '/')
+            with_md = norm_path if norm_path.endswith('.md') else f"{norm_path}.md"
+            without_md = norm_path[:-3] if norm_path.endswith('.md') else norm_path
+            remove_values = {v for v in [target_id, norm_path, with_md, without_md] if v}
+
+            if remove_values:
                 all_nodes = await self.list_nodes()
                 for other in all_nodes:
-                    if other['path'] == path:
+                    if other.get('path') == path:
                         continue
-                    other_links = other['metadata'].get('links', [])
-                    if target_id in other_links:
-                        cleaned_links = [lid for lid in other_links if lid != target_id]
+                    raw_links = other.get('metadata', {}).get('links', []) or []
+                    if not isinstance(raw_links, list):
+                        continue
+                    def should_keep(val: Any) -> bool:
+                        try:
+                            s = str(val or '')
+                            if not s:
+                                return False
+                            if s in remove_values:
+                                return False
+                            s_norm = s.replace('\\', '/')
+                            if s_norm in remove_values:
+                                return False
+                            s_with_md = s_norm if s_norm.endswith('.md') else f"{s_norm}.md"
+                            if s_with_md in remove_values:
+                                return False
+                            s_without_md = s_norm[:-3] if s_norm.endswith('.md') else s_norm
+                            if s_without_md in remove_values:
+                                return False
+                            return True
+                        except Exception:
+                            return True
+                    cleaned_links = [v for v in raw_links if should_keep(v)]
+                    if len(cleaned_links) != len(raw_links):
                         await self.update_node(other['path'], {'links': cleaned_links})
         except Exception:
             # Don't block deletion if cleanup fails

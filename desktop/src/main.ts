@@ -1961,9 +1961,19 @@ function setupIpcHandlers() {
         return out;
       };
 
-      // If we know the deleted node's id, scan other nodes and remove backlinks
-      if (deletedNodeId) {
+      // Scan other nodes and remove backlinks by ID and path variants
+      {
         const nodesDir = path.join(projectPath, 'nodes');
+        const normRel = normalizedRel;
+        const relWithMd = /\.md$/i.test(normRel) ? normRel : `${normRel}.md`;
+        const relWithoutMd = /\.md$/i.test(normRel) ? normRel.slice(0, -3) : normRel;
+        const removalSet = new Set<string>([
+          ...(deletedNodeId ? [deletedNodeId] : []),
+          normRel,
+          relWithMd,
+          relWithoutMd,
+        ].filter(Boolean) as string[]);
+
         const walk = async (dir: string) => {
           const entries = await fs.readdir(dir, { withFileTypes: true });
           for (const entry of entries) {
@@ -1979,8 +1989,21 @@ function setupIpcHandlers() {
                 const parsed = matter(fc);
                 const fm = (parsed.data || {}) as any;
                 const links: any[] = Array.isArray(fm.links) ? fm.links : [];
-                if (links.includes(deletedNodeId)) {
-                  const newLinks = links.filter((l: any) => l !== deletedNodeId);
+                const newLinks = links.filter((l: any) => {
+                  try {
+                    const s = String(l || '');
+                    if (!s) return false; // drop empty
+                    if (removalSet.has(s)) return false;
+                    const sNorm = s.replace(/\\/g, '/');
+                    if (removalSet.has(sNorm)) return false;
+                    const sWith = /\.md$/i.test(sNorm) ? sNorm : `${sNorm}.md`;
+                    if (removalSet.has(sWith)) return false;
+                    const sWithout = /\.md$/i.test(sNorm) ? sNorm.slice(0, -3) : sNorm;
+                    if (removalSet.has(sWithout)) return false;
+                    return true;
+                  } catch { return true; }
+                });
+                if (newLinks.length !== links.length) {
                   const newFrontmatter = removeUndefined({ ...fm, links: newLinks });
                   const newContent = matter.stringify(parsed.content || '', newFrontmatter);
                   await fs.writeFile(full, newContent, 'utf8');

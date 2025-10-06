@@ -701,9 +701,13 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                                   const s = String(v || '').replace(/\\/g,'/')
                                   return s !== ln.metadata.id && s !== ln.path.replace(/\\/g,'/')
                                 })
+                                const updatedSoftLinks = Array.isArray(node.softLinks)
+                                  ? node.softLinks.filter((id: string) => id !== ln.metadata.id)
+                                  : []
                                 const updatedNode = {
                                   ...node,
-                                  metadata: { ...node.metadata, links: updatedLinks }
+                                  metadata: { ...node.metadata, links: updatedLinks },
+                                  softLinks: updatedSoftLinks
                                 }
                                 onUpdate(updatedNode)
                                 toast.success('Link removed')
@@ -833,7 +837,29 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
           onLinkCreated={(updatedLinks) => {
             setIsCreateLinkModalOpen(false)
             if (updatedLinks) {
-              const updatedNode = { ...node, metadata: { ...node.metadata, links: updatedLinks } } as any
+              // Resolve returned links (may be IDs or paths) into normalized softLinks (IDs)
+              const pathToId = new Map<string, string>()
+              const idSet = new Set<string>()
+              for (const other of nodesMap.values()) {
+                const p = String(other.path || '').replace(/\\/g, '/')
+                const nid = String(other.metadata?.id || '')
+                if (p) pathToId.set(p, nid)
+                if (nid) idSet.add(nid)
+              }
+              const resolvedSoftLinks: string[] = []
+              for (const entry of (Array.isArray(updatedLinks) ? updatedLinks : [])) {
+                const raw = String(entry || '')
+                if (!raw) continue
+                if (idSet.has(raw)) {
+                  if (!resolvedSoftLinks.includes(raw)) resolvedSoftLinks.push(raw)
+                  continue
+                }
+                const norm = raw.replace(/\\/g, '/')
+                const withMd = /\.md$/i.test(norm) ? norm : `${norm}.md`
+                const tid = pathToId.get(norm) || pathToId.get(withMd)
+                if (tid && !resolvedSoftLinks.includes(tid)) resolvedSoftLinks.push(tid)
+              }
+              const updatedNode = { ...node, metadata: { ...node.metadata, links: updatedLinks }, softLinks: resolvedSoftLinks } as any
               onUpdate(updatedNode)
             } else {
               onUpdate({ ...(node as any) })
