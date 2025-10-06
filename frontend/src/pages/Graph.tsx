@@ -646,19 +646,21 @@ function GraphView() {
           })
         }
         
-        // Create soft link edges (only create one edge per pair to avoid duplicates)
+        // Create soft link edges
         node.softLinks.forEach((targetId: string) => {
           // Find target node by ID
           const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
-          if (targetNode && includedPaths.has(targetNode.path)) {
-            // Only create edge if source ID is lexicographically smaller than target ID
-            // This ensures we only create one edge per pair of linked nodes
+          if (!targetNode || !includedPaths.has(targetNode.path)) return
+          const s = positionOf.get(node.path) || { x: 0, y: 0 }
+          const t = positionOf.get(targetNode.path) || { x: 0, y: 0 }
+          const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
+          const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+          const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
+
+          const reciprocal = Array.isArray(targetNode.softLinks) && targetNode.softLinks.includes(node.metadata.id)
+          if (reciprocal) {
+            // Bidirectional: draw a single undirected animated soft link (avoid duplicates via lexicographic ordering)
             if (node.metadata.id < targetNode.metadata.id) {
-              const s = positionOf.get(node.path) || { x: 0, y: 0 }
-              const t = positionOf.get(targetNode.path) || { x: 0, y: 0 }
-              const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
-              const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
-              const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
               flowEdges.push({
                 id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
                 source: node.path,
@@ -666,11 +668,23 @@ function GraphView() {
                 type: 'smoothstep',
                 animated: true,
                 style: { stroke: 'hsl(var(--primary))', strokeWidth: 2 },
-                // Remove arrows since links are bidirectional
                 sourceHandle: outMap[sourceHandle],
                 targetHandle: inMap[targetHandle],
               })
             }
+          } else {
+            // One-way: draw a directional, visually distinct soft link with arrow and dashed stroke
+            flowEdges.push({
+              id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
+              source: node.path,
+              target: targetNode.path,
+              type: 'smoothstep',
+              animated: false,
+              style: { stroke: 'hsl(var(--primary))', strokeWidth: 2, strokeDasharray: '6 3' },
+              markerEnd: { type: MarkerType.ArrowClosed },
+              sourceHandle: outMap[sourceHandle],
+              targetHandle: inMap[targetHandle],
+            })
           }
         })
       })

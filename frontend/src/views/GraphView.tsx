@@ -73,24 +73,32 @@ function GraphView() {
             })
           }
           
-          // Create soft link edges (only create one edge per pair to avoid duplicates)
+          // Create soft link edges, directional for one-way, undirected for mutual
           node.softLinks.forEach((targetId) => {
-            // Find target node by ID
             const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
-            if (targetNode) {
-                          // Only create edge if source ID is lexicographically smaller than target ID
-            // This ensures we only create one edge per pair of linked nodes
-            if (node.metadata.id < targetNode.metadata.id) {
+            if (!targetNode) return
+            const reciprocal = Array.isArray(targetNode.softLinks) && targetNode.softLinks.includes(node.metadata.id)
+            if (reciprocal) {
+              if (node.metadata.id < targetNode.metadata.id) {
+                flowEdges.push({
+                  id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
+                  source: node.path,
+                  target: targetNode.path,
+                  type: 'smoothstep',
+                  animated: true,
+                  style: { stroke: 'hsl(var(--primary))', strokeWidth: 2 },
+                })
+              }
+            } else {
               flowEdges.push({
                 id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
                 source: node.path,
                 target: targetNode.path,
                 type: 'smoothstep',
-                animated: true,
-                style: { stroke: 'hsl(var(--primary))', strokeWidth: 2 },
-                // Remove arrows since links are bidirectional
+                animated: false,
+                style: { stroke: 'hsl(var(--primary))', strokeWidth: 2, strokeDasharray: '6 3' },
+                markerEnd: { type: MarkerType.ArrowClosed },
               })
-            }
             }
           })
         })
