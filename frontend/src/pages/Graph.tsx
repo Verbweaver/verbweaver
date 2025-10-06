@@ -730,7 +730,12 @@ function GraphView() {
       if (rigidMode) {
         updateNode(node.id, {
           metadata: { position: node.position }
-        }).catch(() => {
+        }).catch((err: any) => {
+          // Surface details to help diagnose failures in Electron/web
+          try {
+            // eslint-disable-next-line no-console
+            console.error('[Graph] Failed to save node position', { id: node.id, position: node.position, error: err })
+          } catch {}
           toast.error('Failed to save node position')
         })
         // Persist per-project position for folders and nodes root

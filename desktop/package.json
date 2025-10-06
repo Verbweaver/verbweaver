@@ -28,7 +28,8 @@
     "@verbweaver/shared": "file:../shared",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.7",
-    "gray-matter": "^4.0.3"
+    "gray-matter": "^4.0.3",
+    "js-yaml": "^4.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.4",

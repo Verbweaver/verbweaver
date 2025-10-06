@@ -82,7 +82,37 @@ function parseMarkdownWithFrontMatter(content: string): { metadata: any, content
   const match = content.match(FRONTMATTER_RE)
   if (match) {
     try {
-      const metadata = yaml.load(match[1]) as any
+      // Use JSON_SCHEMA so timestamps stay as strings, not Date objects
+      const metadata = yaml.load(match[1], { schema: yaml.JSON_SCHEMA }) as any
+      // Normalize position keys to ensure 'x' and 'y' exist without odd variants
+      try {
+        const pos = (metadata as any)?.position
+        if (pos && typeof pos === 'object') {
+          const normalized: any = {}
+          const keys = Object.keys(pos)
+          // Handle possible boolean-coerced key from YAML 1.1 loaders (e.g., 'y' -> true -> 'true')
+          const xKey = keys.find(k => k.toLowerCase() === 'x')
+          const yKey = keys.find(k => k.toLowerCase() === 'y') || (keys.includes('true') ? 'true' : undefined)
+          if (xKey) {
+            const v = (pos as any)[xKey]
+            const num = typeof v === 'string' ? Number(v) : v
+            normalized.x = typeof num === 'number' && !Number.isNaN(num) ? num : v
+          }
+          if (yKey) {
+            const v = (pos as any)[yKey]
+            const num = typeof v === 'string' ? Number(v) : v
+            normalized.y = typeof num === 'number' && !Number.isNaN(num) ? num : v
+          }
+          // Preserve any additional custom keys
+          for (const k of keys) {
+            const kl = k.toLowerCase()
+            if (kl !== 'x' && kl !== 'y' && k !== 'true') {
+              (normalized as any)[k] = (pos as any)[k]
+            }
+          }
+          ;(metadata as any).position = normalized
+        }
+      } catch {}
       return { metadata, content: match[2] }
     } catch (e) {
       console.error('Failed to parse YAML front matter:', e)
@@ -92,10 +122,26 @@ function parseMarkdownWithFrontMatter(content: string): { metadata: any, content
 }
 
 // Helper function to stringify content with YAML front matter
+// Convert Date objects to ISO strings so JSON_SCHEMA dumping succeeds
+function sanitizeForYaml(value: any): any {
+  if (value instanceof Date) return value.toISOString()
+  if (Array.isArray(value)) return value.map(sanitizeForYaml)
+  if (value && typeof value === 'object') {
+    const out: any = {}
+    for (const [k, v] of Object.entries(value)) out[k] = sanitizeForYaml(v)
+    return out
+  }
+  return value
+}
+
 function stringifyMarkdownWithFrontMatter(metadata: any, content: string): string {
   // Guard against callers passing content that already contains frontmatter
   const body = (content || '').replace(FRONTMATTER_RE, '$2')
-  const yamlStr = yaml.dump(metadata, { indent: 2, lineWidth: -1 })
+  // Prefer YAML 1.2-compatible schema to avoid quoting simple keys like 'y'
+  let yamlStr = yaml.dump(sanitizeForYaml(metadata), { indent: 2, lineWidth: -1, schema: yaml.JSON_SCHEMA })
+  // Final normalization: dequote simple key 'y' when emitted as a quoted key on its own line
+  // Safely target indented mapping keys to avoid touching values
+  yamlStr = yamlStr.replace(/(^|\n)([ \t]+)'y':/g, '$1$2y:')
   return `---\n${yamlStr}---\n${body}`
 }
 
