@@ -112,6 +112,18 @@ function GraphView() {
     }
   })
 
+  // Display one-way links (Mind Map)
+  const SHOW_ONE_WAY_LOCAL_KEY = 'verbweaver_graph_show_one_way_links'
+  const [showOneWayLinks, setShowOneWayLinks] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(SHOW_ONE_WAY_LOCAL_KEY)
+      if (raw === null) return true
+      return raw === 'true'
+    } catch {
+      return true
+    }
+  })
+
   // Task columns config (to determine completed status per project)
   const [taskColumns, setTaskColumns] = useState<any[]>([])
   const [completedColumnId, setCompletedColumnId] = useState<string | null>(null)
@@ -646,19 +658,21 @@ function GraphView() {
           })
         }
         
-        // Create soft link edges (only create one edge per pair to avoid duplicates)
+        // Create soft link edges
         node.softLinks.forEach((targetId: string) => {
           // Find target node by ID
           const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
-          if (targetNode && includedPaths.has(targetNode.path)) {
-            // Only create edge if source ID is lexicographically smaller than target ID
-            // This ensures we only create one edge per pair of linked nodes
+          if (!targetNode || !includedPaths.has(targetNode.path)) return
+          const s = positionOf.get(node.path) || { x: 0, y: 0 }
+          const t = positionOf.get(targetNode.path) || { x: 0, y: 0 }
+          const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
+          const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+          const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
+
+          const reciprocal = Array.isArray(targetNode.softLinks) && targetNode.softLinks.includes(node.metadata.id)
+          if (reciprocal) {
+            // Bidirectional: draw a single undirected animated soft link (avoid duplicates via lexicographic ordering)
             if (node.metadata.id < targetNode.metadata.id) {
-              const s = positionOf.get(node.path) || { x: 0, y: 0 }
-              const t = positionOf.get(targetNode.path) || { x: 0, y: 0 }
-              const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
-              const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
-              const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
               flowEdges.push({
                 id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
                 source: node.path,
@@ -666,11 +680,23 @@ function GraphView() {
                 type: 'smoothstep',
                 animated: true,
                 style: { stroke: 'hsl(var(--primary))', strokeWidth: 2 },
-                // Remove arrows since links are bidirectional
                 sourceHandle: outMap[sourceHandle],
                 targetHandle: inMap[targetHandle],
               })
             }
+          } else if (showOneWayLinks) {
+            // One-way: draw a directional, visually distinct soft link with arrow and dashed stroke
+            flowEdges.push({
+              id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
+              source: node.path,
+              target: targetNode.path,
+              type: 'smoothstep',
+              animated: false,
+              style: { stroke: 'hsl(var(--primary))', strokeWidth: 2, strokeDasharray: '6 3' },
+              markerEnd: { type: MarkerType.ArrowClosed },
+              sourceHandle: outMap[sourceHandle],
+              targetHandle: inMap[targetHandle],
+            })
           }
         })
       })
@@ -678,7 +704,7 @@ function GraphView() {
       setNodes(flowNodes)
       setEdges(flowEdges)
     }
-  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads, graphCollapsed, hideCompletedTasks, isTaskCompleted])
+  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads, graphCollapsed, hideCompletedTasks, isTaskCompleted, showOneWayLinks])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
@@ -1536,7 +1562,7 @@ function GraphView() {
         <Controls />
         {/* Mind Map right-side panel */}
         <div className="absolute top-2 right-2 z-30 pointer-events-auto">
-          <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-44">
+          <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-56">
             <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')} title="Outline"><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')} title="Progression"><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
@@ -1586,6 +1612,18 @@ function GraphView() {
                 </span>
               )}
             </span>
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm" title="Show directional edges for one-way links.">
+            <input
+              type="checkbox"
+              checked={showOneWayLinks}
+              onChange={(e) => {
+                const v = e.target.checked
+                setShowOneWayLinks(v)
+                try { localStorage.setItem('verbweaver_graph_show_one_way_links', String(v)) } catch {}
+              }}
+            />
+            Display one-way links
           </label>
           <label className="inline-flex items-center gap-2 text-sm" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
             <input

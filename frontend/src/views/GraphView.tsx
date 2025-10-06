@@ -34,6 +34,16 @@ function GraphView() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string } | null>(null)
   const [confirmState, setConfirmState] = useState<{ open: boolean; nodeId?: string; nodeName?: string }>({ open: false })
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
+  // Display one-way links preference (persisted)
+  const [showOneWayLinks, setShowOneWayLinks] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem('verbweaver_graph_show_one_way_links')
+      if (raw === null) return true
+      return raw === 'true'
+    } catch {
+      return true
+    }
+  })
 
   // Load and convert nodes when project changes
   useEffect(() => {
@@ -73,24 +83,32 @@ function GraphView() {
             })
           }
           
-          // Create soft link edges (only create one edge per pair to avoid duplicates)
+          // Create soft link edges, directional for one-way, undirected for mutual
           node.softLinks.forEach((targetId) => {
-            // Find target node by ID
             const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
-            if (targetNode) {
-                          // Only create edge if source ID is lexicographically smaller than target ID
-            // This ensures we only create one edge per pair of linked nodes
-            if (node.metadata.id < targetNode.metadata.id) {
+            if (!targetNode) return
+            const reciprocal = Array.isArray(targetNode.softLinks) && targetNode.softLinks.includes(node.metadata.id)
+            if (reciprocal) {
+              if (node.metadata.id < targetNode.metadata.id) {
+                flowEdges.push({
+                  id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
+                  source: node.path,
+                  target: targetNode.path,
+                  type: 'smoothstep',
+                  animated: true,
+                  style: { stroke: 'hsl(var(--primary))', strokeWidth: 2 },
+                })
+              }
+            } else if (showOneWayLinks) {
               flowEdges.push({
                 id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
                 source: node.path,
                 target: targetNode.path,
                 type: 'smoothstep',
-                animated: true,
-                style: { stroke: 'hsl(var(--primary))', strokeWidth: 2 },
-                // Remove arrows since links are bidirectional
+                animated: false,
+                style: { stroke: 'hsl(var(--primary))', strokeWidth: 2, strokeDasharray: '6 3' },
+                markerEnd: { type: MarkerType.ArrowClosed },
               })
-            }
             }
           })
         })
@@ -249,6 +267,23 @@ function GraphView() {
       >
         <Background />
         <Controls />
+        {/* Basic preference toggle to mirror Mind Map option */}
+        <div className="absolute top-2 right-2 z-30 pointer-events-auto">
+          <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-56">
+            <label className="inline-flex items-center gap-2 text-xs" title="Show directional edges for one-way links.">
+              <input
+                type="checkbox"
+                checked={showOneWayLinks}
+                onChange={(e)=>{
+                  const v = e.target.checked
+                  setShowOneWayLinks(v)
+                  try { localStorage.setItem('verbweaver_graph_show_one_way_links', String(v)) } catch {}
+                }}
+              />
+              Display one-way links
+            </label>
+          </div>
+        </div>
         <MiniMap
           nodeColor={(node) => {
             switch (node.data?.type) {
