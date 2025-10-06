@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { desktopTemplatesApi } from '../../api/desktop-templates'
 import { templatesApi, Template } from '../../api/templates'
 import { useProjectStore } from '../../store/projectStore'
-import { Plus, Trash2, Edit, Link, FolderPlus, CheckSquare, Paperclip, Loader2, CheckCircle, Lock, Unlock, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Edit, Link, Unlink, FolderPlus, CheckSquare, Paperclip, Loader2, CheckCircle, Lock, Unlock, ChevronDown, ChevronRight } from 'lucide-react'
 
 interface NodeContextMenuProps {
   x: number
@@ -28,9 +28,10 @@ interface NodeContextMenuProps {
   isLocked?: boolean
   onToggleCollapse?: (nodeId: string) => void
   isCollapsed?: boolean
+  onRemoveLinks?: (nodeId: string) => void
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed, onRemoveLinks }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -243,6 +244,14 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
               >
                 <Link className="w-3 h-3" />
                 Create Link
+              </button>
+
+              <button
+                onClick={() => { if (nodeId && onRemoveLinks) { onRemoveLinks(nodeId) } else { onClose() } }}
+                className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+              >
+                <Unlink className="w-3 h-3" />
+                Remove Link(s)
               </button>
 
               {onToggleTrackTask && (
