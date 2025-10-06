@@ -115,25 +115,37 @@ function resolveLinksToIds(rawLinks: unknown, nodesMap: Map<string, VerbweaverNo
   const result = new Set<string>()
   if (!Array.isArray(rawLinks)) return []
   // Precompute indexes
-  const idToId = new Set<string>()
+  const idSet = new Set<string>()
   const pathToId = new Map<string, string>()
   const pathToIdLower = new Map<string, string>()
+  // basename (lowercased, with .md ensured) -> unique id (empty string if ambiguous)
+  const basenameToUniqueIdLower = new Map<string, string>()
   for (const n of nodesMap.values()) {
     const nid = String(n?.metadata?.id || '')
-    if (nid) {
-      idToId.add(nid)
-      // Only index paths that have valid IDs to avoid capturing folders without IDs
-      const normPath = n.path.replace(/\\/g,'/')
-      pathToId.set(normPath, nid)
-      pathToIdLower.set(normPath.toLowerCase(), nid)
+    if (!nid) continue
+    idSet.add(nid)
+    // Only index paths that have valid IDs to avoid capturing folders without IDs
+    const normPath = n.path.replace(/\\/g,'/')
+    pathToId.set(normPath, nid)
+    pathToIdLower.set(normPath.toLowerCase(), nid)
+    const base = (normPath.split('/')?.pop() || '')
+    if (base) {
+      const baseLower = base.toLowerCase()
+      const existing = basenameToUniqueIdLower.get(baseLower)
+      if (existing === undefined) {
+        basenameToUniqueIdLower.set(baseLower, nid)
+      } else if (existing && existing !== nid) {
+        // Mark ambiguous
+        basenameToUniqueIdLower.set(baseLower, '')
+      }
     }
   }
   for (const entry of rawLinks) {
     const val = String(entry || '')
     if (!val) continue
     // Prefer exact ID match
-    if (idToId.has(val)) { result.add(val); continue }
-    // Try as normalized path
+    if (idSet.has(val)) { result.add(val); continue }
+    // Try as normalized path (repo-relative); accept with or without .md
     const norm = val.replace(/\\/g,'/')
     const withMd = norm.endsWith('.md') ? norm : `${norm}.md`
     const normLower = norm.toLowerCase()
@@ -143,14 +155,11 @@ function resolveLinksToIds(rawLinks: unknown, nodesMap: Map<string, VerbweaverNo
     if (mdHit) { result.add(mdHit); continue }
     const normHit = pathToId.get(norm) || pathToIdLower.get(normLower)
     if (normHit) { result.add(normHit); continue }
-    // Fallback: unique suffix match (case-insensitive)
-    const keys = Array.from(pathToId.keys())
-    const keysLower = keys.map(k => k.toLowerCase())
-    const suffixMatches: number[] = []
-    keysLower.forEach((k, idx) => { if (k.endsWith(withMdLower) || k.endsWith(normLower)) suffixMatches.push(idx) })
-    if (suffixMatches.length === 1) {
-      const id = pathToId.get(keys[suffixMatches[0]])
-      if (id) { result.add(id); continue }
+    // Fallback: unique basename match (no path separators in source value)
+    if (!norm.includes('/')) {
+      const baseLower = (withMdLower.split('/')?.pop() || '')
+      const maybeId = basenameToUniqueIdLower.get(baseLower)
+      if (maybeId) { result.add(maybeId); continue }
     }
   }
   return Array.from(result)

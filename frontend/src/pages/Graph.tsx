@@ -124,6 +124,18 @@ function GraphView() {
     }
   })
 
+  // Collapsible Options tray (Mind Map)
+  const OPTIONS_OPEN_LOCAL_KEY = 'verbweaver_graph_options_open'
+  const [optionsOpen, setOptionsOpen] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(OPTIONS_OPEN_LOCAL_KEY)
+      if (raw === null) return true
+      return raw === 'true'
+    } catch {
+      return true
+    }
+  })
+
   // Task columns config (to determine completed status per project)
   const [taskColumns, setTaskColumns] = useState<any[]>([])
   const [completedColumnId, setCompletedColumnId] = useState<string | null>(null)
@@ -1573,70 +1585,84 @@ function GraphView() {
             </div>
           </div>
         </div>
-        {/* Left controls bar */}
-        <div className="absolute top-2 left-2 z-10 flex items-center gap-2 bg-background/80 border border-border rounded px-2 py-1 shadow">
-          <label className="inline-flex items-center gap-2 text-sm" title="Hide files inside the uploads/ directory from the Mind Map.">
-            <input
-              type="checkbox"
-              checked={hideUploads}
-              onChange={(e) => {
-                const v = e.target.checked
-                setHideUploads(v)
-                try { localStorage.setItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS, String(v)) } catch {}
-              }}
-            />
-            <span className="inline-flex items-center gap-1">
-              <span>Hide uploads</span>
-              {hideUploads && uploadsHiddenCount > 0 && (
-                <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${uploadsHiddenCount} items hidden`}>
-                  {uploadsHiddenCount}
-                </span>
-              )}
-            </span>
-          </label>
-          <label className="inline-flex items-center gap-2 text-sm" title="When enabled: completed Tasks are hidden from the Mind Map.">
-            <input
-              type="checkbox"
-              checked={hideCompletedTasks}
-              onChange={(e) => {
-                const v = e.target.checked
-                setHideCompletedTasks(v)
-                try { localStorage.setItem(HIDE_COMPLETED_LOCAL_KEY, String(v)) } catch {}
-              }}
-            />
-            <span className="inline-flex items-center gap-1">
-              <span>Hide completed Tasks</span>
-              {hideCompletedTasks && completedHiddenCount > 0 && (
-                <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${completedHiddenCount} tasks hidden`}>
-                  {completedHiddenCount}
-                </span>
-              )}
-            </span>
-          </label>
-          <label className="inline-flex items-center gap-2 text-sm" title="Show directional edges for one-way links.">
-            <input
-              type="checkbox"
-              checked={showOneWayLinks}
-              onChange={(e) => {
-                const v = e.target.checked
-                setShowOneWayLinks(v)
-                try { localStorage.setItem('verbweaver_graph_show_one_way_links', String(v)) } catch {}
-              }}
-            />
-            Display one-way links
-          </label>
-          <label className="inline-flex items-center gap-2 text-sm" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
-            <input
-              type="checkbox"
-              checked={rigidMode}
-              onChange={(e) => {
-                const v = e.target.checked
-                setRigidMode(v)
-                try { localStorage.setItem(STORAGE_KEYS.GRAPH_RIGID_MODE, String(v)) } catch {}
-              }}
-            />
-            Rigid mode
-          </label>
+        {/* Left controls: collapsible Options tray */}
+        <div className="absolute top-2 left-2 z-10 pointer-events-auto">
+          <div className="bg-background/80 border border-border rounded shadow w-64">
+            <button
+              className="w-full flex items-center justify-between px-2 py-1 text-sm"
+              onClick={() => setOptionsOpen(o => { const next = !o; try { localStorage.setItem(OPTIONS_OPEN_LOCAL_KEY, String(next)) } catch {}; return next })}
+              aria-expanded={optionsOpen}
+            >
+              <span>Options</span>
+              <span className="text-xs">{optionsOpen ? '▾' : '▸'}</span>
+            </button>
+            {optionsOpen && (
+              <div className="p-2 flex flex-col gap-2">
+                <label className="inline-flex items-center gap-2 text-sm" title="Hide files inside the uploads/ directory from the Mind Map.">
+                  <input
+                    type="checkbox"
+                    checked={hideUploads}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setHideUploads(v)
+                      try { localStorage.setItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS, String(v)) } catch {}
+                    }}
+                  />
+                  <span className="inline-flex items-center gap-1">
+                    <span>Hide uploads</span>
+                    {hideUploads && uploadsHiddenCount > 0 && (
+                      <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${uploadsHiddenCount} items hidden`}>
+                        {uploadsHiddenCount}
+                      </span>
+                    )}
+                  </span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm" title="When enabled: completed Tasks are hidden from the Mind Map.">
+                  <input
+                    type="checkbox"
+                    checked={hideCompletedTasks}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setHideCompletedTasks(v)
+                      try { localStorage.setItem(HIDE_COMPLETED_LOCAL_KEY, String(v)) } catch {}
+                    }}
+                  />
+                  <span className="inline-flex items-center gap-1">
+                    <span>Hide completed Tasks</span>
+                    {hideCompletedTasks && completedHiddenCount > 0 && (
+                      <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${completedHiddenCount} tasks hidden`}>
+                        {completedHiddenCount}
+                      </span>
+                    )}
+                  </span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm" title="Show directional edges for one-way links.">
+                  <input
+                    type="checkbox"
+                    checked={showOneWayLinks}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setShowOneWayLinks(v)
+                      try { localStorage.setItem('verbweaver_graph_show_one_way_links', String(v)) } catch {}
+                    }}
+                  />
+                  Display one-way links
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
+                  <input
+                    type="checkbox"
+                    checked={rigidMode}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setRigidMode(v)
+                      try { localStorage.setItem(STORAGE_KEYS.GRAPH_RIGID_MODE, String(v)) } catch {}
+                    }}
+                  />
+                  Rigid mode
+                </label>
+              </div>
+            )}
+          </div>
         </div>
         <MiniMap
           nodeColor={(node) => {
