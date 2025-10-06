@@ -25,6 +25,7 @@ import { templatesApi, Template as ApiTemplate } from '../api/templates';
 import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
+import RemoveLinksModal from '../components/common/RemoveLinksModal'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
 import { Paperclip, Filter, ListTree, Loader2, LineChart, Network } from 'lucide-react'
 import clsx from 'clsx'
@@ -83,6 +84,8 @@ function GraphView() {
   const [isShiftMarquee, setIsShiftMarquee] = useState(false)
   const [selectionBase, setSelectionBase] = useState<Set<string> | null>(null)
   const [ctrlMetaPressed, setCtrlMetaPressed] = useState(false)
+  const [removeLinksOpen, setRemoveLinksOpen] = useState(false)
+  const [removeLinksNodePath, setRemoveLinksNodePath] = useState<string | null>(null)
   const [hideUploads, setHideUploads] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS)
@@ -1072,6 +1075,12 @@ function GraphView() {
     [navigate, verbweaverNodes, addEditorTab]
   )
 
+  const openRemoveLinksForNode = useCallback((nodePath: string) => {
+    setRemoveLinksNodePath(nodePath)
+    setRemoveLinksOpen(true)
+    setContextMenu(null)
+  }, [])
+
   // Handle deleting edge
   const handleDeleteEdge = useCallback(
     async (edgeId: string) => {
@@ -1829,6 +1838,7 @@ function GraphView() {
             const id = contextMenu.nodeId || ''
             return !!graphCollapsed[id]
           })()}
+          onRemoveLinks={(nodeId) => openRemoveLinksForNode(nodeId)}
           onUploadFiles={() => {
             const input = document.getElementById('graph-canvas-upload-input') as HTMLInputElement | null
             input?.click()
@@ -1963,6 +1973,41 @@ function GraphView() {
         onClose={() => setTemplateDialogOpen(false)}
         onSelectTemplate={handleTemplateSelected}
         parentPath={parentPathForNewNode}
+      />
+
+      {/* Remove Links Modal for Mind Map */}
+      <RemoveLinksModal
+        isOpen={removeLinksOpen}
+        linkedNodes={(() => {
+          if (!removeLinksNodePath) return []
+          const source = verbweaverNodes.get(removeLinksNodePath)
+          if (!source || !Array.isArray(source.softLinks)) return []
+          const results: { path: string; title: string }[] = []
+          for (const targetId of source.softLinks) {
+            const target = Array.from(verbweaverNodes.values()).find(n => n.metadata?.id === targetId)
+            if (target) results.push({ path: target.path, title: target.metadata?.title || target.name })
+          }
+          // De-duplicate by path
+          const uniq = new Map<string, { path: string; title: string }>()
+          results.forEach(r => uniq.set(r.path, r))
+          return Array.from(uniq.values()).sort((a, b) => a.title.localeCompare(b.title))
+        })()}
+        onClose={() => { setRemoveLinksOpen(false); setRemoveLinksNodePath(null) }}
+        onRemoveSelected={async (paths) => {
+          try {
+            if (!removeLinksNodePath) return
+            for (const p of paths) {
+              await removeSoftLink(removeLinksNodePath, p)
+            }
+            await loadNodes()
+            toast.success('Link(s) removed')
+          } catch (e) {
+            toast.error('Failed to remove link(s)')
+          } finally {
+            setRemoveLinksOpen(false)
+            setRemoveLinksNodePath(null)
+          }
+        }}
       />
 
       {/* Hidden file input for attachments */}
