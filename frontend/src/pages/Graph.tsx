@@ -492,6 +492,38 @@ function GraphView() {
     }
   }, [attachTarget])
 
+  // Track theme changes to recalculate colors when needed
+  const [themeVersion, setThemeVersion] = useState(0)
+  
+  useEffect(() => {
+    // Listen for theme changes by monitoring CSS custom property changes
+    const observer = new MutationObserver(() => {
+      setThemeVersion(prev => prev + 1)
+    })
+    
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'style']
+    })
+    
+    return () => observer.disconnect()
+  }, [])
+
+  // Memoize theme colors, recalculate when theme changes
+  const themeColors = useMemo(() => {
+    const rootStyles = getComputedStyle(document.documentElement)
+    const colorMutedFg = rootStyles.getPropertyValue('--muted-foreground').trim()
+    const colorPrimary = rootStyles.getPropertyValue('--primary').trim()
+    const colorBackground = rootStyles.getPropertyValue('--background').trim()
+    const colorBorder = rootStyles.getPropertyValue('--border').trim()
+    return {
+      muted: colorMutedFg ? `hsl(${colorMutedFg})` : '#94a3b8',
+      primary: colorPrimary ? `hsl(${colorPrimary})` : '#3b82f6',
+      background: colorBackground ? `hsl(${colorBackground})` : '#0b0f19',
+      border: colorBorder ? `hsl(${colorBorder})` : '#334155'
+    }
+  }, [themeVersion]) // Recalculate when theme changes
+
   // Load and convert nodes when project changes or nodes update
   useEffect(() => {
     if (currentProject && positionsReady) {
@@ -643,16 +675,6 @@ function GraphView() {
       }
 
       // Now create edges for all nodes that survived filtering
-      // Resolve theme colors (avoid CSS variables in export rendering)
-      const rootStyles = getComputedStyle(document.documentElement)
-      const colorMutedFg = rootStyles.getPropertyValue('--muted-foreground').trim()
-      const colorPrimary = rootStyles.getPropertyValue('--primary').trim()
-      const colorBackground = rootStyles.getPropertyValue('--background').trim()
-      const colorBorder = rootStyles.getPropertyValue('--border').trim()
-      const hslMuted = colorMutedFg ? `hsl(${colorMutedFg})` : '#94a3b8'
-      const hslPrimary = colorPrimary ? `hsl(${colorPrimary})` : '#3b82f6'
-      const hslBackground = colorBackground ? `hsl(${colorBackground})` : '#0b0f19'
-      const hslBorder = colorBorder ? `hsl(${colorBorder})` : '#334155'
       const includedPaths = new Set(flowNodes.map(n => n.id))
       verbweaverNodes.forEach((node) => {
         const normPath = node.path.replace(/\\/g, '/')
@@ -676,7 +698,7 @@ function GraphView() {
             source: parentPath,
             target: node.path,
             type: 'straight',
-            style: { stroke: hslMuted, strokeWidth: 2 },
+            style: { stroke: themeColors.muted, strokeWidth: 2 },
             markerEnd: {
               type: MarkerType.ArrowClosed,
             },
@@ -707,7 +729,7 @@ function GraphView() {
                 target: targetNode.path,
                 type: 'smoothstep',
                 animated: true,
-                style: { stroke: hslPrimary, strokeWidth: 2 },
+                style: { stroke: themeColors.primary, strokeWidth: 2 },
                 sourceHandle: outMap[sourceHandle],
                 targetHandle: inMap[targetHandle],
               })
@@ -720,7 +742,7 @@ function GraphView() {
               target: targetNode.path,
               type: 'smoothstep',
               animated: false,
-              style: { stroke: hslPrimary, strokeWidth: 2, strokeDasharray: '6 3' },
+              style: { stroke: themeColors.primary, strokeWidth: 2, strokeDasharray: '6 3' },
               markerEnd: { type: MarkerType.ArrowClosed },
               sourceHandle: outMap[sourceHandle],
               targetHandle: inMap[targetHandle],
