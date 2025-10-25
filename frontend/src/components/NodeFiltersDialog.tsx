@@ -112,7 +112,7 @@ export default function NodeFiltersDialog({
               value={filters.startsWith}
               onChange={(e) => updateFilters({ startsWith: e.target.value })}
             />
-            <label className="block text-xs font-medium">Ends with (.expiration)</label>
+            <label className="block text-xs font-medium">Ends with (e.g. .expiration)</label>
             <input
               className="w-full px-2 py-1 border border-input rounded bg-background"
               value={filters.endsWith}
