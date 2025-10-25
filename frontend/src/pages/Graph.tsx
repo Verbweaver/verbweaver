@@ -71,6 +71,9 @@ function GraphView() {
   const { currentProject, currentProjectPath } = useProjectStore()
   const { nodes: verbweaverNodes, loadNodes, updateNode, createNode, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
   const { addEditorTab } = useTabStore()
+  // Tab selectors for persistence/restore
+  const activeTabId = useTabStore(s => s.activeTabId)
+  const tabs = useTabStore(s => s.tabs)
   
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -90,6 +93,10 @@ function GraphView() {
   const [removeLinksOpen, setRemoveLinksOpen] = useState(false)
   const [removeLinksNodePath, setRemoveLinksNodePath] = useState<string | null>(null)
   const reactFlowWrapperRef = useRef<HTMLDivElement | null>(null)
+  // Stable fallback positions for nodes without saved positions (prevents re-randomizing)
+  const fallbackPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  // Track last graph signatures to avoid redundant updates that can cause render loops
+  const lastGraphSigsRef = useRef<{ nodes: string; edges: string }>({ nodes: '', edges: '' })
   const [hideUploads, setHideUploads] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS)
@@ -147,6 +154,36 @@ function GraphView() {
   const [filters, setFilters] = useState<NodeFilterState>(DEFAULT_FILTERS)
   const [filtersOpen, setFiltersOpen] = useState(false)
 
+  // Persist filters per tab so they survive tab switches
+  useEffect(() => {
+    try {
+      const tab = useTabStore.getState().getActiveTab()
+      if (tab) {
+        useTabStore.getState().updateTabMetadata(tab.id, (prev: any) => ({ ...(prev || {}), graphFilters: filters } as any))
+      }
+    } catch {}
+  }, [filters])
+
+  // Restore filters when mounting/when active tab changes
+  const lastRestoredForTabRef = useRef<string | null>(null)
+  useEffect(() => {
+    try {
+      const tab = tabs.find(t => t.id === activeTabId)
+      if (!tab) return
+      const saved = (tab.metadata as any)?.graphFilters as NodeFilterState | undefined
+      if (saved && typeof saved === 'object') {
+        const curr = filters
+        const same = (() => {
+          try { return JSON.stringify(curr) === JSON.stringify(saved) } catch { return false }
+        })()
+        if (!same || lastRestoredForTabRef.current !== tab.id) {
+          setFilters(prev => ({ ...prev, ...saved }))
+          lastRestoredForTabRef.current = tab.id
+        }
+      }
+    } catch {}
+  }, [activeTabId, tabs])
+
   // Task columns config (to determine completed status per project)
   const [taskColumns, setTaskColumns] = useState<any[]>([])
   const [completedColumnId, setCompletedColumnId] = useState<string | null>(null)
@@ -197,7 +234,6 @@ function GraphView() {
   // Outline subview state
   type GraphSubView = 'mindmap' | 'outline' | 'progression'
   const { getActiveTab, updateTab, updateTabMetadata } = useTabStore()
-  const { activeTabId, tabs } = useTabStore((s) => ({ activeTabId: s.activeTabId, tabs: s.tabs }))
   const activeGraphTabId = useMemo(() => {
     const t = tabs.find(t => t.id === activeTabId)
     return t && t.type === 'graph' ? t.id : undefined
@@ -509,7 +545,8 @@ function GraphView() {
     
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['class', 'style']
+      // Observe class only; style mutations can be noisy and cause update loops
+      attributeFilter: ['class']
     })
     
     return () => observer.disconnect()
@@ -534,6 +571,8 @@ function GraphView() {
 
   // Load and convert nodes when project changes or nodes update
   useEffect(() => {
+    if (!currentProject || !positionsReady) return
+    let cancelled = false
     if (currentProject && positionsReady) {
       // Equality helpers to avoid unnecessary state updates → prevents render loops
       const nodesEqual = (a: Node[], b: Node[]) => {
@@ -722,7 +761,7 @@ function GraphView() {
         // Apply filters
         if (!nodeMatchesFilters(node)) return
 
-        // Compute position
+        // Compute position (deterministic fallbacks to avoid update loops)
         const position = (() => {
           if (node.path === 'nodes') {
             const persisted = graphPositions['nodes']
@@ -737,7 +776,19 @@ function GraphView() {
           if (rigidMode && saved && typeof saved.x === 'number' && typeof saved.y === 'number') {
             return saved
           }
-          return saved || { x: Math.random() * 500, y: Math.random() * 500 }
+          if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') return saved
+          // Deterministic fallback based on path; cache result
+          const cached = fallbackPositionsRef.current.get(node.path)
+          if (cached) return cached
+          // Simple string hash
+          const s = node.path
+          let h = 0
+          for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i) | 0
+          const x = ((h >>> 0) % 800) + 50
+          const y = (((h * 2654435761) >>> 0) % 500) + 50
+          const pos = { x, y }
+          fallbackPositionsRef.current.set(node.path, pos)
+          return pos
         })()
 
         // Determine locked state: nodes root defaults to locked unless explicitly unlocked
@@ -888,14 +939,35 @@ function GraphView() {
       })
       
       // Only update state when contents actually changed to avoid triggering loops
-      if (!nodesEqual(flowNodes, nodes)) {
-        setNodes(flowNodes)
-      }
-      if (!edgesEqual(flowEdges, edges)) {
-        setEdges(flowEdges)
+      if (!cancelled) {
+        // Build deterministic signatures independent of array ordering
+        const nodeSig = flowNodes
+          .map(n => `${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${n.type}:${(n as any).data?.locked?'1':'0'}:${(n as any).data?.isDirectory?'1':'0'}:${(n as any).data?.type||''}`)
+          .sort()
+          .join('|')
+        const edgeSig = flowEdges
+          .map(e => `${e.id}:${e.source}:${e.target}:${(e as any).sourceHandle||''}:${(e as any).targetHandle||''}:${e.type||''}`)
+          .sort()
+          .join('|')
+
+        const prevNodesSig = lastGraphSigsRef.current.nodes
+        const prevEdgesSig = lastGraphSigsRef.current.edges
+
+        const nodesChanged = nodeSig !== prevNodesSig
+        const edgesChanged = edgeSig !== prevEdgesSig
+
+        if (nodesChanged) {
+          setNodes(flowNodes)
+          lastGraphSigsRef.current.nodes = nodeSig
+        }
+        if (edgesChanged) {
+          setEdges(flowEdges)
+          lastGraphSigsRef.current.edges = edgeSig
+        }
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { cancelled = true }
   }, [currentProject, positionsReady, verbweaverNodes, hideUploads, graphCollapsed, hideCompletedTasks, isTaskCompleted, showOneWayLinks, themeColors, filters, rigidMode, graphPositions])
 
   // Handle node drag
@@ -1969,6 +2041,25 @@ function GraphView() {
                   <Filter className="w-4 h-4" />
                   <span>Filters</span>
                 </button>
+                {(() => {
+                  const parts: string[] = []
+                  if ((filters.tags || []).length > 0) parts.push(`tags(${filters.tagsLogic}): ${filters.tags.join(', ')}`)
+                  if (filters.nameKeyword) parts.push(`name:"${filters.nameKeyword}"`)
+                  if (filters.descriptionKeyword) parts.push(`desc:"${filters.descriptionKeyword}"`)
+                  if (filters.startsWith) parts.push(`starts:${filters.startsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
+                  if (filters.endsWith) parts.push(`ends:${filters.endsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
+                  if (filters.startDateFrom || filters.startDateTo) parts.push(`start:${filters.startDateFrom || ''}..${filters.startDateTo || ''}`)
+                  if (filters.dueDateFrom || filters.dueDateTo) parts.push(`due:${filters.dueDateFrom || ''}..${filters.dueDateTo || ''}`)
+                  if (filters.hasAttachments) parts.push('attachments')
+                  if ((filters.linkedFromNodeTags || []).length > 0) parts.push(`linkedFrom(${filters.linkedFromNodeTags.length})`)
+                  if (parts.length === 0) return null
+                  return (
+                    <div className="text-[11px] text-muted-foreground px-2 py-1 border border-border rounded bg-background/60"
+                         title={parts.join('  •  ')}>
+                      Active filters: {parts.join('  •  ')}
+                    </div>
+                  )
+                })()}
               </div>
             )}
           </div>

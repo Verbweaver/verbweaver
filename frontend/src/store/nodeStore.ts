@@ -774,11 +774,22 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     // Set up file watching
     if (isElectron && window.electronAPI?.watchProject) {
       // Use Electron's file watching API
+      let pending = false
+      let lastEventAt = 0
+      const DEBOUNCE_MS = 150
       window.electronAPI.watchProject((event: any) => {
-        if (event.type === 'change') {
-          // Reload the affected node
-          get().loadNodes();
-        }
+        // Debounce bursts of file events to avoid load loops
+        const now = Date.now()
+        lastEventAt = now
+        if (pending) return
+        pending = true
+        setTimeout(async () => {
+          if (Date.now() - lastEventAt >= DEBOUNCE_MS) {
+            try { await get().loadNodes() } finally { pending = false }
+          } else {
+            pending = false
+          }
+        }, DEBOUNCE_MS)
       });
     } else {
       // Use WebSocket for web version
