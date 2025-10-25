@@ -131,7 +131,7 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
           </button>
           <div className="h-px bg-border my-1" />
           <button
-            onClick={() => { onExportMapAsPng && onExportMapAsPng(); onClose(); }}
+            onClick={() => { onExportMapAsPng?.(); onClose(); }}
             className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
           >
             <ImageDown className="w-3 h-3" />
