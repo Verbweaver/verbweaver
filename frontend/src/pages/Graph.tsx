@@ -879,7 +879,10 @@ function GraphView() {
           // includeHiddenNodes in case some are filtered by UI; fit all nodes without unsafe casts
           reactFlow.fitView({ includeHiddenNodes: true, padding: 0.2 })
         }
-      } catch {}
+      } catch (err) {
+        // Log error to aid debugging; fitView failures are not fatal but should be visible
+        console.error('Error fitting view in export image:', err);
+      }
 
       const root = getComputedStyle(document.documentElement)
       const bgVar = root.getPropertyValue('--background').trim()
