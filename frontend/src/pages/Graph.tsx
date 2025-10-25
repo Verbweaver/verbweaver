@@ -876,8 +876,8 @@ function GraphView() {
       try {
         const all = nodes.map(n => n.id)
         if (all.length > 0) {
-          // includeHiddenNodes in case some are filtered by UI
-          ;(reactFlow as any).fitView?.({ includeHiddenNodes: true, nodes: all.map(id => ({ id })), padding: 0.2 })
+          // includeHiddenNodes in case some are filtered by UI; fit all nodes without unsafe casts
+          reactFlow.fitView({ includeHiddenNodes: true, padding: 0.2 })
         }
       } catch {}
 
