@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { desktopTemplatesApi } from '../../api/desktop-templates'
 import { templatesApi, Template } from '../../api/templates'
 import { useProjectStore } from '../../store/projectStore'
-import { Plus, Trash2, Edit, Link, Unlink, FolderPlus, CheckSquare, Paperclip, Loader2, CheckCircle, Lock, Unlock, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Edit, Link, Unlink, FolderPlus, CheckSquare, Paperclip, Loader2, CheckCircle, Lock, Unlock, ChevronDown, ChevronRight, ImageDown } from 'lucide-react'
 
 interface NodeContextMenuProps {
   x: number
@@ -29,9 +29,10 @@ interface NodeContextMenuProps {
   onToggleCollapse?: (nodeId: string) => void
   isCollapsed?: boolean
   onRemoveLinks?: (nodeId: string) => void
+  onExportMapAsPng?: () => void
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed, onRemoveLinks }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed, onRemoveLinks, onExportMapAsPng }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -127,6 +128,14 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
           >
             <CheckCircle className="w-3 h-3" />
             Upload File
+          </button>
+          <div className="h-px bg-border my-1" />
+          <button
+            onClick={() => { onExportMapAsPng?.(); onClose(); }}
+            className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+          >
+            <ImageDown className="w-3 h-3" />
+            Save Map as PNG...
           </button>
           <div className="h-px bg-border my-1" />
           <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">From Template</div>

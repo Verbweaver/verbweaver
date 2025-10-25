@@ -28,6 +28,8 @@ import NodeContextMenu from '../components/graph/NodeContextMenu'
 import RemoveLinksModal from '../components/common/RemoveLinksModal'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
 import { Paperclip, Filter, ListTree, Loader2, LineChart, Network } from 'lucide-react'
+// @ts-ignore: type stub provided in global.d.ts; package installed at runtime
+import * as htmlToImage from 'html-to-image'
 import clsx from 'clsx'
 import { STORAGE_KEYS } from '@verbweaver/shared'
 import LayoutControls from '../components/graph/LayoutControls'
@@ -86,6 +88,7 @@ function GraphView() {
   const [ctrlMetaPressed, setCtrlMetaPressed] = useState(false)
   const [removeLinksOpen, setRemoveLinksOpen] = useState(false)
   const [removeLinksNodePath, setRemoveLinksNodePath] = useState<string | null>(null)
+  const reactFlowWrapperRef = useRef<HTMLDivElement | null>(null)
   const [hideUploads, setHideUploads] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS)
@@ -489,6 +492,38 @@ function GraphView() {
     }
   }, [attachTarget])
 
+  // Track theme changes to recalculate colors when needed
+  const [themeVersion, setThemeVersion] = useState(0)
+  
+  useEffect(() => {
+    // Listen for theme changes by monitoring CSS custom property changes
+    const observer = new MutationObserver(() => {
+      setThemeVersion(prev => prev + 1)
+    })
+    
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'style']
+    })
+    
+    return () => observer.disconnect()
+  }, [])
+
+  // Memoize theme colors, recalculate when theme changes
+  const themeColors = useMemo(() => {
+    const rootStyles = getComputedStyle(document.documentElement)
+    const colorMutedFg = rootStyles.getPropertyValue('--muted-foreground').trim()
+    const colorPrimary = rootStyles.getPropertyValue('--primary').trim()
+    const colorBackground = rootStyles.getPropertyValue('--background').trim()
+    const colorBorder = rootStyles.getPropertyValue('--border').trim()
+    return {
+      muted: colorMutedFg ? `hsl(${colorMutedFg})` : '#94a3b8',
+      primary: colorPrimary ? `hsl(${colorPrimary})` : '#3b82f6',
+      background: colorBackground ? `hsl(${colorBackground})` : '#0b0f19',
+      border: colorBorder ? `hsl(${colorBorder})` : '#334155'
+    }
+  }, [themeVersion]) // Recalculate when theme changes
+
   // Load and convert nodes when project changes or nodes update
   useEffect(() => {
     if (currentProject && positionsReady) {
@@ -663,7 +698,7 @@ function GraphView() {
             source: parentPath,
             target: node.path,
             type: 'straight',
-            style: { stroke: 'hsl(var(--muted-foreground))', strokeWidth: 2 },
+            style: { stroke: themeColors.muted, strokeWidth: 2 },
             markerEnd: {
               type: MarkerType.ArrowClosed,
             },
@@ -694,7 +729,7 @@ function GraphView() {
                 target: targetNode.path,
                 type: 'smoothstep',
                 animated: true,
-                style: { stroke: 'hsl(var(--primary))', strokeWidth: 2 },
+                style: { stroke: themeColors.primary, strokeWidth: 2 },
                 sourceHandle: outMap[sourceHandle],
                 targetHandle: inMap[targetHandle],
               })
@@ -707,7 +742,7 @@ function GraphView() {
               target: targetNode.path,
               type: 'smoothstep',
               animated: false,
-              style: { stroke: 'hsl(var(--primary))', strokeWidth: 2, strokeDasharray: '6 3' },
+              style: { stroke: themeColors.primary, strokeWidth: 2, strokeDasharray: '6 3' },
               markerEnd: { type: MarkerType.ArrowClosed },
               sourceHandle: outMap[sourceHandle],
               targetHandle: inMap[targetHandle],
@@ -719,7 +754,7 @@ function GraphView() {
       setNodes(flowNodes)
       setEdges(flowEdges)
     }
-  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads, graphCollapsed, hideCompletedTasks, isTaskCompleted, showOneWayLinks])
+  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads, graphCollapsed, hideCompletedTasks, isTaskCompleted, showOneWayLinks, themeColors])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
@@ -818,6 +853,103 @@ function GraphView() {
     },
     []
   )
+
+  const exportMapAsPng = useCallback(async () => {
+    // Track temporary UI changes so we can always restore them
+    const toHide: HTMLElement[] = []
+    const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; borderColor?: string; fill?: string; stroke?: string } }> = []
+    try {
+      const wrapper = reactFlowWrapperRef.current
+      if (!wrapper) return
+      const rf = wrapper.querySelector('.react-flow') as HTMLElement | null
+      if (!rf) return
+
+      // Hide overlays from capture
+      wrapper.querySelectorAll('.react-flow__attribution, .react-flow__controls, .react-flow__minimap, .vw-overlay').forEach(el => {
+        const e = el as HTMLElement
+        if (e.style) { toHide.push(e); e.style.visibility = 'hidden' }
+      })
+
+      // Temporarily inline computed colors for edge label backgrounds/text so export matches UI
+      // Background rects of edge labels (SVG <rect>), set fill/stroke explicitly
+      rf.querySelectorAll('.react-flow__edge-textbg').forEach(el => {
+        const h = el as HTMLElement
+        const cs = getComputedStyle(h)
+        const prev = { backgroundColor: h.style.backgroundColor, borderColor: (h.style as any).borderColor, fill: (h.style as any).fill, stroke: (h.style as any).stroke }
+        const fill = cs.fill || cs.backgroundColor
+        const stroke = (cs as any).stroke || cs.borderColor
+        if (fill) (h.style as any).fill = fill
+        if (stroke) (h.style as any).stroke = stroke
+        styled.push({ el: h, prev })
+      })
+      // Foreground text of edge labels (SVG <text> or HTML), set fill/color explicitly
+      rf.querySelectorAll('.react-flow__edge-text').forEach(el => {
+        const h = el as HTMLElement
+        const cs = getComputedStyle(h)
+        const prev = { color: h.style.color, fill: (h.style as any).fill }
+        const textFill = (cs as any).fill && (cs as any).fill !== 'none' ? (cs as any).fill : cs.color
+        if (textFill) (h.style as any).fill = textFill
+        // Also set color for HTML fallback
+        h.style.color = textFill
+        styled.push({ el: h, prev })
+      })
+
+      // Fit all nodes into view
+      try {
+        const all = nodes.map(n => n.id)
+        if (all.length > 0) {
+          // includeHiddenNodes in case some are filtered by UI; fit all nodes without unsafe casts
+          reactFlow.fitView({ includeHiddenNodes: true, padding: 0.2 })
+        }
+      } catch (err) {
+        // Log error to aid debugging; fitView failures are not fatal but should be visible
+        console.error('Error fitting view in export image:', err);
+      }
+
+      const root = getComputedStyle(document.documentElement)
+      const bgVar = root.getPropertyValue('--background').trim()
+      const bgColor = bgVar ? `hsl(${bgVar})` : undefined
+      const dataUrl = await htmlToImage.toPng(rf, {
+        backgroundColor: bgColor,
+        pixelRatio: window.devicePixelRatio || 1,
+        filter: (el: Element) => {
+          const cls = (el as HTMLElement).classList
+          if (!cls) return true
+          return !cls.contains('react-flow__attribution') && !cls.contains('react-flow__controls') && !cls.contains('react-flow__minimap') && !cls.contains('vw-overlay')
+        },
+      })
+
+      const filename = `mindmap-${new Date().toISOString().replace(/[:.]/g,'-')}.png`
+      if (isElectron && window.electronAPI?.saveBinaryFile) {
+        const bin = await (await fetch(dataUrl)).arrayBuffer()
+        const result = await window.electronAPI.saveBinaryFile(new Uint8Array(bin), filename)
+        if (!result?.canceled) toast.success('Map saved')
+      } else {
+        const link = document.createElement('a')
+        link.href = dataUrl
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        toast.success('Download started')
+      }
+    } catch (e) {
+      toast.error(`Failed to export mind map as PNG${e && (e as Error).message ? ': ' + (e as Error).message : ''}`)
+    } finally {
+      // Always restore UI state even if an error occurred mid-export
+      try { toHide.forEach(e => { e.style.visibility = '' }) } catch {}
+      try {
+        styled.forEach(s => {
+          if (s.prev.color !== undefined) s.el.style.color = s.prev.color
+          if (s.prev.backgroundColor !== undefined) s.el.style.backgroundColor = s.prev.backgroundColor
+          if ((s.prev as any).borderColor !== undefined) (s.el.style as any).borderColor = (s.prev as any).borderColor
+          if ((s.prev as any).fill !== undefined) (s.el.style as any).fill = (s.prev as any).fill
+          if ((s.prev as any).stroke !== undefined) (s.el.style as any).stroke = (s.prev as any).stroke
+        })
+      } catch {}
+      setContextMenu(null)
+    }
+  }, [isElectron, nodes, reactFlow])
 
   // Global close for context menu on outside left-click
   useEffect(() => {
@@ -1516,6 +1648,7 @@ function GraphView() {
       {/* Right-side panel (Mind Map/Outline switch + per-view controls) is rendered per subview below */}
 
       {subView === 'mindmap' && (
+      <div ref={reactFlowWrapperRef} className="h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -1587,7 +1720,7 @@ function GraphView() {
         <Background />
         <Controls />
         {/* Mind Map right-side panel */}
-        <div className="absolute top-2 right-2 z-30 pointer-events-auto">
+        <div className="absolute top-2 right-2 z-30 pointer-events-auto vw-overlay">
           <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-56">
             <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')} title="Outline"><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
@@ -1600,7 +1733,7 @@ function GraphView() {
           </div>
         </div>
         {/* Left controls: collapsible Options tray */}
-        <div className="absolute top-2 left-2 z-10 pointer-events-auto">
+        <div className="absolute top-2 left-2 z-10 pointer-events-auto vw-overlay">
           <div className="bg-background/80 border border-border rounded shadow w-64">
             <button
               className="w-full flex items-center justify-between px-2 py-1 text-sm"
@@ -1705,6 +1838,7 @@ function GraphView() {
           }}
         />
       </ReactFlow>
+      </div>
       )}
 
       {subView === 'outline' && (
@@ -1799,6 +1933,7 @@ function GraphView() {
           edgeId={contextMenu.edgeId}
           isFolder={contextMenu.isFolder || contextMenu.nodeId === 'nodes'}
           hasTask={contextMenu.hasTask}
+          onExportMapAsPng={contextMenu.nodeId ? undefined : exportMapAsPng}
           onCreateNode={handleCreateNode}
           onDeleteNode={(id) => {
             const isFolder = !!verbweaverNodes.get(id)?.isDirectory
