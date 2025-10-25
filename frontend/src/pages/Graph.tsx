@@ -833,6 +833,9 @@ function GraphView() {
   )
 
   const exportMapAsPng = useCallback(async () => {
+    // Track temporary UI changes so we can always restore them
+    const toHide: HTMLElement[] = []
+    const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; borderColor?: string; fill?: string; stroke?: string } }> = []
     try {
       const wrapper = reactFlowWrapperRef.current
       if (!wrapper) return
@@ -840,14 +843,12 @@ function GraphView() {
       if (!rf) return
 
       // Hide overlays from capture
-      const toHide: HTMLElement[] = []
       wrapper.querySelectorAll('.react-flow__attribution, .react-flow__controls, .react-flow__minimap, .vw-overlay').forEach(el => {
         const e = el as HTMLElement
         if (e.style) { toHide.push(e); e.style.visibility = 'hidden' }
       })
 
       // Temporarily inline computed colors for edge label backgrounds/text so export matches UI
-      const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; borderColor?: string; fill?: string; stroke?: string } }> = []
       // Background rects of edge labels (SVG <rect>), set fill/stroke explicitly
       rf.querySelectorAll('.react-flow__edge-textbg').forEach(el => {
         const h = el as HTMLElement
@@ -893,17 +894,6 @@ function GraphView() {
         },
       })
 
-      // Restore overlays
-      toHide.forEach(e => { e.style.visibility = '' })
-      // Restore temporary styles
-      styled.forEach(s => {
-        if (s.prev.color !== undefined) s.el.style.color = s.prev.color
-        if (s.prev.backgroundColor !== undefined) s.el.style.backgroundColor = s.prev.backgroundColor
-        if ((s.prev as any).borderColor !== undefined) (s.el.style as any).borderColor = (s.prev as any).borderColor
-        if ((s.prev as any).fill !== undefined) (s.el.style as any).fill = (s.prev as any).fill
-        if ((s.prev as any).stroke !== undefined) (s.el.style as any).stroke = (s.prev as any).stroke
-      })
-
       const filename = `mindmap-${new Date().toISOString().replace(/[:.]/g,'-')}.png`
       if (isElectron && window.electronAPI?.saveBinaryFile) {
         const bin = await (await fetch(dataUrl)).arrayBuffer()
@@ -921,6 +911,17 @@ function GraphView() {
     } catch (e) {
       toast.error('Export failed')
     } finally {
+      // Always restore UI state even if an error occurred mid-export
+      try { toHide.forEach(e => { e.style.visibility = '' }) } catch {}
+      try {
+        styled.forEach(s => {
+          if (s.prev.color !== undefined) s.el.style.color = s.prev.color
+          if (s.prev.backgroundColor !== undefined) s.el.style.backgroundColor = s.prev.backgroundColor
+          if ((s.prev as any).borderColor !== undefined) (s.el.style as any).borderColor = (s.prev as any).borderColor
+          if ((s.prev as any).fill !== undefined) (s.el.style as any).fill = (s.prev as any).fill
+          if ((s.prev as any).stroke !== undefined) (s.el.style as any).stroke = (s.prev as any).stroke
+        })
+      } catch {}
       setContextMenu(null)
     }
   }, [isElectron, nodes, reactFlow])
