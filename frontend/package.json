@@ -37,6 +37,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-flow-renderer": "^10.3.17",
+    "html-to-image": "^1.11.11",
     "react-hot-toast": "^2.4.1",
     "react-markdown": "^9.1.0",
     "react-resizable-panels": "^1.0.7",

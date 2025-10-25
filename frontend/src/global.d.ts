@@ -109,3 +109,12 @@ declare global {
 declare module 'path-browserify';
 
 export {}; 
+
+// Minimal typing for html-to-image to satisfy the type checker without installing types
+declare module 'html-to-image' {
+  export function toPng(node: HTMLElement, options?: {
+    backgroundColor?: string;
+    pixelRatio?: number;
+    filter?: (element: Element) => boolean;
+  }): Promise<string>;
+}
