@@ -912,7 +912,7 @@ function GraphView() {
         toast.success('Download started')
       }
     } catch (e) {
-      toast.error('Export failed')
+      toast.error(`Failed to export mind map as PNG${e && (e as Error).message ? ': ' + (e as Error).message : ''}`)
     } finally {
       // Always restore UI state even if an error occurred mid-export
       try { toHide.forEach(e => { e.style.visibility = '' }) } catch {}
