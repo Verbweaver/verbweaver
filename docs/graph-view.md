@@ -1,6 +1,6 @@
 # Graph View User Guide
 
-This guide covers the Graph view and its three sub-views: Mind Map, Outline, and Progression. It explains what each sub-view is for, how to use it, and tips for getting the most out of your data.
+This guide covers the Graph view and its sub-views: Mind Map, Outline, Progression, and Group. It explains what each sub-view is for, how to use it, and tips for getting the most out of your data.
 
 ## Overview
 
@@ -9,8 +9,9 @@ The Graph view provides multiple ways to visualize and work with the nodes in yo
 - Mind Map: spatial, free-form view to explore relationships and organize nodes.
 - Outline: structured, tree-based view mirroring folders and allowing virtual orderings.
 - Progression: data-driven line charts built from node metadata to visualize trends across nodes over an X axis you define.
+- Group: define named groups using Filters, visualize relationships between sets, and optionally nest groups.
 
-A sub-view switcher is available within each sub-view for quick navigation (Mind Map → Outline → Progression).
+A sub-view switcher is available within each sub-view for quick navigation (Mind Map → Group → Outline → Progression).
 
 ## Mind Map
 
@@ -77,6 +78,30 @@ The Progression view plots line charts from node metadata.
 
 - Save Image exports a PNG of the current chart. Choose a transparent or solid background. If solid, you can pick the color.
 - Save/Load Config exports/imports the entire Progression configuration as JSON, including filters, selections, ordering, and display options.
+
+## Group
+
+The Group view lets you define up to 50 named groups (sets) using the existing Filters toolbox, and visualize how these sets relate.
+
+Modes
+- Default (Nest off): flat group boxes; draws edges for superset → subset relationships (Hasse diagram) between boxes; equivalent groups share one dotted-border box with combined labels.
+- Nest groups (on): nested group boxes using React Flow sub-flows; duplicates a child group under each minimal parent; hides group-to-group edges (nesting conveys relationships).
+
+Inside a group box
+- Default: shows a count and a compact chip list of node titles; a side column lists a compact set of in-group soft-link arrows when space allows.
+- Option “Show node cards”: renders full Mind Map node cards and in-group soft links.
+
+Options
+- Nest groups, Show node cards, Export/Import JSON, Clear layout, Auto layout.
+- Max cards per group: limit the number of node cards rendered per group (useful for performance on large sets).
+
+Persistence
+- Group configuration, options, and layout are saved per tab in localStorage.
+
+Context menus
+- Right-click blank canvas: Save Map as PNG (uses native file save on desktop/Electron, or browser download on the web).
+- Right-click node card: Mind Map actions (Edit, Delete, etc.).
+- Right-click in-group edge: Unlink.
 
 ### Troubleshooting
 
