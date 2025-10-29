@@ -51,6 +51,21 @@ export default function GroupManagerPanel({ className }: Props) {
 
   const activeGroup = useMemo(() => groups.find(g => g.id === filtersOpenFor) || null, [filtersOpenFor, groups])
 
+  const summarizeFilters = (filters: NodeFilterState): string | null => {
+    const parts: string[] = []
+    if ((filters.tags || []).length > 0) parts.push(`tags(${filters.tagsLogic}): ${filters.tags.join(', ')}`)
+    if (filters.nameKeyword) parts.push(`name:"${filters.nameKeyword}"`)
+    if (filters.descriptionKeyword) parts.push(`desc:"${filters.descriptionKeyword}"`)
+    if (filters.startsWith) parts.push(`starts:${filters.startsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
+    if (filters.endsWith) parts.push(`ends:${filters.endsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
+    if (filters.startDateFrom || filters.startDateTo) parts.push(`start:${filters.startDateFrom || ''}..${filters.startDateTo || ''}`)
+    if (filters.dueDateFrom || filters.dueDateTo) parts.push(`due:${filters.dueDateFrom || ''}..${filters.dueDateTo || ''}`)
+    if (filters.hasAttachments) parts.push('attachments')
+    if ((filters.linkedFromNodeTags || []).length > 0) parts.push(`linkedFrom(${filters.linkedFromNodeTags.length})`)
+    if (parts.length === 0) return null
+    return parts.join('  •  ')
+  }
+
   return (
     <div className={className}>
       <div className="flex items-center justify-between mb-2">
@@ -63,29 +78,41 @@ export default function GroupManagerPanel({ className }: Props) {
         {groups.length === 0 && (
           <div className="text-xs text-muted-foreground">No groups yet. Click Add to create one.</div>
         )}
-        {groups.map(g => (
-          <div key={g.id} className="flex items-center gap-2 px-2 py-1 border border-border rounded bg-background/60">
-            <input type="checkbox" checked={g.enabled} onChange={(e)=> updateGroup(g.id, { enabled: e.target.checked })} title="Enable/disable group" />
-            <div className="flex-1 text-sm truncate" title={g.name}>{g.name}</div>
-            <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent" onClick={()=> handleRename(g.id)} title="Rename">
-              <Edit className="w-3 h-3" />
-            </button>
-            <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent inline-flex items-center gap-1" onClick={()=> handleEditFilters(g.id)} title="Edit filters">
-              <FilterIcon className="w-3 h-3" />
-            </button>
-            <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-destructive hover:text-destructive-foreground" onClick={()=> removeGroup(g.id)} title="Delete">
-              <Trash2 className="w-3 h-3" />
-            </button>
-          </div>
-        ))}
+        {groups.map(g => {
+          const summary = summarizeFilters(g.filters)
+          return (
+            <div key={g.id} className="px-2 py-1 border border-border rounded bg-background/60">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" checked={g.enabled} onChange={(e)=> updateGroup(g.id, { enabled: e.target.checked })} title="Enable/disable group" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm truncate" title={g.name}>{g.name}</div>
+                  {summary && (
+                    <div className="text-[11px] text-muted-foreground truncate" title={summary}>
+                      Active: {summary}
+                    </div>
+                  )}
+                </div>
+                <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent" onClick={()=> handleRename(g.id)} title="Rename">
+                  <Edit className="w-3 h-3" />
+                </button>
+                <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent inline-flex items-center gap-1" onClick={()=> handleEditFilters(g.id)} title="Edit filters">
+                  <FilterIcon className="w-3 h-3" />
+                </button>
+                <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-destructive hover:text-destructive-foreground" onClick={()=> removeGroup(g.id)} title="Delete">
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {activeGroup && (
         <NodeFiltersDialog
-          open={!!filtersOpenFor}
+          isOpen={!!filtersOpenFor}
           onClose={() => setFiltersOpenFor(null)}
           filters={activeGroup.filters}
-          onApply={handleFiltersChange}
+          onFiltersChange={handleFiltersChange}
         />
       )}
     </div>

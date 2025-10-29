@@ -13,6 +13,8 @@ import GroupBoxNode from '../components/graph/GroupBoxNode'
 import CustomNode from '../components/graph/CustomNode'
 import { getLayoutedElements } from '../utils/graphLayout'
 
+const groupNodeTypes: NodeTypes = { groupBox: GroupBoxNode, custom: CustomNode }
+
 // Placeholder Group view. Will be replaced with React Flow Sub Flows implementation in subsequent tasks.
 export default function GroupView() {
   const { currentProject } = useProjectStore()
@@ -539,7 +541,7 @@ export default function GroupView() {
       <ReactFlow
         nodes={nodesState}
         edges={edgesState}
-        nodeTypes={{ groupBox: GroupBoxNode, custom: CustomNode } as NodeTypes}
+        nodeTypes={groupNodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop}
