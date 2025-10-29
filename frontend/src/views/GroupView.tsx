@@ -179,6 +179,7 @@ export default function GroupView() {
     }
 
     const maxCards = Math.max(5, Math.min(200, Number(options.maxCardsPerGroup || 40)))
+    const showCap = options.showCapIndicator !== false
     if (!options.nestGroups) {
       equivalence.boxes.forEach((b, idx) => {
         const saved = layout.boxes[b.boxId]
@@ -186,11 +187,18 @@ export default function GroupView() {
         const y = saved?.y ?? Math.floor(idx / perRow) * gridH
         const isEq = b.groupIds.length > 1
         const totalCount = b.nodeIds.length
+        const boxWidth = options.showNodeCards ? 520 : 260
+        const columns = options.showNodeCards ? (boxWidth >= 520 ? 3 : 2) : 0
+        const estimateHeight = () => {
+          if (!options.showNodeCards) return 160
+          const rows = Math.ceil(Math.min(totalCount, maxCards) / columns)
+          return 28 + rows * (80 + 12) + 24
+        }
         nodes.push({
           id: b.boxId,
-          data: { label: boxIdToName.get(b.boxId) || 'Group', isEquivalent: isEq, chips: chipsFor(b.nodeIds), linkPairs: linkPairsFor(b.nodeIds), showNodeCards: !!options.showNodeCards, visibleCardCount: Math.min(totalCount, maxCards), totalCardCount: totalCount },
+          data: { label: boxIdToName.get(b.boxId) || 'Group', isEquivalent: isEq, chips: chipsFor(b.nodeIds), linkPairs: linkPairsFor(b.nodeIds), showNodeCards: !!options.showNodeCards, visibleCardCount: Math.min(totalCount, maxCards), totalCardCount: totalCount, showCapIndicator: showCap },
           position: { x, y },
-          style: { width: 260, height: 160 },
+          style: { width: boxWidth, height: estimateHeight() },
           type: 'groupBox',
           draggable: true,
         })
@@ -198,7 +206,7 @@ export default function GroupView() {
         // Show full node cards inside group (flat mode: all nodes of the set)
         if (options.showNodeCards) {
           const childIds = b.nodeIds.slice(0, maxCards)
-          const columns = 2
+          const columns = (boxWidth >= 520 ? 3 : 2)
           const cardW = 180
           const cardH = 80
           const padX = 12, padY = 28
@@ -266,12 +274,14 @@ export default function GroupView() {
         const displayedSet = isRoot ? remainder : b.nodeIds
         const totalCount = displayedSet.length
 
-        // Estimate height for root boxes in nested mode and larger boxes in card mode
+        // Estimate height and width
+        const boxWidth = options.showNodeCards ? (parent ? 480 : 520) : (parent ? 240 : 260)
+        const columns = options.showNodeCards ? (boxWidth >= 520 ? 3 : 2) : 0
         const estimateHeight = () => {
           if (!options.showNodeCards) return 160
           const count = (parent ? b.nodeIds : remainder).length
-          const rows = Math.ceil(Math.min(count, maxCards) / 2)
-          return 28 + rows * (80 + 12) + 24 // header + rows + padding
+          const rows = Math.ceil(Math.min(count, maxCards) / columns)
+          return 28 + rows * (80 + 12) + 24
         }
 
         nodes.push({
@@ -285,9 +295,10 @@ export default function GroupView() {
             showNodeCards: !!options.showNodeCards,
             visibleCardCount: Math.min(totalCount, maxCards),
             totalCardCount: totalCount,
+            showCapIndicator: showCap,
           },
           position: { x, y },
-          style: { width: options.showNodeCards ? (parent ? 480 : 520) : (parent ? 240 : 260), height: estimateHeight() },
+          style: { width: boxWidth, height: estimateHeight() },
           type: 'groupBox',
           draggable: !parent,
           parentNode: parent,
@@ -298,7 +309,7 @@ export default function GroupView() {
         // child boxes will render their own nodes.
         if (options.showNodeCards) {
           const childIds = (parent ? b.nodeIds : remainder).slice(0, maxCards)
-          const columns = 2
+          const columns = (boxWidth >= 520 ? 3 : 2)
           const cardW = 180
           const cardH = 80
           const padX = 12, padY = 28

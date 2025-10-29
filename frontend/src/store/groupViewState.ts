@@ -13,6 +13,7 @@ export type GroupViewOptions = {
   nestGroups: boolean
   showNodeCards?: boolean
   maxCardsPerGroup?: number
+  showCapIndicator?: boolean
 }
 
 export type GroupViewLayout = {
@@ -29,7 +30,7 @@ export type GroupViewPersisted = {
 const defaultPersisted = (): GroupViewPersisted => ({
   version: 1,
   groups: [],
-  options: { nestGroups: false, showNodeCards: false, maxCardsPerGroup: 40 },
+  options: { nestGroups: false, showNodeCards: false, maxCardsPerGroup: 40, showCapIndicator: true },
   layout: { boxes: {} },
 })
 
@@ -59,7 +60,7 @@ type GroupViewStore = {
 
 export const useGroupViewStore = create<GroupViewStore>((set, get) => ({
   groups: [],
-  options: { nestGroups: false, showNodeCards: false, maxCardsPerGroup: 40 },
+  options: { nestGroups: false, showNodeCards: false, maxCardsPerGroup: 40, showCapIndicator: true },
   layout: { boxes: {} },
   layoutVersion: 0,
 
@@ -87,6 +88,7 @@ export const useGroupViewStore = create<GroupViewStore>((set, get) => ({
           nestGroups: !!parsed.options?.nestGroups,
           showNodeCards: !!parsed.options?.showNodeCards,
           maxCardsPerGroup: typeof parsed.options?.maxCardsPerGroup === 'number' && parsed.options.maxCardsPerGroup > 0 ? Math.min(200, parsed.options.maxCardsPerGroup) : 40,
+          showCapIndicator: parsed.options?.showCapIndicator !== false,
         },
         layout: parsed.layout && parsed.layout.boxes ? parsed.layout : { boxes: {} },
       })
@@ -130,6 +132,7 @@ export const useGroupViewStore = create<GroupViewStore>((set, get) => ({
       nestGroups: !!cfg.options?.nestGroups,
       showNodeCards: !!cfg.options?.showNodeCards,
       maxCardsPerGroup: typeof cfg.options?.maxCardsPerGroup === 'number' && cfg.options.maxCardsPerGroup > 0 ? Math.min(200, cfg.options.maxCardsPerGroup) : 40,
+      showCapIndicator: cfg.options?.showCapIndicator !== false,
     }
     const layout = cfg.layout && cfg.layout.boxes ? cfg.layout : { boxes: {} }
     set({ groups, options, layout })

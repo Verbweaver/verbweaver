@@ -15,7 +15,7 @@ type Data = {
 }
 
 function GroupBoxNode({ data, selected }: NodeProps<Data>) {
-  const { label, isEquivalent, chips = [], remainderChips = [], showNodeCards, linkPairs = [], visibleCardCount, totalCardCount } = data || {}
+  const { label, isEquivalent, chips = [], remainderChips = [], showNodeCards, linkPairs = [], visibleCardCount, totalCardCount, showCapIndicator } = data || {}
   const chipItems = useMemo(() => chips.slice(0, 30), [chips])
   const remainderItems = useMemo(() => remainderChips.slice(0, 30), [remainderChips])
   const extra = chips.length > chipItems.length ? chips.length - chipItems.length : 0
@@ -66,7 +66,12 @@ function GroupBoxNode({ data, selected }: NodeProps<Data>) {
           </div>
         )}
         {showNodeCards && (
-          <div className="text-[11px] text-muted-foreground">Node cards view will display full cards and links (toggle in Options)</div>
+          <div className="text-[11px] text-muted-foreground">
+            Node cards view
+            {typeof visibleCardCount === 'number' && typeof totalCardCount === 'number' && totalCardCount > visibleCardCount && showCapIndicator && (
+              <span> • {totalCardCount - visibleCardCount} hidden due to cap</span>
+            )}
+          </div>
         )}
       </div>
     </div>

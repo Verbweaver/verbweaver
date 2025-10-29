@@ -12,6 +12,7 @@ export default function GroupOptionsTray({ projectId, tabId }: Props) {
   const nestGroups = useGroupViewStore(s => s.options.nestGroups)
   const showNodeCards = useGroupViewStore(s => !!s.options.showNodeCards)
   const maxCardsPerGroup = useGroupViewStore(s => s.options.maxCardsPerGroup || 40)
+  const showCapIndicator = useGroupViewStore(s => s.options.showCapIndicator !== false)
   const setOptions = useGroupViewStore(s => s.setOptions)
   const replaceLayout = useGroupViewStore(s => s.replaceLayout)
   const exportConfig = useGroupViewStore(s => s.exportConfig)
@@ -96,6 +97,14 @@ export default function GroupOptionsTray({ projectId, tabId }: Props) {
             className="w-20 px-2 py-1 border border-input rounded bg-background"
           />
         </div>
+        <label className="inline-flex items-center gap-2 text-sm" title="Show a small indicator when node cards are truncated by the cap.">
+          <input
+            type="checkbox"
+            checked={showCapIndicator}
+            onChange={(e) => setOptions({ showCapIndicator: e.target.checked })}
+          />
+          Show cap indicator
+        </label>
         <button className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent inline-flex items-center gap-2" onClick={handleExport}>
           <Download className="w-4 h-4" /> Export JSON
         </button>
