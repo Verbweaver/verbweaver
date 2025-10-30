@@ -87,7 +87,7 @@ export default function GroupManagerPanel({ className }: Props) {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm truncate" title={g.name}>{g.name}</div>
                   {summary && (
-                    <div className="text-[11px] text-muted-foreground truncate" title={summary}>
+                    <div className="text-[11px] text-muted-foreground whitespace-normal break-words" title={summary}>
                       Active: {summary}
                     </div>
                   )}

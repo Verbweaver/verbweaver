@@ -3,7 +3,7 @@ import { useProjectStore } from '../store/projectStore'
 import { useTabStore } from '../store/tabStore'
 import { useGroupViewStore } from '../store/groupViewState'
 import { useNodeStore } from '../store/nodeStore'
-import ReactFlow, { Background, Controls, Edge, Node, NodeTypes, useEdgesState, useNodesState, Connection } from 'react-flow-renderer'
+import ReactFlow, { Background, Controls, Edge, Node, NodeTypes, Connection } from 'react-flow-renderer'
 import { buildEquivalenceBoxes, computeCoverRelations, computeRemainder } from '../utils/grouping'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
@@ -155,6 +155,12 @@ export default function GroupView() {
     const boxIdToName = new Map<string, string>(
       equivalence.boxes.map(b => [b.boxId, b.groupIds.map(id => equivalence.byId.get(id)?.name || id).join(', ')])
     )
+    const safeIdByBoxId = new Map<string, string>()
+    equivalence.boxes.forEach((b, i) => {
+      const sid = b.boxId && b.boxId.length > 0 ? b.boxId : `__empty__${i}`
+      safeIdByBoxId.set(b.boxId, sid)
+    })
+    
 
     // Simple grid for initial positions if not saved
     const gridW = 260, gridH = 140, perRow = 3
@@ -196,8 +202,9 @@ export default function GroupView() {
           const rows = Math.ceil(Math.min(totalCount, maxCards) / columns)
           return 28 + rows * (80 + 12) + 24
         }
+        const sid = safeIdByBoxId.get(b.boxId)!
         nodes.push({
-          id: b.boxId,
+          id: sid,
           data: { label: boxIdToName.get(b.boxId) || 'Group', isEquivalent: isEq, chips: chipsFor(b.nodeIds), linkPairs: linkPairsFor(b.nodeIds), showNodeCards: !!options.showNodeCards, visibleCardCount: Math.min(totalCount, maxCards), totalCardCount: totalCount, showCapIndicator: showCap },
           position: { x, y },
           style: { width: boxWidth, height: estimateHeight() },
@@ -221,8 +228,8 @@ export default function GroupView() {
             const path = idToPath.get(cid)
             const storeNode = path ? verbweaverNodes.get(path) : undefined
             nodes.push({
-              id: `${b.boxId}::n::${cid}`,
-              parentNode: b.boxId,
+              id: `${sid}::n::${cid}`,
+              parentNode: sid,
               position: { x: cx, y: cy },
               type: 'custom',
               draggable: false,
@@ -241,11 +248,13 @@ export default function GroupView() {
             links.forEach(to => {
               if (idSet.has(String(to))) {
                 edges.push({
-                  id: `${b.boxId}::e::${from}->${to}`,
-                  source: `${b.boxId}::n::${from}`,
-                  target: `${b.boxId}::n::${to}`,
+                  id: `${sid}::e::${from}->${to}`,
+                  source: `${sid}::n::${from}`,
+                  target: `${sid}::n::${to}`,
                   type: 'default',
-                })
+                  sourceHandle: 'right-source',
+                  targetHandle: 'left-target',
+                } as any)
               }
             })
           })
@@ -253,15 +262,18 @@ export default function GroupView() {
       })
       // Flat mode: edges for superset/subset cover relations
       covers.forEach(e => {
-        edges.push({ id: `${e.parentBoxId}->${e.childBoxId}`, source: e.parentBoxId, target: e.childBoxId })
+        const ps = safeIdByBoxId.get(e.parentBoxId)!
+        const cs = safeIdByBoxId.get(e.childBoxId)!
+        if (ps && cs) edges.push({ id: `${ps}->${cs}`, source: ps, target: cs })
       })
     } else {
       // Nesting mode: recursively place children under each parent; duplicate children under multiple parents
-      const placeBox = (boxId: string, parent?: string, depth: number = 0, idx: number = 0) => {
+      const placeBox = (boxId: string, parentSafeId?: string, depth: number = 0, idx: number = 0) => {
         const b = equivalence.boxes.find(x => x.boxId === boxId)
         if (!b) return
-        const baseId = parent ? `${boxId}__under__${parent}` : boxId
-        const saved = layout.boxes[baseId] || layout.boxes[boxId]
+        const safe = safeIdByBoxId.get(boxId)!
+        const baseId = parentSafeId ? `${safe}__under__${parentSafeId}` : safe
+        const saved = layout.boxes[baseId] || layout.boxes[safe] || layout.boxes[boxId]
         const x = saved?.x ?? ((idx % perRow) * gridW + depth * 12)
         const y = saved?.y ?? (Math.floor(idx / perRow) * gridH)
         const isEq = b.groupIds.length > 1
@@ -272,16 +284,16 @@ export default function GroupView() {
           const cb = equivalence.boxes.find(x => x.boxId === cid)
           return cb ? cb.nodeIds : []
         })) : b.nodeIds
-        const isRoot = !parent
+        const isRoot = !parentSafeId
         const displayedSet = isRoot ? remainder : b.nodeIds
         const totalCount = displayedSet.length
 
         // Estimate height and width
-        const boxWidth = options.showNodeCards ? (parent ? 480 : 520) : (parent ? 240 : 260)
+        const boxWidth = options.showNodeCards ? (parentSafeId ? 480 : 520) : (parentSafeId ? 240 : 260)
         const columns = options.showNodeCards ? (boxWidth >= 520 ? 3 : 2) : 0
         const estimateHeight = () => {
           if (!options.showNodeCards) return 160
-          const count = (parent ? b.nodeIds : remainder).length
+          const count = (parentSafeId ? b.nodeIds : remainder).length
           const rows = Math.ceil(Math.min(count, maxCards) / columns)
           return 28 + rows * (80 + 12) + 24
         }
@@ -302,15 +314,15 @@ export default function GroupView() {
           position: { x, y },
           style: { width: boxWidth, height: estimateHeight() },
           type: 'groupBox',
-          draggable: !parent,
-          parentNode: parent,
-          extent: parent ? 'parent' : undefined,
+          draggable: !parentSafeId,
+          parentNode: parentSafeId,
+          extent: parentSafeId ? 'parent' : undefined,
         } as any)
 
         // In nested mode with node cards, render only remainder nodes inside the parent box;
         // child boxes will render their own nodes.
         if (options.showNodeCards) {
-          const childIds = (parent ? b.nodeIds : remainder).slice(0, maxCards)
+          const childIds = (parentSafeId ? b.nodeIds : remainder).slice(0, maxCards)
           const columns = (boxWidth >= 520 ? 3 : 2)
           const cardW = 180
           const cardH = 80
@@ -348,7 +360,9 @@ export default function GroupView() {
                   source: `${baseId}::n::${from}`,
                   target: `${baseId}::n::${to}`,
                   type: 'default',
-                })
+                  sourceHandle: 'right-source',
+                  targetHandle: 'left-target',
+                } as any)
               }
             })
           })
@@ -364,12 +378,21 @@ export default function GroupView() {
     return { flowNodes: nodes, flowEdges: edges }
   }, [equivalence, layout.boxes, options.nestGroups, options.showNodeCards, idToMeta])
 
-  const [nodesState, setNodesState, onNodesChange] = useNodesState(flowNodes)
-  const [edgesState, setEdgesState, onEdgesChange] = useEdgesState(flowEdges)
+  const [optimisticEdges, setOptimisticEdges] = useState<Edge[]>([])
+  const renderEdges = useMemo(() => {
+    if (!optimisticEdges.length) return flowEdges
+    const exist = new Set(flowEdges.map(e => e.id))
+    const extras = optimisticEdges.filter(e => !exist.has(e.id))
+    return [...flowEdges, ...extras]
+  }, [flowEdges, optimisticEdges])
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; edgeId?: string } | null>(null)
 
-  useEffect(() => { setNodesState(flowNodes) }, [flowNodes, setNodesState])
-  useEffect(() => { setEdgesState(flowEdges) }, [flowEdges, setEdgesState])
+  // Clear optimistic edges that are now part of computed edges
+  useEffect(() => {
+    if (!optimisticEdges.length) return
+    const exist = new Set(flowEdges.map(e => e.id))
+    setOptimisticEdges(prev => prev.filter(e => !exist.has(e.id)))
+  }, [flowEdges])
 
   const onNodeDragStop = useCallback((_: any, n: Node) => {
     if (!n?.id) return
@@ -458,9 +481,9 @@ export default function GroupView() {
     const toPath = idToPath.get(to)
     if (fromPath && toPath) {
       await removeSoftLink(fromPath, toPath)
-      setEdgesState(prev => prev.filter(e => e.id !== edgeId))
+      setOptimisticEdges(prev => prev.filter(e => e.id !== edgeId))
     }
-  }, [idToPath, removeSoftLink, setEdgesState])
+  }, [idToPath, removeSoftLink])
 
   const onConnect = useCallback(async (conn: Connection) => {
     const getUnderlying = (nid?: string | null) => (nid ? parseUnderlyingId(nid) : null)
@@ -475,59 +498,48 @@ export default function GroupView() {
       const base = (nid: string) => nid.split('::n::')[0]
       if (base(conn.source!) === base(conn.target!)) {
         const baseId = base(conn.source!)
-        setEdgesState(prev => ([...prev, { id: `${baseId}::e::${s}->${t}`, source: `${baseId}::n::${s}`, target: `${baseId}::n::${t}` }]))
+        setOptimisticEdges(prev => ([...prev, {
+          id: `${baseId}::e::${s}->${t}`,
+          source: `${baseId}::n::${s}`,
+          target: `${baseId}::n::${t}`,
+          sourceHandle: conn.sourceHandle || 'right-source',
+          targetHandle: conn.targetHandle || 'left-target',
+        } as any]))
       }
     }
-  }, [idToPath, createSoftLink, setEdgesState])
+  }, [idToPath, createSoftLink])
 
   const performAutoLayout = useCallback(() => {
     if (!options.nestGroups) {
       // Flat mode: layout group boxes using dagre; keep children relative
-      const groupNodes = nodesState.filter(n => n.type === 'groupBox')
-      const groupEdges = edgesState.filter(e => !String(e.id).includes('::e::'))
+      const groupNodes = flowNodes.filter(n => n.type === 'groupBox')
+      const groupEdges = flowEdges.filter(e => !String(e.id).includes('::e::'))
       const { nodes: laid } = getLayoutedElements(groupNodes as any, groupEdges as any, { direction: 'TB', nodeSpacing: 160, rankSpacing: 200 })
-      laid.forEach(n => setBoxLayout(n.id, { x: n.position.x, y: n.position.y, w: n.width, h: n.height }))
-      setNodesState(prev => prev.map(n => {
-        const found = laid.find(m => m.id === n.id)
-        return found ? { ...n, position: found.position } : n
-      }))
+      laid.forEach(n => setBoxLayout(n.id, { x: (n as any).position.x, y: (n as any).position.y, w: (n as any).width, h: (n as any).height }))
     } else {
       // Nest mode: simple packing - stack child boxes vertically within each parent
-      const updated: Record<string, { x: number; y: number }> = {}
-      const groups = nodesState.filter(n => n.type === 'groupBox')
+      const groups = flowNodes.filter(n => n.type === 'groupBox')
       const roots = groups.filter(n => !n.parentNode)
-      const getWidth = (nId: string) => {
-        const n = nodesState.find(m => m.id === nId)
+      const widthOf = (nId: string) => {
+        const n = groups.find(m => m.id === nId)
         const w = n && n.style && (n.style as any).width ? Number((n.style as any).width) : (options.showNodeCards ? 520 : 260)
         return Number.isFinite(w) ? w : (options.showNodeCards ? 520 : 260)
       }
       const placeChildren = (parentId: string) => {
         const children = groups.filter(n => n.parentNode === parentId)
         let y = 28
-        const parentW = getWidth(parentId)
-        children.forEach((c, idx) => {
-          const childW = getWidth(c.id)
+        const parentW = widthOf(parentId)
+        children.forEach(c => {
+          const childW = widthOf(c.id)
           const x = Math.max(16, Math.round((parentW - childW) / 2))
-          updated[c.id] = { x, y }
+          setBoxLayout(c.id, { x, y })
           y += (c.style && (c.style as any).height ? Number((c.style as any).height) : 160) + 16
-          // Recurse
           placeChildren(c.id)
         })
       }
       roots.forEach(r => placeChildren(r.id))
-      // Apply child positions relative to parent and expand parent size
-      setNodesState(prev => prev.map(n => {
-        if (updated[n.id]) {
-          return { ...n, position: updated[n.id] }
-        }
-        if (!n.parentNode && n.type === 'groupBox') {
-          // expand root boxes to fit children roughly
-          return { ...n, style: { ...(n.style || {}), width: 520, height: 400 } }
-        }
-        return n
-      }))
     }
-  }, [options.nestGroups, nodesState, edgesState, setNodesState, setBoxLayout])
+  }, [options.nestGroups, options.showNodeCards, flowNodes, flowEdges, setBoxLayout])
 
   // Trigger auto layout via Options tray button
   const layoutVersion = useGroupViewStore(s => s.layoutVersion)
@@ -539,11 +551,11 @@ export default function GroupView() {
   return (
     <div className="h-full w-full">
       <ReactFlow
-        nodes={nodesState}
-        edges={edgesState}
+        nodes={flowNodes}
+        edges={renderEdges}
         nodeTypes={groupNodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
+        onNodesChange={undefined as any}
+        onEdgesChange={undefined as any}
         onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={onNodeContextMenu}
         onEdgeContextMenu={onEdgeContextMenu}

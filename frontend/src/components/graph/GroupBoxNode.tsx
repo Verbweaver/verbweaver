@@ -65,14 +65,7 @@ function GroupBoxNode({ data, selected }: NodeProps<Data>) {
             )}
           </div>
         )}
-        {showNodeCards && (
-          <div className="text-[11px] text-muted-foreground">
-            Node cards view
-            {typeof visibleCardCount === 'number' && typeof totalCardCount === 'number' && totalCardCount > visibleCardCount && showCapIndicator && (
-              <span> • {totalCardCount - visibleCardCount} hidden due to cap</span>
-            )}
-          </div>
-        )}
+        {showNodeCards && null}
       </div>
     </div>
   )

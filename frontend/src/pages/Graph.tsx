@@ -2108,7 +2108,7 @@ function GraphView() {
         <div className="h-full w-full relative">
           {/* Right-side panel for Group view: sub-view switcher */}
           <div className="absolute top-2 right-2 z-30 pointer-events-auto">
-            <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-56">
+            <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-80">
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
               <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('group')} disabled><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')}><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
