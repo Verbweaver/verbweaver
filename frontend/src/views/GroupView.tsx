@@ -380,11 +380,22 @@ export default function GroupView() {
 
   const [optimisticEdges, setOptimisticEdges] = useState<Edge[]>([])
   const renderEdges = useMemo(() => {
-    if (!optimisticEdges.length) return flowEdges
-    const exist = new Set(flowEdges.map(e => e.id))
-    const extras = optimisticEdges.filter(e => !exist.has(e.id))
-    return [...flowEdges, ...extras]
-  }, [flowEdges, optimisticEdges])
+    const nodeIds = new Set(flowNodes.map(n => n.id))
+    const baseEdges = options.nestGroups
+      ? flowEdges.filter(e => e.id.includes('::e::') || (String(e.source).includes('::n::') && String(e.target).includes('::n::')))
+      : flowEdges
+    const exist = new Set(baseEdges.map(e => e.id))
+    const extras = optimisticEdges
+      .filter(e => !exist.has(e.id))
+      .filter(e => nodeIds.has(e.source) && nodeIds.has(e.target))
+      .filter(e => !options.nestGroups || e.id.includes('::e::') || (String(e.source).includes('::n::') && String(e.target).includes('::n::')))
+    return [...baseEdges, ...extras]
+  }, [flowEdges, optimisticEdges, flowNodes, options.nestGroups])
+
+  // Clear optimistic edges when toggling nest mode to avoid stale group-to-group edges with missing handles
+  useEffect(() => {
+    setOptimisticEdges([])
+  }, [options.nestGroups])
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; edgeId?: string } | null>(null)
 
   // Clear optimistic edges that are now part of computed edges
@@ -396,7 +407,7 @@ export default function GroupView() {
 
   const onNodeDragStop = useCallback((_: any, n: Node) => {
     if (!n?.id) return
-    setBoxLayout(n.id, { x: n.position.x, y: n.position.y, w: n.width, h: n.height })
+    setBoxLayout(n.id, { x: n.position.x, y: n.position.y, w: n.width ?? undefined, h: n.height ?? undefined })
     const tab = tabs.find(t => t.id === activeTabId)
     const graphTabId = tab && tab.type === 'graph' ? tab.id : undefined
     if (currentProject?.id && graphTabId) {

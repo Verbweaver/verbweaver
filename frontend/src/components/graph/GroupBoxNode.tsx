@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react'
-import type { NodeProps } from 'react-flow-renderer'
+import { Handle, Position, type NodeProps } from 'react-flow-renderer'
 
 type Chip = { id: string; title: string }
 
@@ -21,7 +21,10 @@ function GroupBoxNode({ data, selected }: NodeProps<Data>) {
   const extra = chips.length > chipItems.length ? chips.length - chipItems.length : 0
   const extraRem = remainderChips.length > remainderItems.length ? remainderChips.length - remainderItems.length : 0
   return (
-    <div className="rounded-md border h-full w-full bg-background text-foreground flex flex-col overflow-hidden" style={{ borderStyle: isEquivalent ? 'dotted' as const : 'solid' as const }}>
+    <div className="rounded-md border h-full w-full bg-background text-foreground flex flex-col overflow-hidden relative" style={{ borderStyle: isEquivalent ? 'dotted' as const : 'solid' as const }}>
+      {/* Invisible handles to satisfy React Flow edges between group boxes */}
+      <Handle type="target" position={Position.Left} id="group-left" className="!w-2 !h-2 opacity-0" />
+      <Handle type="source" position={Position.Right} id="group-right" className="!w-2 !h-2 opacity-0" />
       <div className="px-2 py-1 text-sm font-medium border-b flex items-center justify-between gap-2">
         <span className="truncate" title={label}>{label}</span>
         <span className="text-[11px] text-muted-foreground ml-2 whitespace-nowrap">
