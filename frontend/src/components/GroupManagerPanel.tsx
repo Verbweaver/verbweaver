@@ -18,6 +18,8 @@ export default function GroupManagerPanel({ className }: Props) {
   const removeGroup = useGroupViewStore(s => s.removeGroup)
 
   const [filtersOpenFor, setFiltersOpenFor] = useState<string | null>(null)
+  const [renameId, setRenameId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState<string>('')
 
   const handleAdd = () => {
     if (groups.length >= 50) {
@@ -36,9 +38,24 @@ export default function GroupManagerPanel({ className }: Props) {
   const handleRename = (groupId: string) => {
     const g = groups.find(g => g.id === groupId)
     if (!g) return
-    const name = prompt('Rename group', g.name)
-    if (!name) return
+    setRenameId(groupId)
+    setRenameValue(g.name)
+  }
+
+  const handleRenameSave = (groupId: string) => {
+    const name = renameValue.trim()
+    if (!name) {
+      toast.error('Name cannot be empty')
+      return
+    }
     updateGroup(groupId, { name })
+    setRenameId(null)
+    setRenameValue('')
+  }
+
+  const handleRenameCancel = () => {
+    setRenameId(null)
+    setRenameValue('')
   }
 
   const handleEditFilters = (groupId: string) => setFiltersOpenFor(groupId)
@@ -85,7 +102,20 @@ export default function GroupManagerPanel({ className }: Props) {
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={g.enabled} onChange={(e)=> updateGroup(g.id, { enabled: e.target.checked })} title="Enable/disable group" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm truncate" title={g.name}>{g.name}</div>
+                  {renameId === g.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e)=> setRenameValue(e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-input rounded bg-background"
+                      />
+                      <button className="text-xs px-2 py-1 border border-input rounded hover:bg-accent" onClick={()=> handleRenameSave(g.id)}>Save</button>
+                      <button className="text-xs px-2 py-1 border border-input rounded hover:bg-muted" onClick={handleRenameCancel}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="text-sm truncate" title={g.name}>{g.name}</div>
+                  )}
                   {summary && (
                     <div className="text-[11px] text-muted-foreground whitespace-normal break-words" title={summary}>
                       Active: {summary}
