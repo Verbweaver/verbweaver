@@ -268,14 +268,23 @@ export default function GroupView() {
       })
     } else {
       // Nesting mode: recursively place children under each parent; duplicate children under multiple parents
-      const placeBox = (boxId: string, parentSafeId?: string, depth: number = 0, idx: number = 0) => {
+      const placeBox = (
+        boxId: string,
+        parentSafeId?: string,
+        depth: number = 0,
+        idx: number = 0,
+        forcedX?: number,
+        forcedY?: number,
+        forcedWidth?: number,
+        forcedHeight?: number
+      ) => {
         const b = equivalence.boxes.find(x => x.boxId === boxId)
         if (!b) return
         const safe = safeIdByBoxId.get(boxId)!
         const baseId = parentSafeId ? `${safe}__under__${parentSafeId}` : safe
         const saved = layout.boxes[baseId] || layout.boxes[safe] || layout.boxes[boxId]
-        const x = saved?.x ?? ((idx % perRow) * gridW + depth * 12)
-        const y = saved?.y ?? (Math.floor(idx / perRow) * gridH)
+        const x = parentSafeId ? (forcedX ?? 24) : (saved?.x ?? (idx % perRow) * gridW)
+        const y = parentSafeId ? (forcedY ?? 32) : (saved?.y ?? Math.floor(idx / perRow) * gridH)
         const isEq = b.groupIds.length > 1
 
         // If nested, parent sees only remainder; the child shows its own chips
@@ -288,15 +297,33 @@ export default function GroupView() {
         const displayedSet = isRoot ? remainder : b.nodeIds
         const totalCount = displayedSet.length
 
-        // Estimate height and width
-        const boxWidth = options.showNodeCards ? (parentSafeId ? 480 : 520) : (parentSafeId ? 240 : 260)
-        const columns = options.showNodeCards ? (boxWidth >= 520 ? 3 : 2) : 0
-        const estimateHeight = () => {
-          if (!options.showNodeCards) return 160
-          const count = (parentSafeId ? b.nodeIds : remainder).length
-          const rows = Math.ceil(Math.min(count, maxCards) / columns)
-          return 28 + rows * (80 + 12) + 24
-        }
+        // Sizes and padding for nested rendering
+        const boxWidth = forcedWidth ?? (options.showNodeCards ? (parentSafeId ? 480 : 520) : (parentSafeId ? 240 : 260))
+        const columns = options.showNodeCards ? (boxWidth >= 520 ? 3 : 2) : 1
+        const cardW = 180
+        const cardH = options.showNodeCards ? 80 : 48
+        const padX = 16
+        const padY = 16
+        const remainderRows = Math.ceil(Math.min(displayedSet.length, maxCards) / columns)
+        const remainderHeight = displayedSet.length === 0 ? 0 : remainderRows * (cardH + 12) + (displayedSet.length > 0 ? padY : 0)
+
+        // Precompute child sizes to size parent tightly
+        let childrenHeight = 0
+        const childSizes: Array<{ id: string; w: number; h: number }> = []
+        const childWidthBase = Math.max(200, boxWidth - 48)
+        directChildren.forEach(cid => {
+          const childBox = equivalence.boxes.find(x => x.boxId === cid)
+          const childCount = childBox ? Math.min(childBox.nodeIds.length, maxCards) : 0
+          const childCols = options.showNodeCards ? (childWidthBase >= 480 ? 3 : 2) : 1
+          const childRows = childCols > 0 ? Math.ceil(childCount / childCols) : 0
+          const childH = 24 + (childCount > 0 ? childRows * (cardH + 12) + padY : 0)
+          const childW = Math.min(boxWidth - 32, options.showNodeCards ? Math.max(240, childWidthBase) : Math.max(200, childWidthBase))
+          childSizes.push({ id: cid, w: childW, h: childH || (options.showNodeCards ? 120 : 80) })
+          childrenHeight += (childH || (options.showNodeCards ? 120 : 80)) + 12
+        })
+        if (childrenHeight > 0) childrenHeight += padY
+
+        const boxHeight = forcedHeight ?? (24 /*header*/ + remainderHeight + childrenHeight + padY)
 
         nodes.push({
           id: baseId,
@@ -312,7 +339,7 @@ export default function GroupView() {
             showCapIndicator: showCap,
           },
           position: { x, y },
-          style: { width: boxWidth, height: estimateHeight() },
+          style: { width: boxWidth, height: boxHeight },
           type: 'groupBox',
           draggable: !parentSafeId,
           parentNode: parentSafeId,
@@ -322,16 +349,16 @@ export default function GroupView() {
         // In nested mode with node cards, render only remainder nodes inside the parent box;
         // child boxes will render their own nodes.
         if (options.showNodeCards) {
-          const childIds = (parentSafeId ? b.nodeIds : remainder).slice(0, maxCards)
+          const childIds = (isRoot ? remainder : b.nodeIds).slice(0, maxCards)
           const columns = (boxWidth >= 520 ? 3 : 2)
           const cardW = 180
           const cardH = 80
-          const padX = 12, padY = 28
+          const padX = 12, padY = 20
           childIds.forEach((cid, cidx) => {
             const col = cidx % columns
             const row = Math.floor(cidx / columns)
             const cx = padX + col * (cardW + 12)
-            const cy = padY + row * (cardH + 12)
+            const cy = padY + row * (cardH + 12) + 24 // leave space for header
             const meta = idToMeta.get(cid)
             const path = idToPath.get(cid)
             const storeNode = path ? verbweaverNodes.get(path) : undefined
@@ -369,7 +396,17 @@ export default function GroupView() {
         }
 
         // Recurse children: duplicate under this baseId
-        directChildren.forEach((cid, cidx) => placeBox(cid, baseId, depth + 1, cidx))
+        if (directChildren.length > 0) {
+          let childY = 24 + remainderHeight + padY
+          directChildren.forEach(cid => {
+            const size = childSizes.find(s => s.id === cid)
+            const cWidth = size?.w ?? Math.min(boxWidth - 32, options.showNodeCards ? 360 : 240)
+            const cHeight = size?.h ?? (options.showNodeCards ? 140 : 100)
+            const cx = Math.max(16, (boxWidth - cWidth) / 2)
+            placeBox(cid, baseId, depth + 1, 0, cx, childY, cWidth, cHeight)
+            childY += cHeight + 12
+          })
+        }
       }
 
       topLevel.forEach((b, idx) => placeBox(b.boxId, undefined, 0, idx))
