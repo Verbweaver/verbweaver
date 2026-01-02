@@ -118,7 +118,7 @@ export default function GroupView() {
     const groupNodes = enabled.map(g => ({
       groupId: g.id,
       nodeIds: nodesArr
-        .filter(n => matches(n, g.filters))
+        .filter(n => !n.isDirectory && matches(n, g.filters))
         .map(n => String(n?.metadata?.id || ''))
         .filter(Boolean),
     }))
