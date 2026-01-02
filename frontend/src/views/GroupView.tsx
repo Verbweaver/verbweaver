@@ -263,7 +263,16 @@ export default function GroupView() {
       covers.forEach(e => {
         const ps = safeIdByBoxId.get(e.parentBoxId)!
         const cs = safeIdByBoxId.get(e.childBoxId)!
-        if (ps && cs) edges.push({ id: `${ps}->${cs}`, source: ps, target: cs })
+        if (ps && cs) edges.push({
+          id: `${ps}->${cs}`,
+          source: ps,
+          target: cs,
+          label: 'Contains',
+          labelStyle: { fontSize: 11, fontWeight: 500, fill: 'hsl(var(--muted-foreground))' },
+          labelBgStyle: { fill: 'hsl(var(--background))', fillOpacity: 0.9 },
+          labelBgPadding: [4, 2] as [number, number],
+          labelBgBorderRadius: 3,
+        })
       })
     } else {
       // Nesting mode: recursively place children under each parent; duplicate children under multiple parents
