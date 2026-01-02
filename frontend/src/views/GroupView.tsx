@@ -412,7 +412,7 @@ export default function GroupView() {
     }
 
     return { flowNodes: nodes, flowEdges: edges }
-  }, [equivalence, layout.boxes, options.nestGroups, options.showNodeCards, idToMeta])
+  }, [equivalence, layout.boxes, options.nestGroups, options.showNodeCards, options.maxCardsPerGroup, options.showCapIndicator, idToMeta])
 
   const [optimisticEdges, setOptimisticEdges] = useState<Edge[]>([])
   const renderEdges = useMemo(() => {
