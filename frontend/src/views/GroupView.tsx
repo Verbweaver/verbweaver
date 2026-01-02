@@ -11,7 +11,6 @@ import * as htmlToImage from 'html-to-image'
 import toast from 'react-hot-toast'
 import GroupBoxNode from '../components/graph/GroupBoxNode'
 import CustomNode from '../components/graph/CustomNode'
-import { getLayoutedElements } from '../utils/graphLayout'
 
 const groupNodeTypes: NodeTypes = { groupBox: GroupBoxNode, custom: CustomNode }
 
@@ -556,45 +555,6 @@ export default function GroupView() {
       }
     }
   }, [idToPath, createSoftLink])
-
-  const performAutoLayout = useCallback(() => {
-    if (!options.nestGroups) {
-      // Flat mode: layout group boxes using dagre; keep children relative
-      const groupNodes = flowNodes.filter(n => n.type === 'groupBox')
-      const groupEdges = flowEdges.filter(e => !String(e.id).includes('::e::'))
-      const { nodes: laid } = getLayoutedElements(groupNodes as any, groupEdges as any, { direction: 'TB', nodeSpacing: 160, rankSpacing: 200 })
-      laid.forEach(n => setBoxLayout(n.id, { x: (n as any).position.x, y: (n as any).position.y, w: (n as any).width, h: (n as any).height }))
-    } else {
-      // Nest mode: simple packing - stack child boxes vertically within each parent
-      const groups = flowNodes.filter(n => n.type === 'groupBox')
-      const roots = groups.filter(n => !n.parentNode)
-      const widthOf = (nId: string) => {
-        const n = groups.find(m => m.id === nId)
-        const w = n && n.style && (n.style as any).width ? Number((n.style as any).width) : (options.showNodeCards ? 520 : 260)
-        return Number.isFinite(w) ? w : (options.showNodeCards ? 520 : 260)
-      }
-      const placeChildren = (parentId: string) => {
-        const children = groups.filter(n => n.parentNode === parentId)
-        let y = 28
-        const parentW = widthOf(parentId)
-        children.forEach(c => {
-          const childW = widthOf(c.id)
-          const x = Math.max(16, Math.round((parentW - childW) / 2))
-          setBoxLayout(c.id, { x, y })
-          y += (c.style && (c.style as any).height ? Number((c.style as any).height) : 160) + 16
-          placeChildren(c.id)
-        })
-      }
-      roots.forEach(r => placeChildren(r.id))
-    }
-  }, [options.nestGroups, options.showNodeCards, flowNodes, flowEdges, setBoxLayout])
-
-  // Trigger auto layout via Options tray button
-  const layoutVersion = useGroupViewStore(s => s.layoutVersion)
-  useEffect(() => {
-    if (!layoutVersion) return
-    performAutoLayout()
-  }, [layoutVersion, performAutoLayout])
 
   return (
     <div className="h-full w-full">

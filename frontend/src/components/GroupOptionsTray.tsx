@@ -14,11 +14,9 @@ export default function GroupOptionsTray({ projectId, tabId }: Props) {
   const maxCardsPerGroup = useGroupViewStore(s => s.options.maxCardsPerGroup || 40)
   const showCapIndicator = useGroupViewStore(s => s.options.showCapIndicator !== false)
   const setOptions = useGroupViewStore(s => s.setOptions)
-  const replaceLayout = useGroupViewStore(s => s.replaceLayout)
   const exportConfig = useGroupViewStore(s => s.exportConfig)
   const importConfig = useGroupViewStore(s => s.importConfig)
   const saveToStorage = useGroupViewStore(s => s.saveToStorage)
-  const requestLayout = useGroupViewStore(s => s.requestLayout)
 
   const fileRef = useRef<HTMLInputElement | null>(null)
 
@@ -108,18 +106,12 @@ export default function GroupOptionsTray({ projectId, tabId }: Props) {
         <button className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent inline-flex items-center gap-2" onClick={handleExport}>
           <Download className="w-4 h-4" /> Export JSON
         </button>
-        <button className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent" onClick={()=> requestLayout()}>
-          Auto layout
-        </button>
         <div className="flex items-center gap-2">
           <input ref={fileRef} type="file" accept="application/json" className="hidden" onChange={handleImport} />
           <button className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent inline-flex items-center gap-2" onClick={()=> fileRef.current?.click()}>
             <Upload className="w-4 h-4" /> Import JSON
           </button>
         </div>
-        <button className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent" onClick={()=> replaceLayout({ boxes: {} })}>
-          Clear layout
-        </button>
       </div>
     </div>
   )

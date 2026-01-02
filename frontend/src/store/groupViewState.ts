@@ -40,7 +40,6 @@ type GroupViewStore = {
   groups: GroupDefinition[]
   options: GroupViewOptions
   layout: GroupViewLayout
-  layoutVersion: number
 
   setGroups: (groups: GroupDefinition[]) => void
   addGroup: (group: GroupDefinition) => void
@@ -49,8 +48,6 @@ type GroupViewStore = {
 
   setOptions: (options: Partial<GroupViewOptions>) => void
   setBoxLayout: (boxId: string, pos: { x: number; y: number; w?: number; h?: number }) => void
-  replaceLayout: (layout: GroupViewLayout) => void
-  requestLayout: () => void
 
   loadFromStorage: (projectId: string, tabId: string) => void
   saveToStorage: (projectId: string, tabId: string) => void
@@ -62,7 +59,6 @@ export const useGroupViewStore = create<GroupViewStore>((set, get) => ({
   groups: [],
   options: { nestGroups: false, showNodeCards: false, maxCardsPerGroup: 40, showCapIndicator: true },
   layout: { boxes: {} },
-  layoutVersion: 0,
 
   setGroups: (groups) => set({ groups }),
   addGroup: (group) => set((s) => ({ groups: [...s.groups, group] })),
@@ -73,8 +69,6 @@ export const useGroupViewStore = create<GroupViewStore>((set, get) => ({
 
   setOptions: (options) => set((s) => ({ options: { ...s.options, ...options } })),
   setBoxLayout: (boxId, pos) => set((s) => ({ layout: { ...s.layout, boxes: { ...s.layout.boxes, [boxId]: pos } } })),
-  replaceLayout: (layout) => set({ layout }),
-  requestLayout: () => set((s) => ({ layoutVersion: s.layoutVersion + 1 })),
 
   loadFromStorage: (projectId, tabId) => {
     try {
