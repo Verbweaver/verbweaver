@@ -463,9 +463,10 @@ export default function GroupView() {
 
   const exportMapAsPng = useCallback(async () => {
     const toHide: HTMLElement[] = []
-    const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; fill?: string; stroke?: string } }> = []
+    const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; fill?: string; stroke?: string; strokeWidth?: string } }> = []
     const imageEvents: Array<{ src: string; ok: boolean; error?: any }> = []
     const originalImage = window.Image
+    const scrubbedAttrs: Array<{ el: Element; name: string; prev: string }> = []
     try {
       // Patch Image to log every load/error that html-to-image triggers
       // so we can deterministically see failing resources.
@@ -481,7 +482,7 @@ export default function GroupView() {
       } as typeof Image
 
       const wrapper = flowWrapperRef.current
-      const flowRoot = (wrapper?.querySelector('.react-flow__renderer') as HTMLElement | null) || (wrapper?.querySelector('.react-flow') as HTMLElement | null)
+      const flowRoot = (wrapper?.querySelector('.react-flow') as HTMLElement | null) || (wrapper?.querySelector('.react-flow__renderer') as HTMLElement | null)
       if (!flowRoot) {
         toast.error('Could not find the group canvas to export')
         return
@@ -527,6 +528,45 @@ export default function GroupView() {
         if (h.style) { toHide.push(h); h.style.visibility = 'hidden' }
       })
 
+      // Scrub invalid XML chars from attribute values to avoid parser errors in toSvg
+      const invalidXmlChars = /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD]/g
+      const scrubElementAttributes = (el: Element) => {
+        if (el.attributes) {
+          Array.from(el.attributes).forEach(attr => {
+            if (invalidXmlChars.test(attr.value)) {
+              scrubbedAttrs.push({ el, name: attr.name, prev: attr.value })
+              attr.value = attr.value.replace(invalidXmlChars, '')
+            }
+          })
+        }
+        Array.from(el.children || []).forEach(child => scrubElementAttributes(child))
+      }
+      scrubElementAttributes(flowRoot)
+
+      // Inline edge stroke styles so edges render in exported image
+      flowRoot.querySelectorAll('.react-flow__edge-path, .react-flow__connection-path').forEach(el => {
+        try {
+          const h = el as HTMLElement
+          const cs = getComputedStyle(h)
+          const prev = {
+            stroke: (h.style as any).stroke,
+            strokeWidth: (h.style as any).strokeWidth,
+            fill: (h.style as any).fill,
+            attrStroke: h.getAttribute('stroke'),
+            attrStrokeWidth: h.getAttribute('stroke-width'),
+            attrFill: h.getAttribute('fill'),
+          }
+          const stroke = cs.getPropertyValue('stroke') || '#9ca3af'
+          const strokeWidth = cs.getPropertyValue('stroke-width') || '3'
+          h.setAttribute('stroke', stroke)
+          h.setAttribute('stroke-width', strokeWidth)
+          h.setAttribute('fill', 'none')
+          styled.push({ el: h, prev })
+        } catch (err) {
+          console.error('Group export: failed to inline edge stroke', err, { el })
+        }
+      })
+
       // Inline edge label colors to avoid missing computed styles in export
       flowRoot.querySelectorAll('.react-flow__edge-textbg').forEach(el => {
         const h = el as HTMLElement
@@ -557,13 +597,14 @@ export default function GroupView() {
         backgroundColor: bgColor,
         pixelRatio: window.devicePixelRatio || 1,
         cacheBust: true,
+        // useCORS is supported at runtime; cast to satisfy types
         useCORS: true,
         filter: (el: Element) => {
           const cls = (el as HTMLElement).classList
           if (!cls) return true
           return !cls.contains('react-flow__controls') && !cls.contains('react-flow__attribution') && !cls.contains('vw-node-context-menu')
         },
-      })
+      } as any)
 
       let svgText = (() => {
         try {
@@ -583,8 +624,10 @@ export default function GroupView() {
       const parser = new DOMParser()
       const parsed = parser.parseFromString(svgText, 'image/svg+xml')
       let parseError = parsed.querySelector('parsererror')
+      let parseErrorText: string | null = null
       if (parseError) {
         const msg = parseError.textContent || ''
+        parseErrorText = msg
         const colMatch = msg.match(/column\s+(\d+)/i)
         const col = colMatch ? Number(colMatch[1]) : -1
         const charInfo = () => {
@@ -682,7 +725,7 @@ export default function GroupView() {
         resourceUrls,
         preflight,
         imageEvents,
-        svgParseError: parseError?.textContent || null,
+        svgParseError: parseErrorText,
         svgDataUrl: svgDataUrl?.slice(0, 200) || '',
         svgBase64Prefix: svgBase64?.slice(0, 200) || '',
       }
@@ -694,12 +737,17 @@ export default function GroupView() {
       try { window.Image = originalImage } catch {}
       try { console.log('[Group export] image load events', imageEvents) } catch {}
       try { toHide.forEach(h => { h.style.visibility = '' }) } catch {}
+      try { scrubbedAttrs.forEach(s => { s.el.setAttribute(s.name, s.prev) }) } catch {}
       try {
         styled.forEach(s => {
           if (s.prev.color !== undefined) s.el.style.color = s.prev.color
           if (s.prev.backgroundColor !== undefined) s.el.style.backgroundColor = s.prev.backgroundColor
           if ((s.prev as any).fill !== undefined) (s.el.style as any).fill = (s.prev as any).fill
           if ((s.prev as any).stroke !== undefined) (s.el.style as any).stroke = (s.prev as any).stroke
+          if ((s.prev as any).strokeWidth !== undefined) (s.el.style as any).strokeWidth = (s.prev as any).strokeWidth
+          if ((s.prev as any).attrStroke !== undefined && (s.prev as any).attrStroke !== null) s.el.setAttribute('stroke', (s.prev as any).attrStroke)
+          if ((s.prev as any).attrStrokeWidth !== undefined && (s.prev as any).attrStrokeWidth !== null) s.el.setAttribute('stroke-width', (s.prev as any).attrStrokeWidth)
+          if ((s.prev as any).attrFill !== undefined && (s.prev as any).attrFill !== null) s.el.setAttribute('fill', (s.prev as any).attrFill)
         })
       } catch {}
       setContextMenu(null)
