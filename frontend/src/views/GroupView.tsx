@@ -3,7 +3,7 @@ import { useProjectStore } from '../store/projectStore'
 import { useTabStore } from '../store/tabStore'
 import { useGroupViewStore } from '../store/groupViewState'
 import { useNodeStore } from '../store/nodeStore'
-import ReactFlow, { Background, Controls, Edge, Node, NodeTypes, Connection } from 'react-flow-renderer'
+import ReactFlow, { Background, Controls, Edge, Node, NodeTypes, Connection, useReactFlow } from 'react-flow-renderer'
 import { buildEquivalenceBoxes, computeCoverRelations, computeRemainder } from '../utils/grouping'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
@@ -28,6 +28,7 @@ export default function GroupView() {
   const { nodes: verbweaverNodes, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
   const { addEditorTab } = useTabStore()
   const flowWrapperRef = useRef<HTMLDivElement>(null)
+  const { fitView, getViewport, setViewport } = useReactFlow()
 
   // Check if we're in Electron
   const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined
@@ -523,6 +524,16 @@ export default function GroupView() {
         return
       }
 
+      // Fit all nodes into view for export, then restore the viewport afterward
+      const prevViewport = getViewport ? getViewport() : null
+      try {
+        if (flowNodes.length > 0 && fitView) {
+          await Promise.resolve(fitView({ includeHiddenNodes: true, padding: 0.2 }))
+        }
+      } catch (err) {
+        console.error('Group export: fitView failed (continuing)', err)
+      }
+
       wrapper?.querySelectorAll('.react-flow__attribution, .react-flow__controls, .vw-node-context-menu').forEach(el => {
         const h = el as HTMLElement
         if (h.style) { toHide.push(h); h.style.visibility = 'hidden' }
@@ -750,9 +761,14 @@ export default function GroupView() {
           if ((s.prev as any).attrFill !== undefined && (s.prev as any).attrFill !== null) s.el.setAttribute('fill', (s.prev as any).attrFill)
         })
       } catch {}
+      try {
+        if (prevViewport && setViewport) {
+          setViewport(prevViewport)
+        }
+      } catch {}
       setContextMenu(null)
     }
-  }, [isElectron])
+  }, [isElectron, flowNodes.length, fitView, getViewport, setViewport])
 
   const parseUnderlyingId = (nodeId: string): string | null => {
     const marker = '::n::'
