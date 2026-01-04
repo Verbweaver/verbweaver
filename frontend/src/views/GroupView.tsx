@@ -3,7 +3,7 @@ import { useProjectStore } from '../store/projectStore'
 import { useTabStore } from '../store/tabStore'
 import { useGroupViewStore } from '../store/groupViewState'
 import { useNodeStore } from '../store/nodeStore'
-import ReactFlow, { Background, Controls, Edge, Node, NodeTypes, Connection, useReactFlow } from 'react-flow-renderer'
+import ReactFlow, { Background, Controls, Edge, Node, NodeTypes, Connection, useReactFlow, ReactFlowProvider } from 'react-flow-renderer'
 import { buildEquivalenceBoxes, computeCoverRelations, computeRemainder } from '../utils/grouping'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
@@ -15,7 +15,7 @@ import CustomNode from '../components/graph/CustomNode'
 const groupNodeTypes: NodeTypes = { groupBox: GroupBoxNode, custom: CustomNode }
 
 // Placeholder Group view. Will be replaced with React Flow Sub Flows implementation in subsequent tasks.
-export default function GroupView() {
+function GroupViewInner() {
   const { currentProject } = useProjectStore()
   const activeTabId = useTabStore(s => s.activeTabId)
   const tabs = useTabStore(s => s.tabs)
@@ -889,4 +889,10 @@ export default function GroupView() {
   )
 }
 
-
+export default function GroupView() {
+  return (
+    <ReactFlowProvider>
+      <GroupViewInner />
+    </ReactFlowProvider>
+  )
+}
