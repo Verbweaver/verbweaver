@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useProjectStore } from '../store/projectStore'
 import { useTabStore } from '../store/tabStore'
 import { useGroupViewStore } from '../store/groupViewState'
@@ -27,6 +27,7 @@ export default function GroupView() {
   const setBoxLayout = useGroupViewStore(s => s.setBoxLayout)
   const { nodes: verbweaverNodes, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
   const { addEditorTab } = useTabStore()
+  const flowWrapperRef = useRef<HTMLDivElement>(null)
 
   // Check if we're in Electron
   const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined
@@ -461,11 +462,205 @@ export default function GroupView() {
   }, [setBoxLayout, saveToStorage, tabs, activeTabId, currentProject?.id])
 
   const exportMapAsPng = useCallback(async () => {
+    const toHide: HTMLElement[] = []
+    const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; fill?: string; stroke?: string } }> = []
+    const imageEvents: Array<{ src: string; ok: boolean; error?: any }> = []
+    const originalImage = window.Image
     try {
-      const el = document.querySelector('.react-flow__renderer') as HTMLElement
-      const viewport = document.querySelector('.react-flow') as HTMLElement
-      const target = el || viewport || document.body
-      const dataUrl = await htmlToImage.toPng(target, { backgroundColor: getComputedStyle(document.body).getPropertyValue('--background') || '#fff' })
+      // Patch Image to log every load/error that html-to-image triggers
+      // so we can deterministically see failing resources.
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      window.Image = class LoggingImage extends originalImage {
+        constructor() {
+          super()
+          this.crossOrigin = 'anonymous'
+          this.addEventListener('load', () => { imageEvents.push({ src: (this as any).src || '', ok: true }) })
+          this.addEventListener('error', (err) => { imageEvents.push({ src: (this as any).src || '', ok: false, error: err }) })
+        }
+      } as typeof Image
+
+      const wrapper = flowWrapperRef.current
+      const flowRoot = (wrapper?.querySelector('.react-flow__renderer') as HTMLElement | null) || (wrapper?.querySelector('.react-flow') as HTMLElement | null)
+      if (!flowRoot) {
+        toast.error('Could not find the group canvas to export')
+        return
+      }
+
+      // Collect all candidate resource URLs before capture to detect failures deterministically
+      const collectResourceUrls = (root: HTMLElement) => {
+        const urls = new Set<string>()
+        root.querySelectorAll('img').forEach(img => { if (img.src) urls.add(img.src) })
+        root.querySelectorAll<HTMLElement>('*').forEach(el => {
+          const bg = getComputedStyle(el).backgroundImage || ''
+          // Match url("...") occurrences; may return multiple
+          const matches = Array.from(bg.matchAll(/url\(["']?([^"')]+)["']?\)/g))
+          matches.forEach(m => { if (m[1]) urls.add(m[1]) })
+        })
+        return Array.from(urls)
+      }
+
+      const preflightResources = async (urls: string[]) => {
+        const checks = urls.map(url => new Promise<{ url: string; ok: boolean; error?: any }>(resolve => {
+          const img = new Image()
+          img.crossOrigin = 'anonymous'
+          img.onload = () => resolve({ url, ok: true })
+          img.onerror = (err) => resolve({ url, ok: false, error: err })
+          img.src = url
+        }))
+        return Promise.all(checks)
+      }
+
+      const resourceUrls = collectResourceUrls(flowRoot)
+      console.log('[Group export] resources detected', resourceUrls)
+      const preflight = await preflightResources(resourceUrls)
+      const failed = preflight.filter(r => !r.ok)
+      console.log('[Group export] preflight results', preflight)
+      if (failed.length) {
+        console.error('Group export preflight failed for URLs:', failed)
+        toast.error('Failed to export map: resource could not be loaded')
+        return
+      }
+
+      wrapper?.querySelectorAll('.react-flow__attribution, .react-flow__controls, .vw-node-context-menu').forEach(el => {
+        const h = el as HTMLElement
+        if (h.style) { toHide.push(h); h.style.visibility = 'hidden' }
+      })
+
+      // Inline edge label colors to avoid missing computed styles in export
+      flowRoot.querySelectorAll('.react-flow__edge-textbg').forEach(el => {
+        const h = el as HTMLElement
+        const cs = getComputedStyle(h)
+        const prev = { backgroundColor: h.style.backgroundColor, fill: (h.style as any).fill, stroke: (h.style as any).stroke }
+        const fill = cs.fill || cs.backgroundColor
+        const stroke = (cs as any).stroke || cs.borderColor
+        if (fill) (h.style as any).fill = fill
+        if (stroke) (h.style as any).stroke = stroke
+        styled.push({ el: h, prev })
+      })
+      flowRoot.querySelectorAll('.react-flow__edge-text').forEach(el => {
+        const h = el as HTMLElement
+        const cs = getComputedStyle(h)
+        const prev = { color: h.style.color, fill: (h.style as any).fill }
+        const textFill = (cs as any).fill && (cs as any).fill !== 'none' ? (cs as any).fill : cs.color
+        if (textFill) (h.style as any).fill = textFill
+        h.style.color = textFill
+        styled.push({ el: h, prev })
+      })
+
+      const root = getComputedStyle(document.documentElement)
+      const bgVar = root.getPropertyValue('--background').trim()
+      const bgColor = bgVar ? `hsl(${bgVar})` : getComputedStyle(document.body).backgroundColor || '#fff'
+
+      // First generate SVG so we can inspect it deterministically
+      const svgDataUrl = await htmlToImage.toSvg(flowRoot, {
+        backgroundColor: bgColor,
+        pixelRatio: window.devicePixelRatio || 1,
+        cacheBust: true,
+        useCORS: true,
+        filter: (el: Element) => {
+          const cls = (el as HTMLElement).classList
+          if (!cls) return true
+          return !cls.contains('react-flow__controls') && !cls.contains('react-flow__attribution') && !cls.contains('vw-node-context-menu')
+        },
+      })
+
+      let svgText = (() => {
+        try {
+          const comma = svgDataUrl.indexOf(',')
+          return comma >= 0 ? decodeURIComponent(svgDataUrl.slice(comma + 1)) : ''
+        } catch {
+          return ''
+        }
+      })()
+      console.log('[Group export] svg length', svgText?.length || 0)
+      if (svgText) {
+        console.log('[Group export] svg head', svgText.slice(0, 400))
+        console.log('[Group export] svg tail', svgText.slice(-400))
+      }
+
+      // Validate SVG parse to surface syntax errors
+      const parser = new DOMParser()
+      const parsed = parser.parseFromString(svgText, 'image/svg+xml')
+      let parseError = parsed.querySelector('parsererror')
+      if (parseError) {
+        const msg = parseError.textContent || ''
+        const colMatch = msg.match(/column\s+(\d+)/i)
+        const col = colMatch ? Number(colMatch[1]) : -1
+        const charInfo = () => {
+          if (col <= 0 || col > svgText.length) return null
+          const idx = col - 1
+          const ch = svgText[idx]
+          const code = ch ? ch.charCodeAt(0) : -1
+          return { idx, ch, code, context: svgText.slice(Math.max(0, idx - 40), Math.min(svgText.length, idx + 40)) }
+        }
+        console.error('Group export: SVG parsererror', msg, { column: col, charInfo: charInfo() })
+
+        // Sanitize control characters not allowed in XML and retry
+        const sanitized = svgText.replace(/[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD]/g, '')
+        if (sanitized !== svgText) {
+          const reparsed = parser.parseFromString(sanitized, 'image/svg+xml')
+          const reparsedError = reparsed.querySelector('parsererror')
+          if (!reparsedError) {
+            console.warn('Group export: SVG sanitized to remove invalid chars before export')
+            svgText = sanitized
+            parseError = null
+          } else {
+            console.error('Group export: SVG still invalid after sanitize', reparsedError.textContent)
+          }
+        }
+        if (parseError) {
+          toast.error('Failed to export map: invalid SVG (see console)')
+          return
+        }
+      }
+
+      // Normalize to base64 data URL to eliminate encoding edge cases
+      const svgBase64 = (() => {
+        try {
+          return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgText)))}`
+        } catch (err) {
+          console.error('Group export: base64 encode failed', err)
+          return svgDataUrl
+        }
+      })()
+
+      // Manual image load to surface the exact error if decode fails
+      const imgResult = await new Promise<{ ok: true; w: number; h: number } | { ok: false; error: any }>((resolve) => {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => resolve({ ok: true, w: img.naturalWidth, h: img.naturalHeight })
+        img.onerror = (err) => resolve({ ok: false, error: err })
+        img.src = svgBase64
+      })
+
+      if (!imgResult.ok) {
+        console.error('Group export: SVG image decode failed', imgResult, { svgSample: svgText?.slice(0, 500) })
+        toast.error('Failed to export map: SVG decode error (see console)')
+        return
+      }
+
+      // Draw to canvas manually to avoid hidden internals masking errors
+      const canvas = document.createElement('canvas')
+      canvas.width = imgResult.w
+      canvas.height = imgResult.h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        toast.error('Failed to export map: no canvas context')
+        return
+      }
+      // Paint background first for safety
+      ctx.fillStyle = bgColor
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(await (() => new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => resolve(img)
+        img.onerror = reject
+        img.src = svgBase64
+      }))(), 0, 0)
+
+      const dataUrl = canvas.toDataURL('image/png')
       const filename = `groups-${new Date().toISOString().replace(/[:.]/g,'-')}.png`
       if (isElectron && (window as any).electronAPI?.saveBinaryFile) {
         const bin = await (await fetch(dataUrl)).arrayBuffer()
@@ -480,9 +675,33 @@ export default function GroupView() {
         link.remove()
         toast.success('Download started')
       }
+      ;(window as any).__vw_groupExportDebug = {
+        svgLength: svgText?.length || 0,
+        svgSampleHead: svgText?.slice(0, 400),
+        svgSampleTail: svgText?.slice(-400),
+        resourceUrls,
+        preflight,
+        imageEvents,
+        svgParseError: parseError?.textContent || null,
+        svgDataUrl: svgDataUrl?.slice(0, 200) || '',
+        svgBase64Prefix: svgBase64?.slice(0, 200) || '',
+      }
     } catch (e) {
-      toast.error('Failed to export map')
+      console.error('Failed to export group map:', e, { imageEvents })
+      const msg = e && (e as Error).message ? (e as Error).message : ''
+      toast.error(`Failed to export map${msg ? `: ${msg}` : ''}`)
     } finally {
+      try { window.Image = originalImage } catch {}
+      try { console.log('[Group export] image load events', imageEvents) } catch {}
+      try { toHide.forEach(h => { h.style.visibility = '' }) } catch {}
+      try {
+        styled.forEach(s => {
+          if (s.prev.color !== undefined) s.el.style.color = s.prev.color
+          if (s.prev.backgroundColor !== undefined) s.el.style.backgroundColor = s.prev.backgroundColor
+          if ((s.prev as any).fill !== undefined) (s.el.style as any).fill = (s.prev as any).fill
+          if ((s.prev as any).stroke !== undefined) (s.el.style as any).stroke = (s.prev as any).stroke
+        })
+      } catch {}
       setContextMenu(null)
     }
   }, [isElectron])
@@ -566,7 +785,7 @@ export default function GroupView() {
   }, [idToPath, createSoftLink])
 
   return (
-    <div className="h-full w-full">
+    <div ref={flowWrapperRef} className="h-full w-full">
       <ReactFlow
         nodes={flowNodes}
         edges={renderEdges}
@@ -590,6 +809,7 @@ export default function GroupView() {
           y={contextMenu.y}
           nodeId={contextMenu.nodeId}
           edgeId={contextMenu.edgeId}
+          variant={!contextMenu.nodeId && !contextMenu.edgeId ? 'group-pane' : undefined}
           onCreateNode={() => {}}
           onDeleteNode={(nid) => { handleDeleteNode(nid || contextMenu.nodeId); setContextMenu(null) }}
           onEditNode={(nid) => { handleEditNode(nid || contextMenu.nodeId); setContextMenu(null) }}
