@@ -30,9 +30,10 @@ interface NodeContextMenuProps {
   isCollapsed?: boolean
   onRemoveLinks?: (nodeId: string) => void
   onExportMapAsPng?: () => void
+  variant?: 'group-pane'
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed, onRemoveLinks, onExportMapAsPng }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed, onRemoveLinks, onExportMapAsPng, variant }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -51,6 +52,7 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
 
   // Load templates when menu opens and no nodeId (creating new node)
   useEffect(() => {
+    if (variant === 'group-pane') return
     // Only attempt to load templates if we are creating a new node (no nodeId)
     // And if we have the necessary project information for the current environment.
     if (!nodeId) {
@@ -62,9 +64,10 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
         loadTemplates();
       }
     }
-  }, [nodeId, currentProject, currentProjectPath]);
+  }, [nodeId, currentProject, currentProjectPath, variant]);
 
   const loadTemplates = async () => {
+    if (variant === 'group-pane') return
     // This initial check is redundant due to the useEffect logic but kept for safety.
     if ((window.electronAPI && !currentProjectPath) && (!window.electronAPI && !currentProject?.id)) {
       console.warn("loadTemplates called without necessary project context.");
@@ -101,6 +104,24 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (variant === 'group-pane') {
+    return (
+      <div
+        ref={menuRef}
+        className="fixed bg-popover border border-border rounded-md shadow-lg py-1 z-50 min-w-[150px] vw-node-context-menu"
+        style={{ left: x, top: y }}
+      >
+        <button
+          onClick={() => { onExportMapAsPng?.(); onClose(); }}
+          className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+        >
+          <ImageDown className="w-3 h-3" />
+          Save as PNG...
+        </button>
+      </div>
+    )
   }
 
   return (

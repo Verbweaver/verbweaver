@@ -27,7 +27,7 @@ import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 import RemoveLinksModal from '../components/common/RemoveLinksModal'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
-import { Paperclip, Filter, ListTree, Loader2, LineChart, Network } from 'lucide-react'
+import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers } from 'lucide-react'
 import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
 import * as htmlToImage from 'html-to-image'
@@ -42,6 +42,9 @@ import { NODE_TYPES } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { createNodeFromTemplateDesktop } from '../api/desktop-templates';
 import ProgressionPanel from '../components/progression/ProgressionPanel'
+import GroupView from '../views/GroupView'
+import GroupManagerPanel from '../components/GroupManagerPanel'
+import GroupOptionsTray from '../components/GroupOptionsTray'
 // DnD for Outline
 import {
   DndContext,
@@ -232,7 +235,7 @@ function GraphView() {
   const [positionsReady, setPositionsReady] = useState<boolean>(false)
 
   // Outline subview state
-  type GraphSubView = 'mindmap' | 'outline' | 'progression'
+  type GraphSubView = 'mindmap' | 'outline' | 'progression' | 'group'
   const { getActiveTab, updateTab, updateTabMetadata } = useTabStore()
   const activeGraphTabId = useMemo(() => {
     const t = tabs.find(t => t.id === activeTabId)
@@ -242,7 +245,7 @@ function GraphView() {
     try {
       const tab = useTabStore.getState().getActiveTab()
       const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
-      if (saved === 'outline' || saved === 'mindmap' || saved === 'progression') return saved
+      if (saved === 'outline' || saved === 'mindmap' || saved === 'progression' || saved === 'group') return saved
     } catch {}
     return 'mindmap'
   })
@@ -321,7 +324,7 @@ function GraphView() {
   useEffect(() => {
     const tab = getActiveTab()
     const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
-    if (saved === 'outline' || saved === 'mindmap' || saved === 'progression') setSubView(saved)
+    if (saved === 'outline' || saved === 'mindmap' || saved === 'progression' || saved === 'group') setSubView(saved)
     subViewLoadedRef.current = true
   }, [getActiveTab])
 
@@ -339,7 +342,13 @@ function GraphView() {
   useEffect(() => {
     const tab = getActiveTab()
     if (!tab) return
-    const title = subView === 'mindmap' ? 'Graph - Mind Map' : subView === 'outline' ? 'Graph - Outline' : 'Graph - Progression'
+    const title = subView === 'mindmap'
+      ? 'Graph - Mind Map'
+      : subView === 'outline'
+      ? 'Graph - Outline'
+      : subView === 'progression'
+      ? 'Graph - Progression'
+      : 'Graph - Group'
     console.log('[Graph] Updating tab title', { tabId: tab.id, title })
     updateTab(tab.id, { title })
   }, [subView, getActiveTab, updateTab])
@@ -1949,6 +1958,7 @@ function GraphView() {
         <div className="absolute top-2 right-2 z-30 pointer-events-auto vw-overlay">
           <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-56">
             <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
+            <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('group')} title="Group"><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')} title="Outline"><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')} title="Progression"><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
             <div className="pt-1 border-t border-border" />
@@ -2094,12 +2104,35 @@ function GraphView() {
       </div>
       )}
 
+      {subView === 'group' && (
+        <div className="h-full w-full relative">
+          {/* Right-side panel for Group view: sub-view switcher */}
+          <div className="absolute top-2 right-2 z-30 pointer-events-auto">
+            <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-80">
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
+              <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('group')} disabled><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')}><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')}><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
+              <div className="pt-1 border-t border-border" />
+              <GroupManagerPanel />
+            </div>
+          </div>
+          {/* Left options tray */}
+          <div className="absolute top-2 left-2 z-10 pointer-events-auto">
+            <GroupOptionsTray projectId={currentProject?.id} tabId={activeGraphTabId} />
+          </div>
+          {/* Canvas */}
+          <GroupView />
+        </div>
+      )}
+
       {subView === 'outline' && (
         <div className="h-full w-full overflow-auto p-3 text-foreground relative z-0">
           {/* Outline right-side panel */}
           <div className="absolute top-2 right-2 z-30 pointer-events-auto">
             <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-56">
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('group')}><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
               <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('outline')} disabled><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')}><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
               <div className="pt-1 border-t border-border" />
