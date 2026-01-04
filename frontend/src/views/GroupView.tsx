@@ -464,10 +464,11 @@ export default function GroupView() {
 
   const exportMapAsPng = useCallback(async () => {
     const toHide: HTMLElement[] = []
-    const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; fill?: string; stroke?: string; strokeWidth?: string } }> = []
+    const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; fill?: string; stroke?: string; strokeWidth?: string; attrStroke?: string | null; attrStrokeWidth?: string | null; attrFill?: string | null } }> = []
     const imageEvents: Array<{ src: string; ok: boolean; error?: any }> = []
     const originalImage = window.Image
     const scrubbedAttrs: Array<{ el: Element; name: string; prev: string }> = []
+    let prevViewport: { x: number; y: number; zoom: number } | null = null
     try {
       // Patch Image to log every load/error that html-to-image triggers
       // so we can deterministically see failing resources.
@@ -525,7 +526,7 @@ export default function GroupView() {
       }
 
       // Fit all nodes into view for export, then restore the viewport afterward
-      const prevViewport = getViewport ? getViewport() : null
+      prevViewport = getViewport ? getViewport() : null
       try {
         if (flowNodes.length > 0 && fitView) {
           await Promise.resolve(fitView({ includeHiddenNodes: true, padding: 0.2 }))
@@ -602,11 +603,12 @@ export default function GroupView() {
       const root = getComputedStyle(document.documentElement)
       const bgVar = root.getPropertyValue('--background').trim()
       const bgColor = bgVar ? `hsl(${bgVar})` : getComputedStyle(document.body).backgroundColor || '#fff'
+      const exportScale = 2 // upscale for crisper output
 
       // First generate SVG so we can inspect it deterministically
       const svgDataUrl = await htmlToImage.toSvg(flowRoot, {
         backgroundColor: bgColor,
-        pixelRatio: window.devicePixelRatio || 1,
+        pixelRatio: exportScale,
         cacheBust: true,
         // useCORS is supported at runtime; cast to satisfy types
         useCORS: true,
@@ -696,8 +698,8 @@ export default function GroupView() {
 
       // Draw to canvas manually to avoid hidden internals masking errors
       const canvas = document.createElement('canvas')
-      canvas.width = imgResult.w
-      canvas.height = imgResult.h
+      canvas.width = imgResult.w * exportScale
+      canvas.height = imgResult.h * exportScale
       const ctx = canvas.getContext('2d')
       if (!ctx) {
         toast.error('Failed to export map: no canvas context')
@@ -706,6 +708,7 @@ export default function GroupView() {
       // Paint background first for safety
       ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.scale(exportScale, exportScale)
       ctx.drawImage(await (() => new Promise<HTMLImageElement>((resolve, reject) => {
         const img = new Image()
         img.crossOrigin = 'anonymous'
