@@ -17,6 +17,7 @@ import { FileStorage, StoredFile } from '../utils/fileStorage'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import SharedCreateLinkModal from '../components/common/CreateLinkModal'
+import RemoveLinksModal from '../components/common/RemoveLinksModal'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
@@ -123,7 +124,7 @@ function EditorView() {
     if (!resolvedNodePath) return [] as Array<{ path: string; name: string; title: string; id: string }>
     const node = s.nodes.get(resolvedNodePath)
     if (!node) return []
-    const linkIds: string[] = Array.isArray(node.metadata?.links) ? node.metadata.links : []
+    const linkIds: string[] = Array.isArray(node.softLinks) ? node.softLinks : []
     const results: Array<{ path: string; name: string; title: string; id: string }> = []
     if (linkIds.length === 0) return results
     for (const other of s.nodes.values()) {
@@ -1408,69 +1409,27 @@ function EditorView() {
       />
 
       {/* Bulk remove links dialog */}
-      {removeLinksOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setRemoveLinksOpen(false)}>
-          <div className="bg-background border border-border rounded-lg w-[520px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="text-lg font-semibold">Remove links</h3>
-              <button className="p-1.5 rounded hover:bg-accent" onClick={() => setRemoveLinksOpen(false)}><X className="w-4 h-4"/></button>
-            </div>
-            <div className="p-4">
-              <p className="text-sm text-muted-foreground mb-2">Select links to remove from this node:</p>
-              <div className="max-h-64 overflow-auto border border-border rounded">
-                <ul>
-                  {linkedNodes.length === 0 && (
-                    <li className="px-3 py-2 text-sm text-muted-foreground">No links</li>
-                  )}
-                  {linkedNodes.map(ln => (
-                    <li key={ln.path} className="flex items-center gap-2 px-3 py-2 border-b last:border-b-0">
-                      <input
-                        type="checkbox"
-                        checked={removeLinksSelected.has(ln.path)}
-                        onChange={(e) => {
-                          setRemoveLinksSelected(prev => {
-                            const next = new Set(prev)
-                            if (e.target.checked) next.add(ln.path); else next.delete(ln.path)
-                            return next
-                          })
-                        }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm truncate">{ln.title}</div>
-                        <div className="text-xs text-muted-foreground truncate">{ln.path}</div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 p-4 border-t">
-              <button className="px-4 py-2 border border-input rounded hover:bg-accent" onClick={() => { setRemoveLinksOpen(false); setRemoveLinksSelected(new Set()) }}>Cancel</button>
-              <button
-                className="px-4 py-2 bg-destructive text-destructive-foreground rounded hover:bg-destructive/90 disabled:opacity-50"
-                disabled={removeLinksSelected.size === 0}
-                onClick={async () => {
-                  try {
-                    const store = useNodeStore.getState()
-                    const current = resolvedNodePathRef.current
-                    if (!current) return
-                    // Remove links sequentially
-                    for (const p of Array.from(removeLinksSelected)) {
-                      await store.removeSoftLink(current, p)
-                    }
-                    try { await store.loadNodes() } catch {}
-                    setLinksExpanded(true)
-                    await refreshCurrentEditorContent()
-                  } finally {
-                    setRemoveLinksOpen(false)
-                    setRemoveLinksSelected(new Set())
-                  }
-                }}
-              >Remove selected</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RemoveLinksModal
+        isOpen={removeLinksOpen}
+        linkedNodes={linkedNodes.map(ln => ({ path: ln.path, title: ln.title }))}
+        onClose={() => { setRemoveLinksOpen(false); setRemoveLinksSelected(new Set()) }}
+        onRemoveSelected={async (paths) => {
+          try {
+            const store = useNodeStore.getState()
+            const current = resolvedNodePathRef.current
+            if (!current) return
+            for (const p of paths) {
+              await store.removeSoftLink(current, p)
+            }
+            try { await store.loadNodes() } catch {}
+            setLinksExpanded(true)
+            await refreshCurrentEditorContent()
+          } finally {
+            setRemoveLinksOpen(false)
+            setRemoveLinksSelected(new Set())
+          }
+        }}
+      />
 
       {/* Hidden file input for attachments */}
       <input

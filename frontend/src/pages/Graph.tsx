@@ -25,8 +25,12 @@ import { templatesApi, Template as ApiTemplate } from '../api/templates';
 import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
+import RemoveLinksModal from '../components/common/RemoveLinksModal'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
-import { Paperclip, Filter, ListTree, Loader2, LineChart, Network } from 'lucide-react'
+import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers } from 'lucide-react'
+import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
+// @ts-ignore: type stub provided in global.d.ts; package installed at runtime
+import * as htmlToImage from 'html-to-image'
 import clsx from 'clsx'
 import { STORAGE_KEYS } from '@verbweaver/shared'
 import LayoutControls from '../components/graph/LayoutControls'
@@ -38,6 +42,9 @@ import { NODE_TYPES } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { createNodeFromTemplateDesktop } from '../api/desktop-templates';
 import ProgressionPanel from '../components/progression/ProgressionPanel'
+import GroupView from '../views/GroupView'
+import GroupManagerPanel from '../components/GroupManagerPanel'
+import GroupOptionsTray from '../components/GroupOptionsTray'
 // DnD for Outline
 import {
   DndContext,
@@ -67,6 +74,9 @@ function GraphView() {
   const { currentProject, currentProjectPath } = useProjectStore()
   const { nodes: verbweaverNodes, loadNodes, updateNode, createNode, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
   const { addEditorTab } = useTabStore()
+  // Tab selectors for persistence/restore
+  const activeTabId = useTabStore(s => s.activeTabId)
+  const tabs = useTabStore(s => s.tabs)
   
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -83,6 +93,13 @@ function GraphView() {
   const [isShiftMarquee, setIsShiftMarquee] = useState(false)
   const [selectionBase, setSelectionBase] = useState<Set<string> | null>(null)
   const [ctrlMetaPressed, setCtrlMetaPressed] = useState(false)
+  const [removeLinksOpen, setRemoveLinksOpen] = useState(false)
+  const [removeLinksNodePath, setRemoveLinksNodePath] = useState<string | null>(null)
+  const reactFlowWrapperRef = useRef<HTMLDivElement | null>(null)
+  // Stable fallback positions for nodes without saved positions (prevents re-randomizing)
+  const fallbackPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  // Track last graph signatures to avoid redundant updates that can cause render loops
+  const lastGraphSigsRef = useRef<{ nodes: string; edges: string }>({ nodes: '', edges: '' })
   const [hideUploads, setHideUploads] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS)
@@ -111,6 +128,64 @@ function GraphView() {
       return false
     }
   })
+
+  // Display one-way links (Mind Map)
+  const SHOW_ONE_WAY_LOCAL_KEY = 'verbweaver_graph_show_one_way_links'
+  const [showOneWayLinks, setShowOneWayLinks] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(SHOW_ONE_WAY_LOCAL_KEY)
+      if (raw === null) return true
+      return raw === 'true'
+    } catch {
+      return true
+    }
+  })
+
+  // Collapsible Options tray (Mind Map)
+  const OPTIONS_OPEN_LOCAL_KEY = 'verbweaver_graph_options_open'
+  const [optionsOpen, setOptionsOpen] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(OPTIONS_OPEN_LOCAL_KEY)
+      if (raw === null) return true
+      return raw === 'true'
+    } catch {
+      return true
+    }
+  })
+
+  // Filters state
+  const [filters, setFilters] = useState<NodeFilterState>(DEFAULT_FILTERS)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  // Persist filters per tab so they survive tab switches
+  useEffect(() => {
+    try {
+      const tab = useTabStore.getState().getActiveTab()
+      if (tab) {
+        useTabStore.getState().updateTabMetadata(tab.id, (prev: any) => ({ ...(prev || {}), graphFilters: filters } as any))
+      }
+    } catch {}
+  }, [filters])
+
+  // Restore filters when mounting/when active tab changes
+  const lastRestoredForTabRef = useRef<string | null>(null)
+  useEffect(() => {
+    try {
+      const tab = tabs.find(t => t.id === activeTabId)
+      if (!tab) return
+      const saved = (tab.metadata as any)?.graphFilters as NodeFilterState | undefined
+      if (saved && typeof saved === 'object') {
+        const curr = filters
+        const same = (() => {
+          try { return JSON.stringify(curr) === JSON.stringify(saved) } catch { return false }
+        })()
+        if (!same || lastRestoredForTabRef.current !== tab.id) {
+          setFilters(prev => ({ ...prev, ...saved }))
+          lastRestoredForTabRef.current = tab.id
+        }
+      }
+    } catch {}
+  }, [activeTabId, tabs])
 
   // Task columns config (to determine completed status per project)
   const [taskColumns, setTaskColumns] = useState<any[]>([])
@@ -155,13 +230,13 @@ function GraphView() {
   const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({})
   // Persisted per-project collapsed state for folders
   const [graphCollapsed, setGraphCollapsed] = useState<Record<string, boolean>>({})
+  
   // Flag to trigger initial rebuild after positions are loaded
   const [positionsReady, setPositionsReady] = useState<boolean>(false)
 
   // Outline subview state
-  type GraphSubView = 'mindmap' | 'outline' | 'progression'
+  type GraphSubView = 'mindmap' | 'outline' | 'progression' | 'group'
   const { getActiveTab, updateTab, updateTabMetadata } = useTabStore()
-  const { activeTabId, tabs } = useTabStore((s) => ({ activeTabId: s.activeTabId, tabs: s.tabs }))
   const activeGraphTabId = useMemo(() => {
     const t = tabs.find(t => t.id === activeTabId)
     return t && t.type === 'graph' ? t.id : undefined
@@ -170,7 +245,7 @@ function GraphView() {
     try {
       const tab = useTabStore.getState().getActiveTab()
       const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
-      if (saved === 'outline' || saved === 'mindmap' || saved === 'progression') return saved
+      if (saved === 'outline' || saved === 'mindmap' || saved === 'progression' || saved === 'group') return saved
     } catch {}
     return 'mindmap'
   })
@@ -249,7 +324,7 @@ function GraphView() {
   useEffect(() => {
     const tab = getActiveTab()
     const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
-    if (saved === 'outline' || saved === 'mindmap' || saved === 'progression') setSubView(saved)
+    if (saved === 'outline' || saved === 'mindmap' || saved === 'progression' || saved === 'group') setSubView(saved)
     subViewLoadedRef.current = true
   }, [getActiveTab])
 
@@ -267,7 +342,13 @@ function GraphView() {
   useEffect(() => {
     const tab = getActiveTab()
     if (!tab) return
-    const title = subView === 'mindmap' ? 'Graph - Mind Map' : subView === 'outline' ? 'Graph - Outline' : 'Graph - Progression'
+    const title = subView === 'mindmap'
+      ? 'Graph - Mind Map'
+      : subView === 'outline'
+      ? 'Graph - Outline'
+      : subView === 'progression'
+      ? 'Graph - Progression'
+      : 'Graph - Group'
     console.log('[Graph] Updating tab title', { tabId: tab.id, title })
     updateTab(tab.id, { title })
   }, [subView, getActiveTab, updateTab])
@@ -462,9 +543,171 @@ function GraphView() {
     }
   }, [attachTarget])
 
+  // Track theme changes to recalculate colors when needed
+  const [themeVersion, setThemeVersion] = useState(0)
+  
+  useEffect(() => {
+    // Listen for theme changes by monitoring CSS custom property changes
+    const observer = new MutationObserver(() => {
+      setThemeVersion(prev => prev + 1)
+    })
+    
+    observer.observe(document.documentElement, {
+      attributes: true,
+      // Observe class only; style mutations can be noisy and cause update loops
+      attributeFilter: ['class']
+    })
+    
+    return () => observer.disconnect()
+  }, [])
+
+  // Memoize theme colors, recalculate when theme changes
+  const themeColors = useMemo(() => {
+    const rootStyles = getComputedStyle(document.documentElement)
+    const colorMutedFg = rootStyles.getPropertyValue('--muted-foreground').trim()
+    const colorPrimary = rootStyles.getPropertyValue('--primary').trim()
+    const colorBackground = rootStyles.getPropertyValue('--background').trim()
+    const colorBorder = rootStyles.getPropertyValue('--border').trim()
+    return {
+      muted: colorMutedFg ? `hsl(${colorMutedFg})` : '#94a3b8',
+      primary: colorPrimary ? `hsl(${colorPrimary})` : '#3b82f6',
+      background: colorBackground ? `hsl(${colorBackground})` : '#0b0f19',
+      border: colorBorder ? `hsl(${colorBorder})` : '#334155'
+    }
+  }, [themeVersion]) // Recalculate when theme changes
+
+  // Helper function to check if a node matches the filters (defined inline in useEffect to avoid infinite loops)
+
   // Load and convert nodes when project changes or nodes update
   useEffect(() => {
+    if (!currentProject || !positionsReady) return
+    let cancelled = false
     if (currentProject && positionsReady) {
+      // Equality helpers to avoid unnecessary state updates → prevents render loops
+      const nodesEqual = (a: Node[], b: Node[]) => {
+        if (a === b) return true
+        if (!Array.isArray(a) || !Array.isArray(b)) return false
+        if (a.length !== b.length) return false
+        for (let i = 0; i < a.length; i++) {
+          const na = a[i] as any
+          const nb = b[i] as any
+          if (na.id !== nb.id) return false
+          if (na.type !== nb.type) return false
+          if (!na.position || !nb.position) return false
+          if (na.position.x !== nb.position.x || na.position.y !== nb.position.y) return false
+          // Common fields used by CustomNode rendering/logic
+          const da = na.data || {}
+          const db = nb.data || {}
+          if (!!da.locked !== !!db.locked) return false
+          if (da.type !== db.type) return false
+          if (!!da.isDirectory !== !!db.isDirectory) return false
+        }
+        return true
+      }
+      const edgesEqual = (a: Edge[], b: Edge[]) => {
+        if (a === b) return true
+        if (!Array.isArray(a) || !Array.isArray(b)) return false
+        if (a.length !== b.length) return false
+        for (let i = 0; i < a.length; i++) {
+          const ea = a[i] as any
+          const eb = b[i] as any
+          if (ea.id !== eb.id) return false
+          if (ea.source !== eb.source || ea.target !== eb.target) return false
+          if (ea.sourceHandle !== eb.sourceHandle || ea.targetHandle !== eb.targetHandle) return false
+          if (ea.type !== eb.type) return false
+        }
+        return true
+      }
+      // Helper function to check if a node matches the filters
+      const nodeMatchesFilters = (node: any): boolean => {
+        const normalizeId = (s: string) => String(s || '').replace(/^node-/, '')
+        const meta = node.metadata || {}
+        
+        // Check if any filters are active
+        const usingFilters = (
+          (filters.tags || []).length > 0 || filters.nameKeyword || filters.descriptionKeyword || filters.startsWith || filters.endsWith ||
+          filters.startDateFrom || filters.startDateTo || filters.dueDateFrom || filters.dueDateTo || filters.hasAttachments || (filters.linkedFromNodeTags || []).length > 0
+        )
+        if (!usingFilters) return true
+
+        // Get metadata
+        const title = String(meta?.title || node.name || '')
+        const description = String(meta?.description || '')
+        const tags: string[] = Array.isArray(meta?.tags) ? meta.tags.map(String) : []
+        const startDate = String(meta?.task?.startDate || '')
+        const dueDate = String(meta?.task?.dueDate || '')
+        const files = Array.isArray(meta?.task?.files) ? meta.task.files : []
+        const nodeId = String(meta?.id || '')
+
+        // name keyword (case-insensitive)
+        if (filters.nameKeyword) {
+          const q = filters.nameKeyword.toLowerCase()
+          if (!title.toLowerCase().includes(q)) return false
+        }
+
+        // description keyword (case-insensitive)
+        if (filters.descriptionKeyword) {
+          const q = filters.descriptionKeyword.toLowerCase()
+          if (!description.toLowerCase().includes(q)) return false
+        }
+
+        // starts/ends with on title with case sensitivity option
+        if (filters.startsWith) {
+          if (filters.startsEndsCaseSensitive) {
+            if (!title.startsWith(filters.startsWith)) return false
+          } else {
+            if (!title.toLowerCase().startsWith(filters.startsWith.toLowerCase())) return false
+          }
+        }
+        if (filters.endsWith) {
+          if (filters.startsEndsCaseSensitive) {
+            if (!title.endsWith(filters.endsWith)) return false
+          } else {
+            if (!title.toLowerCase().endsWith(filters.endsWith.toLowerCase())) return false
+          }
+        }
+
+        // tags ANY/ALL
+        if ((filters.tags || []).length > 0) {
+          const set = new Set(tags.map((t: string) => t.toLowerCase()))
+          const wanted = (filters.tags || []).map((t: string) => t.toLowerCase())
+          if (filters.tagsLogic === 'ANY') {
+            if (!wanted.some((t: string) => set.has(t))) return false
+          } else {
+            if (!wanted.every((t: string) => set.has(t))) return false
+          }
+        }
+
+        // date ranges (inclusive)
+        if (filters.startDateFrom && (!startDate || startDate < filters.startDateFrom)) return false
+        if (filters.startDateTo && (!startDate || startDate > filters.startDateTo)) return false
+        if (filters.dueDateFrom && (!dueDate || dueDate < filters.dueDateFrom)) return false
+        if (filters.dueDateTo && (!dueDate || dueDate > filters.dueDateTo)) return false
+
+        // attachments
+        if (filters.hasAttachments) {
+          if (!Array.isArray(files) || files.length === 0) return false
+        }
+
+        // linked-from sources: include only if this node's id is a target
+        if ((filters.linkedFromNodeTags || []).length > 0) {
+          const sourceIds = new Set<string>((filters.linkedFromNodeTags || []).map(normalizeId).filter(Boolean))
+          const outgoingTargetIds = new Set<string>()
+          if (sourceIds.size > 0) {
+            for (const n of verbweaverNodes.values()) {
+              const nid = n?.metadata?.id
+              if (nid && sourceIds.has(String(nid))) {
+                const links: string[] = Array.isArray(n?.metadata?.links) ? n.metadata.links : []
+                links.forEach(id => { if (id) outgoingTargetIds.add(String(id)) })
+              }
+            }
+          }
+          if (!nodeId || !outgoingTargetIds.has(nodeId)) return false
+        }
+
+        return true
+      }
+
       // Convert VerbweaverNodes to React Flow nodes and edges
       const flowNodes: Node[] = []
       const flowEdges: Edge[] = []
@@ -524,7 +767,10 @@ function GraphView() {
         // Hide completed Tasks (files only) when enabled
         if (hideCompletedTasks && !node.isDirectory && node.hasTask && isTaskCompleted(node)) return
 
-        // Compute position
+        // Apply filters
+        if (!nodeMatchesFilters(node)) return
+
+        // Compute position (deterministic fallbacks to avoid update loops)
         const position = (() => {
           if (node.path === 'nodes') {
             const persisted = graphPositions['nodes']
@@ -539,7 +785,19 @@ function GraphView() {
           if (rigidMode && saved && typeof saved.x === 'number' && typeof saved.y === 'number') {
             return saved
           }
-          return saved || { x: Math.random() * 500, y: Math.random() * 500 }
+          if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') return saved
+          // Deterministic fallback based on path; cache result
+          const cached = fallbackPositionsRef.current.get(node.path)
+          if (cached) return cached
+          // Simple string hash
+          const s = node.path
+          let h = 0
+          for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i) | 0
+          const x = ((h >>> 0) % 800) + 50
+          const y = (((h * 2654435761) >>> 0) % 500) + 50
+          const pos = { x, y }
+          fallbackPositionsRef.current.set(node.path, pos)
+          return pos
         })()
 
         // Determine locked state: nodes root defaults to locked unless explicitly unlocked
@@ -636,7 +894,7 @@ function GraphView() {
             source: parentPath,
             target: node.path,
             type: 'straight',
-            style: { stroke: 'hsl(var(--muted-foreground))', strokeWidth: 2 },
+            style: { stroke: themeColors.muted, strokeWidth: 2 },
             markerEnd: {
               type: MarkerType.ArrowClosed,
             },
@@ -646,39 +904,80 @@ function GraphView() {
           })
         }
         
-        // Create soft link edges (only create one edge per pair to avoid duplicates)
+        // Create soft link edges
         node.softLinks.forEach((targetId: string) => {
           // Find target node by ID
           const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
-          if (targetNode && includedPaths.has(targetNode.path)) {
-            // Only create edge if source ID is lexicographically smaller than target ID
-            // This ensures we only create one edge per pair of linked nodes
+          if (!targetNode || !includedPaths.has(targetNode.path)) return
+          const s = positionOf.get(node.path) || { x: 0, y: 0 }
+          const t = positionOf.get(targetNode.path) || { x: 0, y: 0 }
+          const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
+          const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
+          const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
+
+          const reciprocal = Array.isArray(targetNode.softLinks) && targetNode.softLinks.includes(node.metadata.id)
+          if (reciprocal) {
+            // Bidirectional: draw a single undirected animated soft link (avoid duplicates via lexicographic ordering)
             if (node.metadata.id < targetNode.metadata.id) {
-              const s = positionOf.get(node.path) || { x: 0, y: 0 }
-              const t = positionOf.get(targetNode.path) || { x: 0, y: 0 }
-              const { sourceHandle, targetHandle } = chooseHandleIds(s, t)
-              const outMap: Record<string,string> = { left: 'left-source', top: 'top-source', right: 'right-source', bottom: 'bottom-source' }
-              const inMap: Record<string,string> = { left: 'left-target', top: 'top-target', right: 'right-target', bottom: 'bottom-target' }
               flowEdges.push({
                 id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
                 source: node.path,
                 target: targetNode.path,
                 type: 'smoothstep',
                 animated: true,
-                style: { stroke: 'hsl(var(--primary))', strokeWidth: 2 },
-                // Remove arrows since links are bidirectional
+                style: { stroke: themeColors.primary, strokeWidth: 2 },
                 sourceHandle: outMap[sourceHandle],
                 targetHandle: inMap[targetHandle],
               })
             }
+          } else if (showOneWayLinks) {
+            // One-way: draw a directional, visually distinct soft link with arrow and dashed stroke
+            flowEdges.push({
+              id: `soft_${node.metadata.id}_${targetNode.metadata.id}`,
+              source: node.path,
+              target: targetNode.path,
+              type: 'smoothstep',
+              animated: false,
+              style: { stroke: themeColors.primary, strokeWidth: 2, strokeDasharray: '6 3' },
+              markerEnd: { type: MarkerType.ArrowClosed },
+              sourceHandle: outMap[sourceHandle],
+              targetHandle: inMap[targetHandle],
+            })
           }
         })
       })
       
-      setNodes(flowNodes)
-      setEdges(flowEdges)
+      // Only update state when contents actually changed to avoid triggering loops
+      if (!cancelled) {
+        // Build deterministic signatures independent of array ordering
+        const nodeSig = flowNodes
+          .map(n => `${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${n.type}:${(n as any).data?.locked?'1':'0'}:${(n as any).data?.isDirectory?'1':'0'}:${(n as any).data?.type||''}`)
+          .sort()
+          .join('|')
+        const edgeSig = flowEdges
+          .map(e => `${e.id}:${e.source}:${e.target}:${(e as any).sourceHandle||''}:${(e as any).targetHandle||''}:${e.type||''}`)
+          .sort()
+          .join('|')
+
+        const prevNodesSig = lastGraphSigsRef.current.nodes
+        const prevEdgesSig = lastGraphSigsRef.current.edges
+
+        const nodesChanged = nodeSig !== prevNodesSig
+        const edgesChanged = edgeSig !== prevEdgesSig
+
+        if (nodesChanged) {
+          setNodes(flowNodes)
+          lastGraphSigsRef.current.nodes = nodeSig
+        }
+        if (edgesChanged) {
+          setEdges(flowEdges)
+          lastGraphSigsRef.current.edges = edgeSig
+        }
+      }
     }
-  }, [currentProject, positionsReady, verbweaverNodes, setNodes, setEdges, hideUploads, graphCollapsed, hideCompletedTasks, isTaskCompleted])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { cancelled = true }
+  }, [currentProject, positionsReady, verbweaverNodes, hideUploads, graphCollapsed, hideCompletedTasks, isTaskCompleted, showOneWayLinks, themeColors, filters, rigidMode, graphPositions])
 
   // Handle node drag
   const onNodeDragStop = useCallback(
@@ -689,7 +988,12 @@ function GraphView() {
       if (rigidMode) {
         updateNode(node.id, {
           metadata: { position: node.position }
-        }).catch(() => {
+        }).catch((err: any) => {
+          // Surface details to help diagnose failures in Electron/web
+          try {
+            // eslint-disable-next-line no-console
+            console.error('[Graph] Failed to save node position', { id: node.id, position: node.position, error: err })
+          } catch {}
           toast.error('Failed to save node position')
         })
         // Persist per-project position for folders and nodes root
@@ -772,6 +1076,103 @@ function GraphView() {
     },
     []
   )
+
+  const exportMapAsPng = useCallback(async () => {
+    // Track temporary UI changes so we can always restore them
+    const toHide: HTMLElement[] = []
+    const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; borderColor?: string; fill?: string; stroke?: string } }> = []
+    try {
+      const wrapper = reactFlowWrapperRef.current
+      if (!wrapper) return
+      const rf = wrapper.querySelector('.react-flow') as HTMLElement | null
+      if (!rf) return
+
+      // Hide overlays from capture
+      wrapper.querySelectorAll('.react-flow__attribution, .react-flow__controls, .react-flow__minimap, .vw-overlay').forEach(el => {
+        const e = el as HTMLElement
+        if (e.style) { toHide.push(e); e.style.visibility = 'hidden' }
+      })
+
+      // Temporarily inline computed colors for edge label backgrounds/text so export matches UI
+      // Background rects of edge labels (SVG <rect>), set fill/stroke explicitly
+      rf.querySelectorAll('.react-flow__edge-textbg').forEach(el => {
+        const h = el as HTMLElement
+        const cs = getComputedStyle(h)
+        const prev = { backgroundColor: h.style.backgroundColor, borderColor: (h.style as any).borderColor, fill: (h.style as any).fill, stroke: (h.style as any).stroke }
+        const fill = cs.fill || cs.backgroundColor
+        const stroke = (cs as any).stroke || cs.borderColor
+        if (fill) (h.style as any).fill = fill
+        if (stroke) (h.style as any).stroke = stroke
+        styled.push({ el: h, prev })
+      })
+      // Foreground text of edge labels (SVG <text> or HTML), set fill/color explicitly
+      rf.querySelectorAll('.react-flow__edge-text').forEach(el => {
+        const h = el as HTMLElement
+        const cs = getComputedStyle(h)
+        const prev = { color: h.style.color, fill: (h.style as any).fill }
+        const textFill = (cs as any).fill && (cs as any).fill !== 'none' ? (cs as any).fill : cs.color
+        if (textFill) (h.style as any).fill = textFill
+        // Also set color for HTML fallback
+        h.style.color = textFill
+        styled.push({ el: h, prev })
+      })
+
+      // Fit all nodes into view
+      try {
+        const all = nodes.map(n => n.id)
+        if (all.length > 0) {
+          // includeHiddenNodes in case some are filtered by UI; fit all nodes without unsafe casts
+          reactFlow.fitView({ includeHiddenNodes: true, padding: 0.2 })
+        }
+      } catch (err) {
+        // Log error to aid debugging; fitView failures are not fatal but should be visible
+        console.error('Error fitting view in export image:', err);
+      }
+
+      const root = getComputedStyle(document.documentElement)
+      const bgVar = root.getPropertyValue('--background').trim()
+      const bgColor = bgVar ? `hsl(${bgVar})` : undefined
+      const dataUrl = await htmlToImage.toPng(rf, {
+        backgroundColor: bgColor,
+        pixelRatio: window.devicePixelRatio || 1,
+        filter: (el: Element) => {
+          const cls = (el as HTMLElement).classList
+          if (!cls) return true
+          return !cls.contains('react-flow__attribution') && !cls.contains('react-flow__controls') && !cls.contains('react-flow__minimap') && !cls.contains('vw-overlay')
+        },
+      })
+
+      const filename = `mindmap-${new Date().toISOString().replace(/[:.]/g,'-')}.png`
+      if (isElectron && window.electronAPI?.saveBinaryFile) {
+        const bin = await (await fetch(dataUrl)).arrayBuffer()
+        const result = await window.electronAPI.saveBinaryFile(new Uint8Array(bin), filename)
+        if (!result?.canceled) toast.success('Map saved')
+      } else {
+        const link = document.createElement('a')
+        link.href = dataUrl
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        toast.success('Download started')
+      }
+    } catch (e) {
+      toast.error(`Failed to export mind map as PNG${e && (e as Error).message ? ': ' + (e as Error).message : ''}`)
+    } finally {
+      // Always restore UI state even if an error occurred mid-export
+      try { toHide.forEach(e => { e.style.visibility = '' }) } catch {}
+      try {
+        styled.forEach(s => {
+          if (s.prev.color !== undefined) s.el.style.color = s.prev.color
+          if (s.prev.backgroundColor !== undefined) s.el.style.backgroundColor = s.prev.backgroundColor
+          if ((s.prev as any).borderColor !== undefined) (s.el.style as any).borderColor = (s.prev as any).borderColor
+          if ((s.prev as any).fill !== undefined) (s.el.style as any).fill = (s.prev as any).fill
+          if ((s.prev as any).stroke !== undefined) (s.el.style as any).stroke = (s.prev as any).stroke
+        })
+      } catch {}
+      setContextMenu(null)
+    }
+  }, [isElectron, nodes, reactFlow])
 
   // Global close for context menu on outside left-click
   useEffect(() => {
@@ -1034,6 +1435,12 @@ function GraphView() {
     [navigate, verbweaverNodes, addEditorTab]
   )
 
+  const openRemoveLinksForNode = useCallback((nodePath: string) => {
+    setRemoveLinksNodePath(nodePath)
+    setRemoveLinksOpen(true)
+    setContextMenu(null)
+  }, [])
+
   // Handle deleting edge
   const handleDeleteEdge = useCallback(
     async (edgeId: string) => {
@@ -1151,7 +1558,19 @@ function GraphView() {
       const isFolder = (n.data as any)?.isDirectory || (n.data as any)?.type === 'folder' || n.id === 'nodes'
       if (isFolder && n.position) folderPositions[n.id] = { x: n.position.x, y: n.position.y }
     })
-    setGraphPositions(folderPositions)
+    // Only update graphPositions when positions actually changed
+    let different = false
+    const keysA = Object.keys(graphPositions)
+    const keysB = Object.keys(folderPositions)
+    if (keysA.length !== keysB.length) different = true
+    if (!different) {
+      for (const k of keysA) {
+        const a = graphPositions[k]
+        const b = folderPositions[k]
+        if (!b || a.x !== b.x || a.y !== b.y) { different = true; break }
+      }
+    }
+    if (different) setGraphPositions(folderPositions)
     // Save merged into project settings or outline.yaml without blocking UI
     ;(async () => {
       try {
@@ -1464,6 +1883,7 @@ function GraphView() {
       {/* Right-side panel (Mind Map/Outline switch + per-view controls) is rendered per subview below */}
 
       {subView === 'mindmap' && (
+      <div ref={reactFlowWrapperRef} className="h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -1535,9 +1955,10 @@ function GraphView() {
         <Background />
         <Controls />
         {/* Mind Map right-side panel */}
-        <div className="absolute top-2 right-2 z-30 pointer-events-auto">
-          <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-44">
+        <div className="absolute top-2 right-2 z-30 pointer-events-auto vw-overlay">
+          <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-56">
             <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
+            <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('group')} title="Group"><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')} title="Outline"><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')} title="Progression"><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
             <div className="pt-1 border-t border-border" />
@@ -1547,58 +1968,111 @@ function GraphView() {
             </div>
           </div>
         </div>
-        {/* Left controls bar */}
-        <div className="absolute top-2 left-2 z-10 flex items-center gap-2 bg-background/80 border border-border rounded px-2 py-1 shadow">
-          <label className="inline-flex items-center gap-2 text-sm" title="Hide files inside the uploads/ directory from the Mind Map.">
-            <input
-              type="checkbox"
-              checked={hideUploads}
-              onChange={(e) => {
-                const v = e.target.checked
-                setHideUploads(v)
-                try { localStorage.setItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS, String(v)) } catch {}
-              }}
-            />
-            <span className="inline-flex items-center gap-1">
-              <span>Hide uploads</span>
-              {hideUploads && uploadsHiddenCount > 0 && (
-                <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${uploadsHiddenCount} items hidden`}>
-                  {uploadsHiddenCount}
-                </span>
-              )}
-            </span>
-          </label>
-          <label className="inline-flex items-center gap-2 text-sm" title="When enabled: completed Tasks are hidden from the Mind Map.">
-            <input
-              type="checkbox"
-              checked={hideCompletedTasks}
-              onChange={(e) => {
-                const v = e.target.checked
-                setHideCompletedTasks(v)
-                try { localStorage.setItem(HIDE_COMPLETED_LOCAL_KEY, String(v)) } catch {}
-              }}
-            />
-            <span className="inline-flex items-center gap-1">
-              <span>Hide completed Tasks</span>
-              {hideCompletedTasks && completedHiddenCount > 0 && (
-                <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${completedHiddenCount} tasks hidden`}>
-                  {completedHiddenCount}
-                </span>
-              )}
-            </span>
-          </label>
-          <label className="inline-flex items-center gap-2 text-sm" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
-            <input
-              type="checkbox"
-              checked={rigidMode}
-              onChange={(e) => {
-                const v = e.target.checked
-                setRigidMode(v)
-                try { localStorage.setItem(STORAGE_KEYS.GRAPH_RIGID_MODE, String(v)) } catch {}
-              }}
-            />
-            Rigid mode
-          </label>
+        {/* Left controls: collapsible Options tray */}
+        <div className="absolute top-2 left-2 z-10 pointer-events-auto vw-overlay">
+          <div className="bg-background/80 border border-border rounded shadow w-64">
+            <button
+              className="w-full flex items-center justify-between px-2 py-1 text-sm"
+              onClick={() => setOptionsOpen(o => { const next = !o; try { localStorage.setItem(OPTIONS_OPEN_LOCAL_KEY, String(next)) } catch {}; return next })}
+              aria-expanded={optionsOpen}
+            >
+              <span>Options</span>
+              <span className="text-xs">{optionsOpen ? '▾' : '▸'}</span>
+            </button>
+            {optionsOpen && (
+              <div className="p-2 flex flex-col gap-2">
+                <label className="inline-flex items-center gap-2 text-sm" title="Hide files inside the uploads/ directory from the Mind Map.">
+                  <input
+                    type="checkbox"
+                    checked={hideUploads}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setHideUploads(v)
+                      try { localStorage.setItem(STORAGE_KEYS.GRAPH_HIDE_UPLOADS, String(v)) } catch {}
+                    }}
+                  />
+                  <span className="inline-flex items-center gap-1">
+                    <span>Hide uploads</span>
+                    {hideUploads && uploadsHiddenCount > 0 && (
+                      <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${uploadsHiddenCount} items hidden`}>
+                        {uploadsHiddenCount}
+                      </span>
+                    )}
+                  </span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm" title="When enabled: completed Tasks are hidden from the Mind Map.">
+                  <input
+                    type="checkbox"
+                    checked={hideCompletedTasks}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setHideCompletedTasks(v)
+                      try { localStorage.setItem(HIDE_COMPLETED_LOCAL_KEY, String(v)) } catch {}
+                    }}
+                  />
+                  <span className="inline-flex items-center gap-1">
+                    <span>Hide completed Tasks</span>
+                    {hideCompletedTasks && completedHiddenCount > 0 && (
+                      <span className="text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground" title={`${completedHiddenCount} tasks hidden`}>
+                        {completedHiddenCount}
+                      </span>
+                    )}
+                  </span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm" title="Show directional edges for one-way links.">
+                  <input
+                    type="checkbox"
+                    checked={showOneWayLinks}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setShowOneWayLinks(v)
+                      try { localStorage.setItem('verbweaver_graph_show_one_way_links', String(v)) } catch {}
+                    }}
+                  />
+                  Display one-way links
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
+                  <input
+                    type="checkbox"
+                    checked={rigidMode}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setRigidMode(v)
+                      try { localStorage.setItem(STORAGE_KEYS.GRAPH_RIGID_MODE, String(v)) } catch {}
+                    }}
+                  />
+                  Rigid mode
+                </label>
+                <button
+                  className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent flex items-center gap-2"
+                  onClick={() => setFiltersOpen(true)}
+                  title="Filter visible nodes by tags, keywords, dates, and more"
+                >
+                  <Filter className="w-4 h-4" />
+                  <span>Filters</span>
+                </button>
+                {(() => {
+                  const parts: string[] = []
+                  if ((filters.tags || []).length > 0) parts.push(`tags(${filters.tagsLogic}): ${filters.tags.join(', ')}`)
+                  if (filters.nameKeyword) parts.push(`name:"${filters.nameKeyword}"`)
+                  if (filters.descriptionKeyword) parts.push(`desc:"${filters.descriptionKeyword}"`)
+                  if (filters.startsWith) parts.push(`starts:${filters.startsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
+                  if (filters.endsWith) parts.push(`ends:${filters.endsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
+                  if (filters.startDateFrom || filters.startDateTo) parts.push(`start:${filters.startDateFrom || ''}..${filters.startDateTo || ''}`)
+                  if (filters.dueDateFrom || filters.dueDateTo) parts.push(`due:${filters.dueDateFrom || ''}..${filters.dueDateTo || ''}`)
+                  if (filters.hasAttachments) parts.push('attachments')
+                  if ((filters.linkedFromNodeTags || []).length > 0) parts.push(`linkedFrom(${filters.linkedFromNodeTags.length})`)
+                  if (parts.length === 0) return null
+                  return (
+                    <div className="text-[11px] text-muted-foreground px-2 py-1 border border-border rounded bg-background/60"
+                         title={parts.join('  •  ')}>
+                      Active filters: {parts.join('  •  ')}
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+          </div>
         </div>
         <MiniMap
           nodeColor={(node) => {
@@ -1627,6 +2101,29 @@ function GraphView() {
           }}
         />
       </ReactFlow>
+      </div>
+      )}
+
+      {subView === 'group' && (
+        <div className="h-full w-full relative">
+          {/* Right-side panel for Group view: sub-view switcher */}
+          <div className="absolute top-2 right-2 z-30 pointer-events-auto">
+            <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-80">
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
+              <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('group')} disabled><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')}><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')}><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
+              <div className="pt-1 border-t border-border" />
+              <GroupManagerPanel />
+            </div>
+          </div>
+          {/* Left options tray */}
+          <div className="absolute top-2 left-2 z-10 pointer-events-auto">
+            <GroupOptionsTray projectId={currentProject?.id} tabId={activeGraphTabId} />
+          </div>
+          {/* Canvas */}
+          <GroupView />
+        </div>
       )}
 
       {subView === 'outline' && (
@@ -1635,6 +2132,7 @@ function GraphView() {
           <div className="absolute top-2 right-2 z-30 pointer-events-auto">
             <div className="bg-background/80 border border-border rounded p-2 shadow flex flex-col gap-2 items-stretch w-56">
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('group')}><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
               <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('outline')} disabled><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')}><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
               <div className="pt-1 border-t border-border" />
@@ -1721,6 +2219,7 @@ function GraphView() {
           edgeId={contextMenu.edgeId}
           isFolder={contextMenu.isFolder || contextMenu.nodeId === 'nodes'}
           hasTask={contextMenu.hasTask}
+          onExportMapAsPng={contextMenu.nodeId ? undefined : exportMapAsPng}
           onCreateNode={handleCreateNode}
           onDeleteNode={(id) => {
             const isFolder = !!verbweaverNodes.get(id)?.isDirectory
@@ -1765,6 +2264,7 @@ function GraphView() {
             const id = contextMenu.nodeId || ''
             return !!graphCollapsed[id]
           })()}
+          onRemoveLinks={(nodeId) => openRemoveLinksForNode(nodeId)}
           onUploadFiles={() => {
             const input = document.getElementById('graph-canvas-upload-input') as HTMLInputElement | null
             input?.click()
@@ -1901,6 +2401,41 @@ function GraphView() {
         parentPath={parentPathForNewNode}
       />
 
+      {/* Remove Links Modal for Mind Map */}
+      <RemoveLinksModal
+        isOpen={removeLinksOpen}
+        linkedNodes={(() => {
+          if (!removeLinksNodePath) return []
+          const source = verbweaverNodes.get(removeLinksNodePath)
+          if (!source || !Array.isArray(source.softLinks)) return []
+          const results: { path: string; title: string }[] = []
+          for (const targetId of source.softLinks) {
+            const target = Array.from(verbweaverNodes.values()).find(n => n.metadata?.id === targetId)
+            if (target) results.push({ path: target.path, title: target.metadata?.title || target.name })
+          }
+          // De-duplicate by path
+          const uniq = new Map<string, { path: string; title: string }>()
+          results.forEach(r => uniq.set(r.path, r))
+          return Array.from(uniq.values()).sort((a, b) => a.title.localeCompare(b.title))
+        })()}
+        onClose={() => { setRemoveLinksOpen(false); setRemoveLinksNodePath(null) }}
+        onRemoveSelected={async (paths) => {
+          try {
+            if (!removeLinksNodePath) return
+            for (const p of paths) {
+              await removeSoftLink(removeLinksNodePath, p)
+            }
+            await loadNodes()
+            toast.success('Link(s) removed')
+          } catch (e) {
+            toast.error('Failed to remove link(s)')
+          } finally {
+            setRemoveLinksOpen(false)
+            setRemoveLinksNodePath(null)
+          }
+        }}
+      />
+
       {/* Hidden file input for attachments */}
       {attachTarget && (
         <input
@@ -1978,6 +2513,12 @@ function GraphView() {
             if (input) input.value = ''
           }
         }}
+      />
+      <NodeFiltersDialog
+        filters={filters}
+        onFiltersChange={setFilters}
+        isOpen={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
       />
     </div>
   )

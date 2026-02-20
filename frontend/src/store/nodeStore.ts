@@ -82,7 +82,37 @@ function parseMarkdownWithFrontMatter(content: string): { metadata: any, content
   const match = content.match(FRONTMATTER_RE)
   if (match) {
     try {
-      const metadata = yaml.load(match[1]) as any
+      // Use JSON_SCHEMA so timestamps stay as strings, not Date objects
+      const metadata = yaml.load(match[1], { schema: yaml.JSON_SCHEMA }) as any
+      // Normalize position keys to ensure 'x' and 'y' exist without odd variants
+      try {
+        const pos = (metadata as any)?.position
+        if (pos && typeof pos === 'object') {
+          const normalized: any = {}
+          const keys = Object.keys(pos)
+          // Handle possible boolean-coerced key from YAML 1.1 loaders (e.g., 'y' -> true -> 'true')
+          const xKey = keys.find(k => k.toLowerCase() === 'x')
+          const yKey = keys.find(k => k.toLowerCase() === 'y') || (keys.includes('true') ? 'true' : undefined)
+          if (xKey) {
+            const v = (pos as any)[xKey]
+            const num = typeof v === 'string' ? Number(v) : v
+            normalized.x = typeof num === 'number' && !Number.isNaN(num) ? num : v
+          }
+          if (yKey) {
+            const v = (pos as any)[yKey]
+            const num = typeof v === 'string' ? Number(v) : v
+            normalized.y = typeof num === 'number' && !Number.isNaN(num) ? num : v
+          }
+          // Preserve any additional custom keys
+          for (const k of keys) {
+            const kl = k.toLowerCase()
+            if (kl !== 'x' && kl !== 'y' && k !== 'true') {
+              (normalized as any)[k] = (pos as any)[k]
+            }
+          }
+          ;(metadata as any).position = normalized
+        }
+      } catch {}
       return { metadata, content: match[2] }
     } catch (e) {
       console.error('Failed to parse YAML front matter:', e)
@@ -92,10 +122,26 @@ function parseMarkdownWithFrontMatter(content: string): { metadata: any, content
 }
 
 // Helper function to stringify content with YAML front matter
+// Convert Date objects to ISO strings so JSON_SCHEMA dumping succeeds
+function sanitizeForYaml(value: any): any {
+  if (value instanceof Date) return value.toISOString()
+  if (Array.isArray(value)) return value.map(sanitizeForYaml)
+  if (value && typeof value === 'object') {
+    const out: any = {}
+    for (const [k, v] of Object.entries(value)) out[k] = sanitizeForYaml(v)
+    return out
+  }
+  return value
+}
+
 function stringifyMarkdownWithFrontMatter(metadata: any, content: string): string {
   // Guard against callers passing content that already contains frontmatter
   const body = (content || '').replace(FRONTMATTER_RE, '$2')
-  const yamlStr = yaml.dump(metadata, { indent: 2, lineWidth: -1 })
+  // Prefer YAML 1.2-compatible schema to avoid quoting simple keys like 'y'
+  let yamlStr = yaml.dump(sanitizeForYaml(metadata), { indent: 2, lineWidth: -1, schema: yaml.JSON_SCHEMA })
+  // Final normalization: dequote simple key 'y' when emitted as a quoted key on its own line
+  // Safely target indented mapping keys to avoid touching values
+  yamlStr = yamlStr.replace(/(^|\n)([ \t]+)'y':/g, '$1$2y:')
   return `---\n${yamlStr}---\n${body}`
 }
 
@@ -108,6 +154,61 @@ function generateId(): string {
 function sanitizeFilename(name: string): string {
   // Remove or replace invalid characters
   return name.replace(/[<>:"/\\|?*]/g, '-').trim();
+}
+
+// Normalize a list of link entries (IDs or paths) to a unique array of target IDs
+function resolveLinksToIds(rawLinks: unknown, nodesMap: Map<string, VerbweaverNode>): string[] {
+  const result = new Set<string>()
+  if (!Array.isArray(rawLinks)) return []
+  // Precompute indexes
+  const idSet = new Set<string>()
+  const pathToId = new Map<string, string>()
+  const pathToIdLower = new Map<string, string>()
+  // basename (lowercased, with .md ensured) -> unique id (empty string if ambiguous)
+  const basenameToUniqueIdLower = new Map<string, string>()
+  for (const n of nodesMap.values()) {
+    const nid = String(n?.metadata?.id || '')
+    if (!nid) continue
+    idSet.add(nid)
+    // Only index paths that have valid IDs to avoid capturing folders without IDs
+    const normPath = n.path.replace(/\\/g,'/')
+    pathToId.set(normPath, nid)
+    pathToIdLower.set(normPath.toLowerCase(), nid)
+    const base = (normPath.split('/')?.pop() || '')
+    if (base) {
+      const baseLower = base.toLowerCase()
+      const existing = basenameToUniqueIdLower.get(baseLower)
+      if (existing === undefined) {
+        basenameToUniqueIdLower.set(baseLower, nid)
+      } else if (existing && existing !== nid) {
+        // Mark ambiguous
+        basenameToUniqueIdLower.set(baseLower, '')
+      }
+    }
+  }
+  for (const entry of rawLinks) {
+    const val = String(entry || '')
+    if (!val) continue
+    // Prefer exact ID match
+    if (idSet.has(val)) { result.add(val); continue }
+    // Try as normalized path (repo-relative); accept with or without .md
+    const norm = val.replace(/\\/g,'/')
+    const withMd = norm.endsWith('.md') ? norm : `${norm}.md`
+    const normLower = norm.toLowerCase()
+    const withMdLower = withMd.toLowerCase()
+    // Prefer file variant first to avoid matching similarly named folder without ID
+    const mdHit = pathToId.get(withMd) || pathToIdLower.get(withMdLower)
+    if (mdHit) { result.add(mdHit); continue }
+    const normHit = pathToId.get(norm) || pathToIdLower.get(normLower)
+    if (normHit) { result.add(normHit); continue }
+    // Fallback: unique basename match (no path separators in source value)
+    if (!norm.includes('/')) {
+      const baseLower = (withMdLower.split('/')?.pop() || '')
+      const maybeId = basenameToUniqueIdLower.get(baseLower)
+      if (maybeId) { result.add(maybeId); continue }
+    }
+  }
+  return Array.from(result)
 }
 
 // Helper to load a node from file (Electron only)
@@ -261,8 +362,19 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           }
         }
         
-        console.log('[NodeStore] Loaded nodes:', Array.from(nodes.keys()));
-        set({ nodes, isLoading: false });
+        // After initial load, normalize link entries to IDs for softLinks
+        try {
+          const normalized = new Map<string, VerbweaverNode>()
+          nodes.forEach((n, p) => {
+            const softIds = resolveLinksToIds((n.metadata as any)?.links || [], nodes)
+            normalized.set(p, { ...n, softLinks: softIds })
+          })
+          console.log('[NodeStore] Loaded nodes:', Array.from(normalized.keys()))
+          set({ nodes: normalized, isLoading: false })
+        } catch {
+          console.log('[NodeStore] Loaded nodes:', Array.from(nodes.keys()))
+          set({ nodes, isLoading: false })
+        }
       } else if (currentProject) {
         // Web: Fetch from API
         const response = await apiClient.get(`/projects/${currentProject.id}/nodes`);
@@ -272,8 +384,17 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         for (const node of data.nodes) {
           nodes.set(node.path, node);
         }
-        
-        set({ nodes, isLoading: false });
+        // Normalize softLinks from backend too, just in case older projects contain path links
+        try {
+          const normalized = new Map<string, VerbweaverNode>()
+          nodes.forEach((n, p) => {
+            const softIds = resolveLinksToIds((n.metadata as any)?.links || n.softLinks || [], nodes)
+            normalized.set(p, { ...n, softLinks: softIds })
+          })
+          set({ nodes: normalized, isLoading: false })
+        } catch {
+          set({ nodes, isLoading: false })
+        }
       }
     } catch (error) {
       console.error('[NodeStore] Failed to load nodes:', error);
@@ -403,7 +524,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
           ...node,
           metadata: updatedMetadata,
           content: updatedContent,
-          softLinks: updatedMetadata.links || [],
+          softLinks: resolveLinksToIds((updatedMetadata as any)?.links || [], get().nodes),
           hasTask: !node.isDirectory && ((updatedMetadata as any)?.task?.tracked !== false),
           taskStatus: (updatedMetadata as any).task?.status
         };
@@ -455,7 +576,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         const updatedNode: VerbweaverNode = {
           ...node,
           metadata: updatedMetadata,
-          softLinks: updatedMetadata.links || [],
+          softLinks: resolveLinksToIds((updatedMetadata as any)?.links || [], get().nodes),
           hasTask: !node.isDirectory && ((updatedMetadata as any)?.task?.tracked !== false),
           taskStatus: (updatedMetadata as any).task?.status
         };
@@ -493,7 +614,7 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       const updatedNode: VerbweaverNode = {
         ...node,
         metadata: updatedMetadata,
-        softLinks: updatedMetadata.links || [],
+        softLinks: resolveLinksToIds((updatedMetadata as any)?.links || [], get().nodes),
         hasTask: !node.isDirectory && ((updatedMetadata as any)?.task?.tracked !== false),
         taskStatus: (updatedMetadata as any).task?.status
       };
@@ -530,15 +651,16 @@ export const useNodeStore = create<NodeState>((set, get) => ({
         if (deletedId) {
           for (const [nodePath, node] of newNodes) {
             const links = Array.isArray(node.metadata?.links) ? node.metadata.links : [];
-            if (links.includes(deletedId)) {
-              const filtered = links.filter((id: string) => id !== deletedId);
+            const removeBy = new Set<string>([deletedId, path.replace(/\\/g,'/')])
+            const filtered = links.filter((v: string) => !removeBy.has(String(v)) && !removeBy.has(String(v).replace(/\\/g,'/')))
+            if (filtered.length !== links.length) {
               const updated = {
                 ...node,
                 metadata: {
                   ...node.metadata,
                   links: filtered,
                 },
-                softLinks: filtered,
+                softLinks: resolveLinksToIds(filtered, newNodes as any),
               } as any;
               newNodes.set(nodePath, updated);
             }
@@ -626,13 +748,19 @@ export const useNodeStore = create<NodeState>((set, get) => ({
       const targetId = targetNode.metadata.id;
       
       // Remove link from source node
-      const updatedSourceLinks = (sourceNode.metadata.links || []).filter(id => id !== targetId);
+      const updatedSourceLinks = (sourceNode.metadata.links || []).filter(v => {
+        const s = String(v).replace(/\\/g,'/')
+        return s !== targetId && s !== targetPath.replace(/\\/g,'/')
+      });
       await get().updateNode(sourcePath, {
         metadata: { links: updatedSourceLinks }
       });
       
       // Remove link from target node
-      const updatedTargetLinks = (targetNode.metadata.links || []).filter(id => id !== sourceId);
+      const updatedTargetLinks = (targetNode.metadata.links || []).filter(v => {
+        const s = String(v).replace(/\\/g,'/')
+        return s !== sourceId && s !== sourcePath.replace(/\\/g,'/')
+      });
       await get().updateNode(targetPath, {
         metadata: { links: updatedTargetLinks }
       });
@@ -646,11 +774,22 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     // Set up file watching
     if (isElectron && window.electronAPI?.watchProject) {
       // Use Electron's file watching API
+      let pending = false
+      let lastEventAt = 0
+      const DEBOUNCE_MS = 150
       window.electronAPI.watchProject((event: any) => {
-        if (event.type === 'change') {
-          // Reload the affected node
-          get().loadNodes();
-        }
+        // Debounce bursts of file events to avoid load loops
+        const now = Date.now()
+        lastEventAt = now
+        if (pending) return
+        pending = true
+        setTimeout(async () => {
+          if (Date.now() - lastEventAt >= DEBOUNCE_MS) {
+            try { await get().loadNodes() } finally { pending = false }
+          } else {
+            pending = false
+          }
+        }, DEBOUNCE_MS)
       });
     } else {
       // Use WebSocket for web version

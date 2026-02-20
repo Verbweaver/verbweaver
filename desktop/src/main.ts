@@ -17,6 +17,7 @@ import * as net from 'net';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import matter from 'gray-matter';
+import * as jsYaml from 'js-yaml';
 // For Windows Job Objects, we'll lazy-load ffi bindings only on win32
 
 // Helper function to generate a slug for filenames (simple version)
@@ -775,9 +776,10 @@ function setupIpcHandlers() {
       if (!existsSync(dir)) {
         await mkdir(dir, { recursive: true });
       }
-      
-      await writeFile(fullPath, content, 'utf-8');
+      // Write UTF-8 text content
+      await writeFile(fullPath, content, 'utf8');
     } catch (error) {
+      console.error('[fs:writeFile] Failed', { filePath, error });
       throw new Error(`Failed to write file: ${error}`);
     }
   });
@@ -1525,22 +1527,44 @@ function setupIpcHandlers() {
         throw new Error('No project path set. Cannot determine absolute file path.');
       }
 
-      // Ensure filePath is absolute. If it's relative, it should be relative to the project root.
-      const absoluteFilePath = path.isAbsolute(filePath) ? filePath : path.join(projectPath, filePath);
+      // Ensure filePath is absolute. If it's relative, resolve from project root,
+      // and if not found, try resolving under the nodes directory (renderer often sends ids relative to nodes/)
+      let absoluteFilePath = path.isAbsolute(filePath) ? filePath : path.join(projectPath, filePath);
+      if (!existsSync(absoluteFilePath)) {
+        const alt = path.join(projectPath, 'nodes', filePath);
+        if (existsSync(alt)) {
+          absoluteFilePath = alt;
+        }
+      }
 
       if (!existsSync(absoluteFilePath)) {
         throw new Error(`File not found: ${absoluteFilePath}`);
       }
 
       const fileContent = await fs.readFile(absoluteFilePath, 'utf8');
-      const { data: frontmatter, content: markdownContent } = matter(fileContent);
+      const { data: frontmatter, content: markdownContent } = matter(fileContent, {
+        engines: {
+          // Use YAML 1.2-like schema to avoid boolean-ish key coercion and needless quoting
+          yaml: {
+            parse: (src: string) => jsYaml.load(src, { schema: jsYaml.JSON_SCHEMA }) as any,
+            stringify: (data: any) => jsYaml.dump(data, { schema: jsYaml.JSON_SCHEMA, indent: 2, lineWidth: -1 })
+          }
+        }
+      });
 
       // Merge the changes into the existing frontmatter
       // For node position, metadataChanges would be { position: { x, y } }
       // A deep merge might be better if metadataChanges can be more complex
       const updatedFrontmatter = { ...frontmatter, ...metadataChanges };
 
-      const newFileContent = matter.stringify(markdownContent, updatedFrontmatter);
+      const newFileContent = matter.stringify(markdownContent, updatedFrontmatter, {
+        engines: {
+          yaml: {
+            parse: (src: string) => jsYaml.load(src, { schema: jsYaml.JSON_SCHEMA }) as any,
+            stringify: (data: any) => jsYaml.dump(data, { schema: jsYaml.JSON_SCHEMA, indent: 2, lineWidth: -1 })
+          }
+        }
+      });
       await fs.writeFile(absoluteFilePath, newFileContent, 'utf8');
       
       // Optionally, notify the renderer that the file has changed, if a generic file watcher isn't already doing this.
@@ -1562,6 +1586,7 @@ function setupIpcHandlers() {
     const nodesDir = path.join(projectPath, 'nodes');
     const graphNodes: any[] = []; // Type later with Shared GraphNode
     const graphEdges: any[] = []; // Type later with Shared GraphEdge
+    const pathToId = new Map<string, string>();
 
     if (!existsSync(nodesDir)) {
       console.warn(`[graph:loadData] Nodes directory does not exist: ${nodesDir}`);
@@ -1584,7 +1609,14 @@ function setupIpcHandlers() {
         } else if (entry.isFile() && entry.name.endsWith('.md')) {
           try {
             const fileContent = await fs.readFile(fullEntryPath, 'utf8');
-            const { data: frontmatter, content: mdContent } = matter(fileContent);
+            const { data: frontmatter, content: mdContent } = matter(fileContent, {
+              engines: {
+                yaml: {
+                  parse: (src: string) => jsYaml.load(src, { schema: jsYaml.JSON_SCHEMA }) as any,
+                  stringify: (data: any) => jsYaml.dump(data, { schema: jsYaml.JSON_SCHEMA, indent: 2, lineWidth: -1 })
+                }
+              }
+            });
             
             // Use frontmatter title if available, otherwise try to derive a better display name from the filename
             let nodeName = frontmatter.title;
@@ -1619,17 +1651,25 @@ function setupIpcHandlers() {
               tags: frontmatter.tags || [],
               status: frontmatter.status
             });
+            if (frontmatter.id) {
+              pathToId.set(relativeEntryPath, String(frontmatter.id));
+            }
 
-            // Edge extraction from frontmatter.links
+            // Edge extraction from frontmatter.links (IDs or paths)
             if (frontmatter.links && Array.isArray(frontmatter.links)) {
               frontmatter.links.forEach((linkTarget: string) => {
                 if (linkTarget && typeof linkTarget === 'string') {
-                  const targetNodeId = linkTarget.replace(/\\/g, '/');
-                  const edgeId = `fm-${relativeEntryPath}-${targetNodeId}`.replace(/[^a-zA-Z0-9-_]/g, '-');
+                  const raw = linkTarget.replace(/\\/g, '/');
+                  const isIdLike = /^node-/.test(raw);
+                  let targetRef = raw;
+                  if (!isIdLike && !/\.md$/i.test(targetRef)) {
+                    targetRef += '.md';
+                  }
+                  const edgeId = `fm-${relativeEntryPath}-${targetRef}`.replace(/[^a-zA-Z0-9-_]/g, '-');
                   graphEdges.push({
                     id: edgeId,
                     source: relativeEntryPath,
-                    target: targetNodeId,
+                    target: isIdLike ? `__ID__:${raw}` : targetRef,
                     type: 'soft',
                     label: frontmatter.linkLabel || 'links to'
                   });
@@ -1670,6 +1710,16 @@ function setupIpcHandlers() {
     try {
       // Start processing from the nodes directory with empty relative base
       await processDirectory(nodesDir, '');
+      // Resolve any edges that carry ID placeholders to actual paths
+      const idToPath = new Map<string, string>();
+      pathToId.forEach((id, p) => idToPath.set(id, p));
+      for (const e of graphEdges) {
+        if (typeof e.target === 'string' && e.target.startsWith('__ID__:')) {
+          const id = e.target.slice('__ID__:'.length);
+          const p = idToPath.get(id);
+          if (p) e.target = p;
+        }
+      }
       console.log(`[graph:loadData] Loaded ${graphNodes.length} nodes and ${graphEdges.length} edges.`);
       return { nodes: graphNodes, edges: graphEdges };
     } catch (error) {
@@ -1723,7 +1773,14 @@ function setupIpcHandlers() {
     // Remove label from frontmatter if it was just used for filename/title
     delete frontmatter.label; 
 
-    const fileContent = matter.stringify('\n# Overview\n\nStart writing your content here...\n', frontmatter);
+    const fileContent = matter.stringify('\n# Overview\n\nStart writing your content here...\n', frontmatter, {
+      engines: {
+        yaml: {
+          parse: (src: string) => jsYaml.load(src, { schema: jsYaml.JSON_SCHEMA }) as any,
+          stringify: (data: any) => jsYaml.dump(data, { schema: jsYaml.JSON_SCHEMA, indent: 2, lineWidth: -1 })
+        }
+      }
+    });
 
     try {
       await fs.writeFile(filePath, fileContent, 'utf8');
@@ -1794,7 +1851,14 @@ function setupIpcHandlers() {
       throw new Error(`Template file not found: ${templateRelativePath}`);
     }
     const templateFileContent = await fs.readFile(absoluteTemplatePath, 'utf8');
-    const { data: templateFrontmatter, content: templateMarkdownContent } = matter(templateFileContent);
+    const { data: templateFrontmatter, content: templateMarkdownContent } = matter(templateFileContent, {
+      engines: {
+        yaml: {
+          parse: (src: string) => jsYaml.load(src, { schema: jsYaml.JSON_SCHEMA }) as any,
+          stringify: (data: any) => jsYaml.dump(data, { schema: jsYaml.JSON_SCHEMA, indent: 2, lineWidth: -1 })
+        }
+      }
+    });
 
     // 2. Prepare new node's frontmatter
     const now = new Date().toISOString();
@@ -1879,7 +1943,14 @@ function setupIpcHandlers() {
       counter++;
     }
 
-    const newFileContent = matter.stringify(newNodeMarkdownContent, newNodeFrontmatter);
+    const newFileContent = matter.stringify(newNodeMarkdownContent, newNodeFrontmatter, {
+      engines: {
+        yaml: {
+          parse: (src: string) => jsYaml.load(src, { schema: jsYaml.JSON_SCHEMA }) as any,
+          stringify: (data: any) => jsYaml.dump(data, { schema: jsYaml.JSON_SCHEMA, indent: 2, lineWidth: -1 })
+        }
+      }
+    });
 
     try {
       await fs.writeFile(newFilePathAbsolute, newFileContent, 'utf8');
@@ -1921,7 +1992,14 @@ function setupIpcHandlers() {
       if (existsSync(absoluteFilePath)) {
         try {
           const content = await fs.readFile(absoluteFilePath, 'utf8');
-          const parsed = matter(content);
+          const parsed = matter(content, {
+            engines: {
+              yaml: {
+                parse: (src: string) => jsYaml.load(src, { schema: jsYaml.JSON_SCHEMA }) as any,
+                stringify: (data: any) => jsYaml.dump(data, { schema: jsYaml.JSON_SCHEMA, indent: 2, lineWidth: -1 })
+              }
+            }
+          });
           if (parsed && parsed.data && typeof parsed.data === 'object') {
             deletedNodeId = (parsed.data as any).id;
           }
@@ -1942,9 +2020,19 @@ function setupIpcHandlers() {
         return out;
       };
 
-      // If we know the deleted node's id, scan other nodes and remove backlinks
-      if (deletedNodeId) {
+      // Scan other nodes and remove backlinks by ID and path variants
+      {
         const nodesDir = path.join(projectPath, 'nodes');
+        const normRel = normalizedRel;
+        const relWithMd = /\.md$/i.test(normRel) ? normRel : `${normRel}.md`;
+        const relWithoutMd = /\.md$/i.test(normRel) ? normRel.slice(0, -3) : normRel;
+        const removalSet = new Set<string>([
+          ...(deletedNodeId ? [deletedNodeId] : []),
+          normRel,
+          relWithMd,
+          relWithoutMd,
+        ].filter(Boolean) as string[]);
+
         const walk = async (dir: string) => {
           const entries = await fs.readdir(dir, { withFileTypes: true });
           for (const entry of entries) {
@@ -1957,13 +2045,40 @@ function setupIpcHandlers() {
               if (path.resolve(full) === path.resolve(absoluteFilePath)) continue;
               try {
                 const fc = await fs.readFile(full, 'utf8');
-                const parsed = matter(fc);
+                const parsed = matter(fc, {
+                  engines: {
+                    yaml: {
+                      parse: (src: string) => jsYaml.load(src, { schema: jsYaml.JSON_SCHEMA }) as any,
+                      stringify: (data: any) => jsYaml.dump(data, { schema: jsYaml.JSON_SCHEMA, indent: 2, lineWidth: -1 })
+                    }
+                  }
+                });
                 const fm = (parsed.data || {}) as any;
                 const links: any[] = Array.isArray(fm.links) ? fm.links : [];
-                if (links.includes(deletedNodeId)) {
-                  const newLinks = links.filter((l: any) => l !== deletedNodeId);
+                const newLinks = links.filter((l: any) => {
+                  try {
+                    const s = String(l || '');
+                    if (!s) return false; // drop empty
+                    if (removalSet.has(s)) return false;
+                    const sNorm = s.replace(/\\/g, '/');
+                    if (removalSet.has(sNorm)) return false;
+                    const sWith = /\.md$/i.test(sNorm) ? sNorm : `${sNorm}.md`;
+                    if (removalSet.has(sWith)) return false;
+                    const sWithout = /\.md$/i.test(sNorm) ? sNorm.slice(0, -3) : sNorm;
+                    if (removalSet.has(sWithout)) return false;
+                    return true;
+                  } catch { return true; }
+                });
+                if (newLinks.length !== links.length) {
                   const newFrontmatter = removeUndefined({ ...fm, links: newLinks });
-                  const newContent = matter.stringify(parsed.content || '', newFrontmatter);
+                  const newContent = matter.stringify(parsed.content || '', newFrontmatter, {
+                    engines: {
+                      yaml: {
+                        parse: (src: string) => jsYaml.load(src, { schema: jsYaml.JSON_SCHEMA }) as any,
+                        stringify: (data: any) => jsYaml.dump(data, { schema: jsYaml.JSON_SCHEMA, indent: 2, lineWidth: -1 })
+                      }
+                    }
+                  });
                   await fs.writeFile(full, newContent, 'utf8');
                 }
               } catch (e) {

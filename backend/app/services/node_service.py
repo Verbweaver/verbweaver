@@ -45,6 +45,39 @@ class NodeService:
         if match:
             try:
                 metadata = yaml.safe_load(match.group(1)) or {}
+                # Normalize position keys: accept quoted or coerced keys and ensure numeric values
+                try:
+                    pos = metadata.get('position')
+                    if isinstance(pos, dict):
+                        normalized: Dict[str, Any] = {}
+                        keys = list(pos.keys())
+                        x_key = next((k for k in keys if str(k).lower() == 'x'), None)
+                        y_key = next((k for k in keys if str(k).lower() == 'y'), None)
+                        # Sometimes YAML 1.1 may coerce 'y' into True; capture that if present
+                        if y_key is None and True in pos:
+                            y_key = True  # type: ignore
+                        if x_key is not None:
+                            xv = pos.get(x_key)
+                            try:
+                                xv_num = float(xv) if isinstance(xv, str) else xv
+                            except Exception:
+                                xv_num = xv
+                            normalized['x'] = xv_num
+                        if y_key is not None:
+                            yv = pos.get(y_key)
+                            try:
+                                yv_num = float(yv) if isinstance(yv, str) else yv
+                            except Exception:
+                                yv_num = yv
+                            normalized['y'] = yv_num
+                        # Preserve any additional custom keys
+                        for k in keys:
+                            kl = str(k).lower()
+                            if kl not in ('x', 'y') and k is not True:
+                                normalized[k] = pos.get(k)
+                        metadata['position'] = normalized
+                except Exception:
+                    pass
                 return metadata, match.group(2)
             except yaml.YAMLError:
                 # Invalid YAML, return empty metadata
@@ -53,6 +86,7 @@ class NodeService:
     
     async def stringify_markdown_with_frontmatter(self, metadata: Dict[str, Any], content: str) -> str:
         """Convert metadata and content back to Markdown with YAML front matter."""
+        # Prefer YAML 1.2-friendly dumping to avoid quoting simple keys like 'y'
         yaml_str = yaml.dump(metadata, default_flow_style=False, allow_unicode=True, sort_keys=False)
         return f"---\n{yaml_str}---\n{content}"
     
@@ -148,6 +182,7 @@ class NodeService:
                 'parent': parent,
                 'children': children
             },
+            # Preserve raw metadata.links; softLinks will be normalized where nodes are aggregated
             'softLinks': metadata.get('links', []),
             'hasTask': 'task' in metadata,
             'taskStatus': metadata.get('task', {}).get('status') if 'task' in metadata else None
@@ -263,14 +298,41 @@ class NodeService:
         try:
             node_to_delete = await self.read_node(path)
             target_id = node_to_delete['metadata'].get('id') if node_to_delete else None
-            if target_id:
+            # Build a removal set including id and path variants
+            norm_path = str(path or '').replace('\\', '/')
+            with_md = norm_path if norm_path.endswith('.md') else f"{norm_path}.md"
+            without_md = norm_path[:-3] if norm_path.endswith('.md') else norm_path
+            remove_values = {v for v in [target_id, norm_path, with_md, without_md] if v}
+
+            if remove_values:
                 all_nodes = await self.list_nodes()
                 for other in all_nodes:
-                    if other['path'] == path:
+                    if other.get('path') == path:
                         continue
-                    other_links = other['metadata'].get('links', [])
-                    if target_id in other_links:
-                        cleaned_links = [lid for lid in other_links if lid != target_id]
+                    raw_links = other.get('metadata', {}).get('links', []) or []
+                    if not isinstance(raw_links, list):
+                        continue
+                    def should_keep(val: Any) -> bool:
+                        try:
+                            s = str(val or '')
+                            if not s:
+                                return False
+                            if s in remove_values:
+                                return False
+                            s_norm = s.replace('\\', '/')
+                            if s_norm in remove_values:
+                                return False
+                            s_with_md = s_norm if s_norm.endswith('.md') else f"{s_norm}.md"
+                            if s_with_md in remove_values:
+                                return False
+                            s_without_md = s_norm[:-3] if s_norm.endswith('.md') else s_norm
+                            if s_without_md in remove_values:
+                                return False
+                            return True
+                        except Exception:
+                            return True
+                    cleaned_links = [v for v in raw_links if should_keep(v)]
+                    if len(cleaned_links) != len(raw_links):
                         await self.update_node(other['path'], {'links': cleaned_links})
         except Exception:
             # Don't block deletion if cleanup fails
@@ -356,7 +418,7 @@ class NodeService:
         if directory is None:
             directory = "nodes"
 
-        nodes = []
+        nodes: List[Dict[str, Any]] = []
         start_path = os.path.join(self.project_path, directory)
         
         for root, dirs, files in os.walk(start_path):
@@ -395,7 +457,43 @@ class NodeService:
                 node = await self.read_node(file_path)
                 if node:
                     nodes.append(node)
-        
+
+        # Normalize softLinks: allow entries to be either node IDs or repository-relative paths
+        try:
+            # Build path->id index
+            path_to_id = {}
+            id_set = set()
+            for n in nodes:
+                nid = str(n.get('metadata', {}).get('id') or '')
+                if nid:
+                    id_set.add(nid)
+                p = str(n.get('path') or '').replace('\\', '/')
+                if p:
+                    path_to_id[p] = nid
+            for n in nodes:
+                raw = n.get('metadata', {}).get('links', []) or []
+                resolved: List[str] = []
+                for entry in raw if isinstance(raw, list) else []:
+                    try:
+                        s = str(entry or '')
+                        if not s:
+                            continue
+                        if s in id_set:
+                            if s not in resolved:
+                                resolved.append(s)
+                            continue
+                        norm = s.replace('\\', '/')
+                        with_md = norm if norm.endswith('.md') else f"{norm}.md"
+                        tid = path_to_id.get(norm) or path_to_id.get(with_md)
+                        if tid and tid not in resolved:
+                            resolved.append(tid)
+                    except Exception:
+                        continue
+                n['softLinks'] = resolved
+        except Exception:
+            # On any failure, leave softLinks as-is
+            pass
+
         return nodes
     
     async def search_nodes(self, query: str, node_type: Optional[str] = None, 
