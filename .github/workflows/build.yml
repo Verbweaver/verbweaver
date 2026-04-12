@@ -5,6 +5,7 @@ on:
     branches: [ main, develop ]
   push:
     branches: [ develop, release-testing]
+  workflow_dispatch: 
 
 jobs:
   lint-typecheck-frontend:
