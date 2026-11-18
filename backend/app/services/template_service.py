@@ -13,6 +13,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# LaTeX preamble added to every PDF export so long lines in code blocks wrap
+# instead of running off the page. Pandoc renders highlighted blocks in a
+# fancyvrb `Highlighting` environment and untagged blocks in `verbatim`;
+# fvextra adds line breaking to both. Pandoc emits header-includes after its
+# own highlighting macros, so these definitions take precedence.
+PDF_CODE_WRAP_HEADER = (
+    "\\usepackage{fvextra}\n"
+    "\\DefineVerbatimEnvironment{Highlighting}{Verbatim}"
+    "{breaklines,breakanywhere,commandchars=\\\\\\{\\}}\n"
+    "\\DefineVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere}\n"
+)
+
 class TemplateService:
     """Service for managing and processing export templates"""
     
@@ -920,6 +932,7 @@ class TemplateService:
                                            delete=False, encoding='utf-8') as temp_file:
                 temp_file.write(markdown_content)
                 temp_file_path = temp_file.name
+            header_file_path = None
             
             try:
                 # Ensure temp_file_path is absolute for cross-platform compatibility
@@ -949,6 +962,12 @@ class TemplateService:
                 
                 # Add format-specific options
                 if output_format == 'pdf':
+                    # Wrap long lines in code blocks instead of letting them overflow (#42)
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.tex',
+                                                   delete=False, encoding='utf-8') as header_file:
+                        header_file.write(PDF_CODE_WRAP_HEADER)
+                        header_file_path = os.path.abspath(header_file.name)
+                    cmd.append(f'--include-in-header={header_file_path}')
                     # Prefer tectonic if available on PATH (bundled or system), otherwise xelatex/pdflatex
                     try:
                         tect = subprocess.run(['tectonic', '--version'], capture_output=True, text=True)
@@ -988,8 +1007,9 @@ class TemplateService:
                     logger.error(f"Pandoc stdout: {result.stdout.strip()}")
                     
                     if output_format == 'pdf' and ("xelatex" in error_msg or "tectonic" in error_msg):
-                        # Try with pdflatex as fallback
-                        cmd = ['pandoc', temp_file_path, '-o', output_file, '--pdf-engine=pdflatex']
+                        # Try with pdflatex as fallback, keeping all other options
+                        cmd = [a for a in cmd if not a.startswith('--pdf-engine=')]
+                        cmd.append('--pdf-engine=pdflatex')
                         logger.debug(f"Retrying with pdflatex: {' '.join(cmd)}")
                         if working_dir:
                             result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir)
@@ -1004,12 +1024,13 @@ class TemplateService:
                 return True, "Conversion successful"
                 
             finally:
-                # Clean up temporary file
-                try:
-                    if os.path.exists(temp_file_path):
-                        os.unlink(temp_file_path)
-                except Exception as e:
-                    logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
+                # Clean up temporary files
+                for path in (temp_file_path, header_file_path):
+                    try:
+                        if path and os.path.exists(path):
+                            os.unlink(path)
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up temporary file {path}: {e}")
                 
         except FileNotFoundError:
             return False, "Pandoc is not installed. Please install Pandoc to use this feature."
