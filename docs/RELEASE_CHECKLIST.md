@@ -63,6 +63,16 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
 ## 5) Signing & notarization
 - [ ] Windows: verify installer is signed (SmartScreen friendly if EV)
 - [ ] macOS: verify app is signed and notarized; DMG opens; first run OK
+  - [ ] The "Verify macOS signature and notarization" step in `release-desktop.yml` passed for both arches
+  - [ ] Release assets are the `.dmg`/`.zip` files themselves. Never re‑upload a GitHub Actions artifact
+        zip: `upload-artifact` replaces symlinks with copies, which invalidates the app's signature
+        ("bundle format is ambiguous", see #32)
+  - [ ] Manual spot check on a Mac (mount the DMG, or extract the ZIP with `ditto -x -k`, never `unzip`):
+        ```bash
+        codesign --verify --deep --strict --verbose=2 Verbweaver.app   # no output on success
+        spctl --assess --type execute --verbose=2 Verbweaver.app       # "accepted, source=Notarized Developer ID"
+        xcrun stapler validate Verbweaver.app                          # "The validate action worked!"
+        ```
 
 ## 6) In‑app updates
 - [ ] Help → “Check for Updates…” shows release notes when available
