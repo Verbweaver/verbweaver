@@ -11,10 +11,26 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+# Use the project venv (same lookup as desktop/src/main.ts); system Python usually lacks backend deps
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+PY=""
+for c in "$ROOT/.venv/bin/python" "$ROOT/backend/.venv/bin/python"; do
+    [ -x "$c" ] && { PY="$c"; break; }
+done
+PY="${PY:-$(command -v python3 || command -v python)}"
+if ! "$PY" -c "import uvicorn, fastapi" 2>/dev/null; then
+    echo -e "\033[31m✗ $PY is missing the backend dependencies.\033[0m"
+    echo -e "\033[90m  Create the venv with Python 3.11-3.13, e.g.:\033[0m"
+    echo -e "\033[90m  python3.13 -m venv .venv && .venv/bin/python -m pip install -r backend/requirements.txt\033[0m"
+    echo -e "\033[90m  (./desktop/build-and-run.sh also creates it)\033[0m"
+    exit 1
+fi
+
 # Start Backend
-echo -e "\n\033[33mStarting Backend Server...\033[0m"
+echo -e "\n\033[33mStarting Backend Server ($PY)...\033[0m"
 cd backend
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 &
+"$PY" -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 cd ..
 

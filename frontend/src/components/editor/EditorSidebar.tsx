@@ -40,7 +40,7 @@ function EditorSidebar() {
   const [selectedNode, setSelectedNode] = useState<FileNode | null>(null) // Track selected file or folder
   const [draggedNode, setDraggedNode] = useState<FileNode | null>(null)
   const [dragOverNode, setDragOverNode] = useState<string | null>(null)
-  const { addEditorTab } = useTabStore()
+  const { addEditorTab, retargetEditorTabs, findEditorTab } = useTabStore()
   const [findOpen, setFindOpen] = useState(false)
   const [findQuery, setFindQuery] = useState('')
   const [findRegex, setFindRegex] = useState(false)
@@ -333,6 +333,28 @@ function EditorSidebar() {
     })
   }
 
+  // After a desktop move/rename: retarget open editor tabs, refresh Graph/Tasks data, and describe what changed.
+  const afterDesktopMove = async (
+    oldPath: string,
+    newPath: string,
+    result: { titleUpdated?: boolean; linksUpdated?: number } | undefined
+  ): Promise<string> => {
+    const toAbs = (p: string) => (currentProjectPath && !p.startsWith(currentProjectPath) ? `${currentProjectPath}/${p}` : p)
+    const oldAbs = toAbs(oldPath)
+    const newAbs = toAbs(newPath)
+    const hadUnsavedEdits = !!findEditorTab(oldAbs)?.metadata?.isModified
+    const activeNewPath = retargetEditorTabs(oldAbs, newAbs)
+    if (activeNewPath) navigate(activeNewPath)
+    try { (await import('../../store/nodeStore')).useNodeStore.getState().loadNodes() } catch {}
+    if (result?.titleUpdated && hadUnsavedEdits) {
+      toast('This file has unsaved edits that still contain the old title. Saving will keep the old title.', { icon: '⚠️' })
+    }
+    const extras: string[] = []
+    if (result?.titleUpdated) extras.push('title')
+    if (result?.linksUpdated) extras.push(`links in ${result.linksUpdated} file${result.linksUpdated === 1 ? '' : 's'}`)
+    return extras.length ? ` (updated ${extras.join(' and ')})` : ''
+  }
+
   const handleFileClick = async (node: FileNode) => {
     if (node.type === 'file') {
       setSelectedNode(node)
@@ -531,10 +553,11 @@ Add any additional notes or references here.
         const newPath = `${targetNode.path}/${draggedNode.name}`
         
         // Move the file/folder using the new IPC handler
-        await window.electronAPI.moveFile(oldPath, newPath)
+        const result = await window.electronAPI.moveFile(oldPath, newPath)
+        const suffix = await afterDesktopMove(oldPath, newPath, result)
         
         await loadFileTree()
-        toast.success(`Moved ${draggedNode.name} to ${targetNode.name}`)
+        toast.success(`Moved ${draggedNode.name} to ${targetNode.name}${suffix}`)
       } else if (!isElectron && currentProject) {
         // For web version, use API to move the file
         const oldPath = draggedNode.path
@@ -554,7 +577,7 @@ Add any additional notes or references here.
     } finally {
       setDraggedNode(null)
     }
-  }, [draggedNode, currentProject, currentProjectPath, isElectron, loadFileTree])
+  }, [draggedNode, currentProject, currentProjectPath, isElectron, loadFileTree, afterDesktopMove])
 
   const highlightName = (name: string): JSX.Element => {
     const q = findQuery
@@ -870,12 +893,14 @@ Add any additional notes or references here.
         }}
         onConfirm={async (newName) => {
           if (!renameTarget) { setRenameOpen(false); return }
+          let renameSuffix = ''
           try {
             if (isElectron && window.electronAPI && currentProjectPath) {
               const oldPath = renameTarget.path
               const parent = oldPath.includes('/') ? oldPath.slice(0, oldPath.lastIndexOf('/')) : ''
               const newPath = parent ? `${parent}/${newName}` : newName
-              await window.electronAPI.moveFile(oldPath, newPath)
+              const result = await window.electronAPI.moveFile(oldPath, newPath)
+              renameSuffix = await afterDesktopMove(oldPath, newPath, result)
               // If renaming the selected folder, update selectedFolder
               if (renameTarget.type === 'directory' && selectedFolder === oldPath) {
                 setSelectedFolder(newPath)
@@ -896,7 +921,7 @@ Add any additional notes or references here.
               }
             }
             await loadFileTree()
-            toast.success('Renamed successfully')
+            toast.success(`Renamed successfully${renameSuffix}`)
           } catch (e) {
             console.error('Rename failed', e)
             toast.error('Failed to rename')
