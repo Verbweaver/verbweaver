@@ -129,4 +129,7 @@ fi
 
 ok "Starting desktop app in development mode..."
 cd "$DESKTOP_DIR"
+# Electron 42+ no longer downloads its binary at install time, and electron-vite fails with
+# "Electron uninstall" until it exists. require('electron') downloads it if missing.
+npm run --silent ensure-electron
 npx --no-install electron-vite dev

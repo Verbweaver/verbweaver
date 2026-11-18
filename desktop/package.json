@@ -11,8 +11,11 @@
   },
   "main": "dist/main/main.js",
   "scripts": {
+    "ensure-electron": "node -e \"require('electron')\"",
+    "predev": "npm run ensure-electron",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "prepreview": "npm run ensure-electron",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "pack": "electron-builder --dir",

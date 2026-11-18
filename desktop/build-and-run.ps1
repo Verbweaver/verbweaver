@@ -230,6 +230,18 @@ if ($startBackend) {
 }
                             # For build-and-run, we now start backend by default for a smoother Dev UX.
 
+# Electron 42+ no longer downloads its binary at install time, and electron-vite fails with
+# "Electron uninstall" until it exists. require('electron') downloads it if missing.
+Push-Location $desktopPath
+npm run --silent ensure-electron
+$ensureExit = $LASTEXITCODE
+Pop-Location
+if ($ensureExit -ne 0) {
+    Write-Host "Failed to download the Electron binary (npm run ensure-electron)" -ForegroundColor Red
+    if ($frontendProcess) { try { Stop-Process -Id $frontendProcess.Id -Force } catch {} }
+    exit 1
+}
+
 # Start Electron (visible cmd window) and wait for it to exit
 try {
     $electronViteBin = Join-Path $desktopPath "node_modules\.bin\electron-vite.cmd"
