@@ -11,8 +11,11 @@
   },
   "main": "dist/main/main.js",
   "scripts": {
+    "ensure-electron": "node -e \"require('electron')\"",
+    "predev": "npm run ensure-electron",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "prepreview": "npm run ensure-electron",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "pack": "electron-builder --dir",
@@ -35,7 +38,7 @@
   "devDependencies": {
     "@types/node": "^20.10.4",
     "cross-env": "^7.0.3",
-    "electron": "38.8.6",
+    "electron": "45.3.4",
     "electron-builder": "^26.18.1",
     "electron-vite": "^3.1.0",
     "typescript": "^5.3.3"

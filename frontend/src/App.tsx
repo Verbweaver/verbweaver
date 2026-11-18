@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useEffect, useRef } from 'react'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -25,6 +25,12 @@ import DependencyChecker from './components/DependencyChecker'
 import { useProjectStore } from './store/projectStore'
 import { useThemeStore } from './store/themeStore'
 import { useAuthStore } from './services/auth'
+
+// Legacy /threads/:taskPath URLs. <Navigate to="/tasks/:taskPath"> would not substitute the param.
+function ThreadsRedirect() {
+  const { taskPath } = useParams()
+  return <Navigate to={`/tasks/${encodeURIComponent(taskPath ?? '')}`} replace />
+}
 
 function App() {
   const navigate = useNavigate()
@@ -153,7 +159,7 @@ function App() {
           <Route path="tasks/:taskPath" element={<Tasks />} />
           {/* Backward compatibility redirects */}
           <Route path="threads" element={<Navigate to="/tasks" replace />} />
-          <Route path="threads/:taskPath" element={<Navigate to="/tasks/:taskPath" replace />} />
+          <Route path="threads/:taskPath" element={<ThreadsRedirect />} />
           <Route path="version" element={<Version />} />
           <Route path="compiler" element={<Compiler />} />
             <Route path="settings" element={<Settings />}>
