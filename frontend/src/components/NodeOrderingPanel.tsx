@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { FileText, GripVertical, X, Check, ArrowUpDown, ArrowUp, ArrowDown, Shuffle, Calendar, Hash } from 'lucide-react'
 import { useNodeStore } from '../store/nodeStore'
 import { useCompilerStore } from '../store/compilerStore'
@@ -10,6 +10,9 @@ interface NodeOrderingPanelProps {
   onOrderChange: (orderedNodes: string[]) => void
   // Notify parent about removal so Select Files panel can be de-synced
   onRemoveNodes?: (removedPaths: string[]) => void
+  // Current order owned by the parent. When provided, it is preserved across
+  // remounts and selection changes instead of being re-sorted by path.
+  orderedNodes?: string[]
 }
 
 interface OrderedNode {
@@ -75,7 +78,37 @@ const sortOptions: SortOption[] = [
   }
 ]
 
-function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes }: NodeOrderingPanelProps) {
+/**
+ * Keep paths from `prevOrder` that are still selected (in their existing order),
+ * then append newly selected paths sorted by path.
+ */
+function reconcileOrder(prevOrder: string[], selected: string[]): string[] {
+  const selectedSet = new Set(selected)
+  const kept = prevOrder.filter((p, i) => selectedSet.has(p) && prevOrder.indexOf(p) === i)
+  const keptSet = new Set(kept)
+  const added = Array.from(new Set(selected.filter(p => !keptSet.has(p)))).sort()
+  return [...kept, ...added]
+}
+
+function sameOrder(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((p, i) => p === b[i])
+}
+
+function toOrderedNode(path: string, node: { path: string; name: string; metadata?: any } | undefined): OrderedNode {
+  if (node) {
+    return {
+      path: node.path,
+      name: node.name,
+      title: node.metadata?.title || node.name,
+      tags: Array.isArray(node.metadata?.tags) ? node.metadata.tags : [],
+      isSelected: false
+    }
+  }
+  const name = path.split('/').pop() || path
+  return { path, name, title: name, isSelected: false }
+}
+
+function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, orderedNodes: orderedNodesProp }: NodeOrderingPanelProps) {
   const { getNode } = useNodeStore()
   const { theme } = useThemeStore()
   const { 
@@ -90,57 +123,36 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes }: Node
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
+  // Panel's own current order, used as the baseline when the parent does not
+  // supply `orderedNodes` (uncontrolled usage).
+  const localOrderRef = useRef<string[]>([])
+  // Membership of the last reconciled selection; null forces a clear on mount.
+  const membershipRef = useRef<string | null>(null)
+
   useEffect(() => {
-    // Auto-sort nodes by path and load their metadata
-    const loadOrderedNodes = async () => {
-      const sortedPaths = [...selectedNodes].sort()
-      const nodes: OrderedNode[] = []
+    localOrderRef.current = orderedNodes.map(n => n.path)
+  }, [orderedNodes])
 
-      for (const path of sortedPaths) {
-        try {
-          const node = await getNode(path)
-          if (node) {
-            nodes.push({
-              path: node.path,
-              name: node.name,
-              title: node.metadata?.title || node.name,
-              tags: Array.isArray(node.metadata?.tags) ? node.metadata.tags : [],
-              isSelected: false
-            })
-          } else {
-            // Fallback if node not found
-            nodes.push({
-              path,
-              name: path.split('/').pop() || path,
-              title: path.split('/').pop() || path,
-              isSelected: false
-            })
-          }
-        } catch (error) {
-          console.error('Failed to load node:', path, error)
-          // Fallback
-          nodes.push({
-            path,
-            name: path.split('/').pop() || path,
-            title: path.split('/').pop() || path,
-            isSelected: false
-          })
-        }
-      }
+  useEffect(() => {
+    // Preserve the existing order (from the parent when provided) and only
+    // add/drop paths whose selection changed. Re-sorting here would clobber
+    // an order restored from tab state or a loaded configuration (#41).
+    const prevOrder = orderedNodesProp ?? localOrderRef.current
+    const nextOrder = reconcileOrder(prevOrder, selectedNodes)
 
-      setOrderedNodes(nodes)
+    setOrderedNodes(nextOrder.map(path => toOrderedNode(path, getNode(path))))
+    localOrderRef.current = nextOrder
+
+    const membership = [...selectedNodes].sort().join('\n')
+    if (membership !== membershipRef.current) {
+      membershipRef.current = membership
       clearSelection()
-      onOrderChange(sortedPaths)
     }
 
-    if (selectedNodes.length > 0) {
-      loadOrderedNodes()
-    } else {
-      setOrderedNodes([])
-      clearSelection()
-      onOrderChange([])
+    if (!sameOrder(prevOrder, nextOrder)) {
+      onOrderChange(nextOrder)
     }
-  }, [selectedNodes, getNode, onOrderChange, clearSelection])
+  }, [selectedNodes, orderedNodesProp, getNode, onOrderChange, clearSelection])
 
   const handleNodeClick = useCallback((index: number, event: React.MouseEvent) => {
     const newSelectedIndices = new Set(selectedNodeIndices || [])
@@ -233,8 +245,8 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes }: Node
     
     switch (strategy) {
       case 'sequential':
-        // Already in sequential order, no change needed
-        return sortedNodes
+        // Original file tree order, i.e. by path
+        return sortedNodes.sort((a, b) => a.path.localeCompare(b.path))
         
       case 'alphabetical':
         return sortedNodes.sort((a, b) => a.name.localeCompare(b.name))

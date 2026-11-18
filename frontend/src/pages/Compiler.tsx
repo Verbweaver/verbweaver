@@ -862,6 +862,7 @@ function CompilerView() {
           <div className="w-1/3 border-r border-border">
         <NodeOrderingPanel
           selectedNodes={selectedNodes}
+          orderedNodes={orderedNodes}
           onOrderChange={handleOrderChange}
           onRemoveNodes={handleRemoveNodes}
         />
