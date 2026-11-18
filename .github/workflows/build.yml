@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  # Run on every PR, whatever its base branch (main, develop, release branches like 0.9.1, ...).
+  # Release/publish workflows deliberately do not run on PRs.
   pull_request:
-    branches: [ main, develop ]
   push:
     branches: [ develop, release-testing]
   workflow_dispatch: 
