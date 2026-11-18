@@ -12,25 +12,24 @@ jobs:
   lint-typecheck-frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
+      # One install at the root covers every workspace; running `npm ci` again inside a
+      # workspace reinstalls the whole tree.
       - name: Install deps (workspaces)
-        run: |
-          npm ci
-          cd shared && npm ci && npm run build
-          cd ../frontend && npm ci
+        run: npm ci
+      - name: Build shared
+        run: npm run build:shared
       - name: Typecheck + build frontend
-        run: |
-          cd frontend
-          npm run build
+        run: npm run build:frontend
 
   backend-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Install backend deps

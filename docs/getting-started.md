@@ -18,7 +18,7 @@ Download the installer for your platform from GitHub Releases:
 #### Building from Source
 
 1. **Prerequisites**
-   - Node.js 18+ and npm
+   - Node.js 22.13+ and npm
    - Python 3.11+
    - Git
    - Pandoc

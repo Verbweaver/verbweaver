@@ -25,17 +25,17 @@ jobs:
 
     steps:
       - name: Checkout (with LFS)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -267,7 +267,7 @@ jobs:
           if [[ "$found" -eq 0 ]]; then echo "::error::No .app bundle found in dist-app"; exit 1; fi
 
       - name: Upload packaged artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           # Ship distributables only. upload-artifact replaces symlinks with copies, which breaks
           # the signed macOS .app bundle (#32), and unpacked dirs/debug files are not deliverables.
