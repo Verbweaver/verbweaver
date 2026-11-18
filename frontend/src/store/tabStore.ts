@@ -54,6 +54,8 @@ interface TabState {
   getActiveTab: () => Tab | null
   getTabById: (tabId: string) => Tab | undefined
   findEditorTab: (filePath: string) => Tab | undefined
+  /** Point editor tabs at a renamed/moved file or folder. Returns the active tab's new path if it was retargeted. */
+  retargetEditorTabs: (oldFilePath: string, newFilePath: string) => string | null
   setTabs: (tabs: Tab[], activeTabId?: string | null) => void
 }
 
@@ -190,6 +192,30 @@ export const useTabStore = create<TabState>()(
         return state.tabs.find((tab: Tab) => 
           tab.type === 'editor' && tab.metadata?.filePath === filePath
         )
+      },
+
+      retargetEditorTabs: (oldFilePath: string, newFilePath: string) => {
+        const { tabs, activeTabId } = get()
+        let activeNewPath: string | null = null
+        const nextTabs = tabs.map((tab: Tab) => {
+          const fp = tab.metadata?.filePath
+          if (tab.type !== 'editor' || !fp) return tab
+          let nextFp: string | null = null
+          if (fp === oldFilePath) nextFp = newFilePath
+          else if (fp.startsWith(oldFilePath + '/')) nextFp = newFilePath + fp.slice(oldFilePath.length)
+          if (!nextFp) return tab
+          const nextTab: Tab = {
+            ...tab,
+            path: `/editor/${encodeURIComponent(nextFp)}`,
+            title: nextFp.split('/').pop() || tab.title,
+            // Keep isModified/unsavedContent so pending edits are saved to the new location
+            metadata: { ...tab.metadata, filePath: nextFp }
+          }
+          if (tab.id === activeTabId) activeNewPath = nextTab.path
+          return nextTab
+        })
+        set({ tabs: nextTabs })
+        return activeNewPath
       }
     }),
     {

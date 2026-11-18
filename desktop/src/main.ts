@@ -32,6 +32,121 @@ function slugify(text: string): string {
     .replace(/--+/g, '-'); // Replace multiple - with single -
 }
 
+// Inverse-ish of slugify for display: "my-node-name" -> "My Node Name"
+function deslugify(stem: string): string {
+  return stem
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+// gray-matter options using a YAML 1.2-like schema (avoids boolean-ish coercion and needless quoting)
+const yamlMatterOptions = {
+  engines: {
+    yaml: {
+      parse: (src: string) => jsYaml.load(src, { schema: jsYaml.JSON_SCHEMA }) as any,
+      stringify: (data: any) => jsYaml.dump(data, { schema: jsYaml.JSON_SCHEMA, indent: 2, lineWidth: -1 })
+    }
+  }
+};
+
+// If a front-matter title was auto-derived from the old file name, re-derive it from the new one.
+// Custom titles (that don't slugify to the old name) are left alone. Returns true if the file changed.
+async function retitleAfterRename(mdFilePath: string, oldName: string, newName: string): Promise<boolean> {
+  if (!existsSync(mdFilePath)) return false;
+  const parsed = matter(await fs.readFile(mdFilePath, 'utf8'), yamlMatterOptions as any);
+  const fm = (parsed.data || {}) as Record<string, any>;
+  if (typeof fm.title !== 'string' || !fm.title) return false;
+  if (slugify(fm.title) !== slugify(oldName)) return false;
+  const newTitle = deslugify(newName);
+  if (newTitle === fm.title) return false;
+  const updated = { ...fm, title: newTitle, modified: new Date().toISOString() };
+  await fs.writeFile(mdFilePath, matter.stringify(parsed.content || '', updated, yamlMatterOptions as any), 'utf8');
+  return true;
+}
+
+// Map a path-style link target from an old node path to a new one. oldRel/newRel are relative to nodes/.
+// Link targets may be written relative to nodes/ ("a/b.md"), relative to the project ("nodes/a/b.md"),
+// or (files only) as a bare basename ("b.md"); ".md" is optional and its presence is preserved.
+// For directory moves, targets under the directory are prefix-remapped. Returns null if unaffected.
+function remapLinkTarget(target: string, oldRel: string, newRel: string, isDir: boolean, allowBasename: boolean): string | null {
+  const t = target.replace(/\\/g, '/');
+  const pairs: Array<[string, string]> = [[oldRel, newRel], [`nodes/${oldRel}`, `nodes/${newRel}`]];
+  if (isDir) {
+    for (const [o, n] of pairs) {
+      if (t === o) return n;
+      if (t.startsWith(o + '/')) return n + t.slice(o.length);
+    }
+    return null;
+  }
+  const oldBase = oldRel.split('/').pop() || oldRel;
+  const newBase = newRel.split('/').pop() || newRel;
+  if (allowBasename && oldBase !== newBase) pairs.push([oldBase, newBase]);
+  const stripMd = (s: string) => s.replace(/\.md$/i, '');
+  for (const [o, n] of pairs) {
+    if (t === o) return n;
+    if (t === stripMd(o)) return stripMd(n);
+  }
+  return null;
+}
+
+// Rewrite front-matter `links` and body [[wikilinks]] in every node that points at a moved path.
+// Call after the move. Returns the number of files updated.
+async function rewriteInboundLinks(nodesDir: string, oldRel: string, newRel: string, isDir: boolean): Promise<number> {
+  if (!existsSync(nodesDir)) return 0;
+  const mdFiles: string[] = [];
+  const walk = async (dir: string) => {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile() && entry.name.endsWith('.md')) mdFiles.push(full);
+    }
+  };
+  await walk(nodesDir);
+
+  // Bare-basename front-matter links resolve only when the basename is unique (see nodeStore
+  // resolveLinksToIds), so only remap them if no other node still has the old basename.
+  // Wikilinks always resolve relative to nodes/ (graph:loadData), so never basename-match those.
+  const oldBaseLower = (oldRel.split('/').pop() || oldRel).toLowerCase();
+  const allowBasename = !isDir && !mdFiles.some(f => path.basename(f).toLowerCase() === oldBaseLower);
+
+  let updatedFiles = 0;
+  for (const full of mdFiles) {
+    try {
+      const parsed = matter(await fs.readFile(full, 'utf8'), yamlMatterOptions as any);
+      const fm = (parsed.data || {}) as Record<string, any>;
+      let changed = false;
+
+      let newLinks = fm.links;
+      if (Array.isArray(fm.links)) {
+        newLinks = fm.links.map((l: any) => {
+          if (typeof l !== 'string') return l;
+          const mapped = remapLinkTarget(l, oldRel, newRel, isDir, allowBasename);
+          if (mapped !== null && mapped !== l) { changed = true; return mapped; }
+          return l;
+        });
+      }
+
+      const newBody = (parsed.content || '').replace(/\[\[([^\]]+)\]\]/g, (whole: string, inner: string) => {
+        const mapped = remapLinkTarget(inner, oldRel, newRel, isDir, false);
+        if (mapped !== null && mapped !== inner) { changed = true; return `[[${mapped}]]`; }
+        return whole;
+      });
+
+      if (changed) {
+        const fmOut = Array.isArray(fm.links) ? { ...fm, links: newLinks } : fm;
+        await fs.writeFile(full, matter.stringify(newBody, fmOut, yamlMatterOptions as any), 'utf8');
+        updatedFiles++;
+      }
+    } catch (e) {
+      console.warn(`[fs:moveFile] Failed to update links in ${full}:`, e);
+    }
+  }
+  return updatedFiles;
+}
+
 // Define DocFile interface
 interface DocFile {
   name: string;
@@ -205,8 +320,16 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       // Development: try to use a local Python + uvicorn
       // Try to use virtual environment first, then fall back to system Python
       let pythonExecutable: string | null = null;
-      const venvPythonPath = join(backendPath, '../.venv/Scripts/python.exe');
-      if (existsSync(venvPythonPath)) {
+      // Venv may live at the repo root (setup-backend.ps1 / build-and-run.sh) or in backend/ (README),
+      // with a Windows (Scripts/python.exe) or POSIX (bin/python) layout.
+      const venvPythonCandidates = [
+        join(backendPath, '..', '.venv', 'Scripts', 'python.exe'),
+        join(backendPath, '..', '.venv', 'bin', 'python'),
+        join(backendPath, '.venv', 'Scripts', 'python.exe'),
+        join(backendPath, '.venv', 'bin', 'python'),
+      ];
+      const venvPythonPath = venvPythonCandidates.find((p) => existsSync(p));
+      if (venvPythonPath) {
         pythonExecutable = venvPythonPath;
         console.log('Using virtual environment Python:', pythonExecutable);
       } else {
@@ -854,23 +977,62 @@ function setupIpcHandlers() {
         await mkdir(destDir, { recursive: true });
       }
       
+      const isDir = (await fs.stat(fullOldPath)).isDirectory();
+      const isMarkdown = !isDir && fullOldPath.toLowerCase().endsWith('.md');
+
       // Move the file/folder
       await fs.rename(fullOldPath, fullNewPath);
-      
-      // If it's a markdown file and has a metadata file, move that too
-      if (fullOldPath.endsWith('.md')) {
+
+      // Non-Markdown files may have a <file>.metadata.md sidecar holding their node metadata; move it along.
+      // (Directories carry their contents with them.)
+      let sidecarPath: string | null = null;
+      if (!isDir && !isMarkdown) {
         const oldMetadataPath = `${fullOldPath}.metadata.md`;
         const newMetadataPath = `${fullNewPath}.metadata.md`;
         if (existsSync(oldMetadataPath)) {
           try {
+            if (existsSync(newMetadataPath)) throw new Error(`Destination sidecar already exists: ${newMetadataPath}`);
             await fs.rename(oldMetadataPath, newMetadataPath);
+            sidecarPath = newMetadataPath;
           } catch (e) {
             console.warn('Failed to move metadata file:', e);
           }
         }
       }
-      
-      return { success: true };
+
+      // Keep an auto-derived front-matter title in step with the file name (#39).
+      let titleUpdated = false;
+      if (!isDir) {
+        try {
+          const oldBase = path.basename(fullOldPath);
+          const newBase = path.basename(fullNewPath);
+          if (isMarkdown) {
+            const oldStem = oldBase.replace(/\.md$/i, '');
+            const newStem = newBase.replace(/\.md$/i, '');
+            if (oldStem !== newStem) titleUpdated = await retitleAfterRename(fullNewPath, oldStem, newStem);
+          } else if (sidecarPath && oldBase !== newBase) {
+            titleUpdated = await retitleAfterRename(sidecarPath, oldBase, newBase);
+          }
+        } catch (e) {
+          console.warn('Failed to update title after rename:', e);
+        }
+      }
+
+      // Rewrite path-based links in other nodes that point at the old location.
+      let linksUpdated = 0;
+      const nodesDir = path.join(projectPath as string, 'nodes');
+      const oldRel = path.relative(nodesDir, fullOldPath).replace(/\\/g, '/');
+      const newRel = path.relative(nodesDir, fullNewPath).replace(/\\/g, '/');
+      const insideNodes = (rel: string) => rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+      if (insideNodes(oldRel) && insideNodes(newRel)) {
+        try {
+          linksUpdated = await rewriteInboundLinks(nodesDir, oldRel, newRel, isDir);
+        } catch (e) {
+          console.warn('Failed to rewrite inbound links after move:', e);
+        }
+      }
+
+      return { success: true, titleUpdated, linksUpdated };
     } catch (error) {
       console.error('Failed to move file:', error);
       throw error;
@@ -1628,10 +1790,7 @@ function setupIpcHandlers() {
               // Remove .md extension and try to convert from slug format back to readable format
               const filenameWithoutExt = entry.name.replace(/\.md$/, '');
               // Convert slug format (e.g., "my-node-name") back to readable format (e.g., "My Node Name")
-              nodeName = filenameWithoutExt
-                .split('-')
-                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ');
+              nodeName = deslugify(filenameWithoutExt);
               console.log(`[graph:loadData] Derived nodeName from filename: "${nodeName}"`);
             } else {
               console.log(`[graph:loadData] Using frontmatter title: "${nodeName}"`);

@@ -862,6 +862,7 @@ function CompilerView() {
           <div className="w-1/3 border-r border-border">
         <NodeOrderingPanel
           selectedNodes={selectedNodes}
+          orderedNodes={orderedNodes}
           onOrderChange={handleOrderChange}
           onRemoveNodes={handleRemoveNodes}
         />
@@ -1261,7 +1262,8 @@ function CompilerView() {
                     customVariables,
                     nodeVariables,
                     docVars,
-                    options
+                    options,
+                    expandedDirs: Array.from(expandedDirs)
                   }
                   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' })
                   const url = URL.createObjectURL(blob)
@@ -1353,7 +1355,21 @@ function CompilerView() {
 
                       if (cfg.title !== undefined) setTitle(cfg.title)
                       if (cfg.author !== undefined) setAuthor(cfg.author)
-                      if (Array.isArray(cfg.selectedNodes)) setSelectedNodes(safeSelectedNodes ?? cfg.selectedNodes.map((p: any)=>String(p).replace(/\\/g,'/')))
+                      if (Array.isArray(cfg.selectedNodes)) {
+                        const nextSelected: string[] = safeSelectedNodes ?? cfg.selectedNodes.map((p: any)=>String(p).replace(/\\/g,'/'))
+                        setSelectedNodes(nextSelected)
+                        // Expand the folders containing selected files (plus any saved as
+                        // expanded). Desktop lazy-loads folder contents on expand, and a
+                        // folder's checkbox state is only computed from loaded children.
+                        const toExpand = new Set<string>(
+                          Array.isArray(cfg.expandedDirs) ? cfg.expandedDirs.map((d: any) => String(d).replace(/\\/g, '/')) : []
+                        )
+                        for (const p of nextSelected) {
+                          const parts = p.split('/')
+                          for (let i = 1; i < parts.length; i++) toExpand.add(parts.slice(0, i).join('/'))
+                        }
+                        if (toExpand.size > 0) setExpandedDirs(prev => new Set([...prev, ...toExpand]))
+                      }
                       if (Array.isArray(cfg.orderedNodes)) setOrderedNodes(safeOrderedNodes ?? cfg.orderedNodes.map((p: any)=>String(p).replace(/\\/g,'/')))
                       if (typeof cfg.selectedFormat === 'string') setSelectedFormat(cfg.selectedFormat)
                       if (typeof normalizedTemplate === 'string') setSelectedTemplate(normalizedTemplate)

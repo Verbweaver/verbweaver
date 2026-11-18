@@ -578,6 +578,7 @@ export default function ProgressionPanel(
               <div className="border border-border rounded max-h-[60vh] flex flex-col">
                 <NodeOrderingPanel
                   selectedNodes={config.selectedNodes}
+                  orderedNodes={config.orderedNodes}
                   onOrderChange={handleOrderChange}
                   onRemoveNodes={handleRemoveNodes}
                 />

@@ -22,7 +22,7 @@ export interface ElectronAPI {
   createDirectory: (dirPath: string) => Promise<{ success: boolean }>;
   deleteFile: (filePath: string) => Promise<void>;
   downloadFile: (filePath: string, originalName: string) => Promise<{ success: boolean; data: Buffer; filename: string; mimeType: string }>;
-  moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean }>;
+  moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean; titleUpdated?: boolean; linksUpdated?: number }>;
   readProjectFiles: (projectPath: string) => Promise<Array<{ path: string; isDirectory: boolean }>>;
   pathExists: (somePath: string) => Promise<boolean>;
   saveBinaryFile: (data: Uint8Array, defaultName?: string) => Promise<{ canceled: boolean; filePath?: string }>;

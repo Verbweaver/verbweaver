@@ -13,6 +13,73 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# LaTeX preamble added to every PDF export so long lines in code blocks wrap
+# instead of running off the page. Pandoc renders highlighted blocks in a
+# fancyvrb `Highlighting` environment and untagged blocks in `verbatim`;
+# fvextra adds line breaking to both. Pandoc emits header-includes after its
+# own highlighting macros, so these definitions take precedence.
+# In highlighted blocks each token is a macro argument (e.g. \StringTok{...}),
+# which fvextra's breakanywhere does not reach, so every token macro Pandoc
+# defined is wrapped in \FancyVerbBreakStart/\FancyVerbBreakStop. Tokens that
+# are not defined (no highlighted block, other Pandoc version) are skipped.
+PDF_CODE_WRAP_HEADER = r"""
+\usepackage{fvextra}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,commandchars=\\\{\}}
+\DefineVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere}
+\makeatletter
+\newcommand*\vw@breakabletok[1]{%
+  \@ifundefined{#1}{}{%
+    \expandafter\let\csname vw@orig@#1\expandafter\endcsname\csname #1\endcsname
+    \expandafter\def\csname #1\endcsname##1{%
+      \csname vw@orig@#1\endcsname{\FancyVerbBreakStart##1\FancyVerbBreakStop}}}}
+\@for\vw@tok:=AlertTok,AnnotationTok,AttributeTok,BaseNTok,BuiltInTok,CharTok,%
+CommentTok,CommentVarTok,ConstantTok,ControlFlowTok,DataTypeTok,DecValTok,%
+DocumentationTok,ErrorTok,ExtensionTok,FloatTok,FunctionTok,ImportTok,%
+InformationTok,KeywordTok,NormalTok,OperatorTok,OtherTok,PreprocessorTok,%
+RegionMarkerTok,SpecialCharTok,SpecialStringTok,StringTok,VariableTok,%
+VerbatimStringTok,WarningTok\do{\expandafter\vw@breakabletok\expandafter{\vw@tok}}
+\makeatother
+"""
+
+# Pandoc Lua filter added to every PDF export so long inline `code` spans wrap
+# instead of running off the page. Pandoc renders inline code as \texttt{...},
+# which has no break points; this splits each span into chunks joined by a
+# small-penalty break, so TeX can break inside it like a hyphenation point
+# (without the hyphen). Mirrors TeX's English hyphenation minimums: never
+# split off fewer than 2 leading or 3 trailing characters. Splitting drops
+# inline syntax-highlighting classes, since per-chunk highlighting is meaningless.
+PDF_INLINE_CODE_WRAP_FILTER = r"""
+local BREAK = '\\penalty50{}'
+local LEFT_MIN, RIGHT_MIN = 2, 3
+
+function Code(el)
+  if not FORMAT:match('latex') then return nil end
+  local chars = {}
+  for _, cp in utf8.codes(el.text) do chars[#chars + 1] = utf8.char(cp) end
+  local n = #chars
+  if n < LEFT_MIN + RIGHT_MIN then return nil end
+  local out, chunk = {}, {}
+  for i = 1, n do
+    chunk[#chunk + 1] = chars[i]
+    if i >= LEFT_MIN and i <= n - RIGHT_MIN then
+      out[#out + 1] = pandoc.Code(table.concat(chunk))
+      out[#out + 1] = pandoc.RawInline('latex', BREAK)
+      chunk = {}
+    end
+  end
+  out[#out + 1] = pandoc.Code(table.concat(chunk))
+  return out
+end
+"""
+
+
+def _write_temp_file(content: str, suffix: str) -> str:
+    """Write content to a new temporary file and return its absolute path."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix=suffix,
+                                     delete=False, encoding='utf-8') as f:
+        f.write(content)
+        return os.path.abspath(f.name)
+
 class TemplateService:
     """Service for managing and processing export templates"""
     
@@ -920,6 +987,7 @@ class TemplateService:
                                            delete=False, encoding='utf-8') as temp_file:
                 temp_file.write(markdown_content)
                 temp_file_path = temp_file.name
+            pdf_support_files: List[str] = []
             
             try:
                 # Ensure temp_file_path is absolute for cross-platform compatibility
@@ -949,6 +1017,14 @@ class TemplateService:
                 
                 # Add format-specific options
                 if output_format == 'pdf':
+                    # Wrap long code-block lines and inline code spans instead of
+                    # letting them overflow the page (#42)
+                    header_file_path = _write_temp_file(PDF_CODE_WRAP_HEADER, '.tex')
+                    pdf_support_files.append(header_file_path)
+                    cmd.append(f'--include-in-header={header_file_path}')
+                    filter_file_path = _write_temp_file(PDF_INLINE_CODE_WRAP_FILTER, '.lua')
+                    pdf_support_files.append(filter_file_path)
+                    cmd.append(f'--lua-filter={filter_file_path}')
                     # Prefer tectonic if available on PATH (bundled or system), otherwise xelatex/pdflatex
                     try:
                         tect = subprocess.run(['tectonic', '--version'], capture_output=True, text=True)
@@ -988,8 +1064,9 @@ class TemplateService:
                     logger.error(f"Pandoc stdout: {result.stdout.strip()}")
                     
                     if output_format == 'pdf' and ("xelatex" in error_msg or "tectonic" in error_msg):
-                        # Try with pdflatex as fallback
-                        cmd = ['pandoc', temp_file_path, '-o', output_file, '--pdf-engine=pdflatex']
+                        # Try with pdflatex as fallback, keeping all other options
+                        cmd = [a for a in cmd if not a.startswith('--pdf-engine=')]
+                        cmd.append('--pdf-engine=pdflatex')
                         logger.debug(f"Retrying with pdflatex: {' '.join(cmd)}")
                         if working_dir:
                             result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir)
@@ -1004,12 +1081,13 @@ class TemplateService:
                 return True, "Conversion successful"
                 
             finally:
-                # Clean up temporary file
-                try:
-                    if os.path.exists(temp_file_path):
-                        os.unlink(temp_file_path)
-                except Exception as e:
-                    logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
+                # Clean up temporary files
+                for path in [temp_file_path, *pdf_support_files]:
+                    try:
+                        if path and os.path.exists(path):
+                            os.unlink(path)
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up temporary file {path}: {e}")
                 
         except FileNotFoundError:
             return False, "Pandoc is not installed. Please install Pandoc to use this feature."
