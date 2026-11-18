@@ -78,41 +78,45 @@ npm run dev
 
 For Windows, a convenient script to build and run the application in development mode is located at `desktop\build-and-run.ps1`.
 
-##### macOS (zsh/bash)
-```bash
-# Terminal 1 — Backend
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install --upgrade pip
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+##### macOS and Linux (bash)
 
-# Terminal 2 — Desktop
-cd desktop
-npm install
-npm run dev
+One command (installs dependencies, creates `.venv` at the repo root, builds `shared`, starts the frontend dev server, and launches Electron in development mode):
+
+```bash
+./desktop/build-and-run.sh
 ```
 
-##### Linux (bash)
+Requires Node.js and Python 3.11–3.13 (the pinned backend dependencies do not build on Python 3.14+). The script prefers `python3.13`/`python3.12`/`python3.11` if present; set `PYTHON=/path/to/python` to override.
+
+Optional environment variables: `SKIP_INSTALL=true` (skip `npm ci`), `REINSTALL_BACKEND=true` (re-run `pip install`), `START_BACKEND=false` (don't let Electron spawn the backend), `KEEP_FRONTEND=true` (leave Vite running after Electron exits).
+
+Or manually, in three terminals:
+
 ```bash
+# One-time setup (from the repo root)
+npm ci
+npm run build:shared
+python3.13 -m venv .venv   # any Python 3.11–3.13
+.venv/bin/python -m pip install -r backend/requirements.txt
+
 # Terminal 1 — Backend
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install --upgrade pip
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+../.venv/bin/python -m uvicorn app.main:app --reload --port 8000
 
-# Terminal 2 — Desktop
-cd desktop
-npm install
+# Terminal 2 — Frontend dev server (Electron loads http://localhost:3000 in dev mode)
+cd frontend
 npm run dev
+
+# Terminal 3 — Desktop
+cd desktop
+NODE_ENV=development SKIP_BACKEND=true npm run dev
 ```
+
+If you omit `SKIP_BACKEND=true` (and Terminal 1), Electron starts the backend itself using `.venv` at the repo root (or `backend/.venv`).
 
 Notes:
 - Packaged installers bundle and auto-start a platform-specific backend binary (no separate step needed).
-- In development you should run the backend yourself (two terminals as shown above).
+- In development, Electron requires `NODE_ENV=development` and loads the renderer from the frontend dev server on port 3000; it spawns the backend from your Python venv unless `SKIP_BACKEND=true`.
 - Desktop packaging is handled by electron-builder. See scripts in `desktop/package.json` (`dist`, `dist:win`, `dist:mac`, `dist:linux`).
 
 ### Web Application (For Teams) - WIP
@@ -140,7 +144,7 @@ uvicorn main:app --reload --port 8000
 # Frontend (Vite)
 cd ../frontend
 npm install
-npm run dev  # serves at http://localhost:5173
+npm run dev  # serves at http://localhost:3000
 ```
 
 #### 🔧 Web Server Configuration
