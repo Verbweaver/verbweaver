@@ -30,7 +30,7 @@ npm run dev &
 FRONTEND_PID=$!
 cd ..
 
-echo -e "\033[32mFrontend server starting on http://localhost:5173\033[0m"
+echo -e "\033[32mFrontend server starting on http://localhost:3000\033[0m"
 
 echo -e "\n\033[36mServers are starting...\033[0m"
 echo -e "\033[90mBackend PID: $BACKEND_PID\033[0m"
@@ -50,8 +50,8 @@ else
 fi
 
 # Test frontend
-if curl -s http://localhost:5173 > /dev/null; then
-    echo -e "\033[32m✓ Frontend is running on http://localhost:5173\033[0m"
+if curl -s http://localhost:3000 > /dev/null; then
+    echo -e "\033[32m✓ Frontend is running on http://localhost:3000\033[0m"
 else
     echo -e "\033[31m✗ Frontend is not running\033[0m"
 fi

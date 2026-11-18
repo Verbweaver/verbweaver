@@ -205,8 +205,16 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       // Development: try to use a local Python + uvicorn
       // Try to use virtual environment first, then fall back to system Python
       let pythonExecutable: string | null = null;
-      const venvPythonPath = join(backendPath, '../.venv/Scripts/python.exe');
-      if (existsSync(venvPythonPath)) {
+      // Venv may live at the repo root (setup-backend.ps1 / build-and-run.sh) or in backend/ (README),
+      // with a Windows (Scripts/python.exe) or POSIX (bin/python) layout.
+      const venvPythonCandidates = [
+        join(backendPath, '..', '.venv', 'Scripts', 'python.exe'),
+        join(backendPath, '..', '.venv', 'bin', 'python'),
+        join(backendPath, '.venv', 'Scripts', 'python.exe'),
+        join(backendPath, '.venv', 'bin', 'python'),
+      ];
+      const venvPythonPath = venvPythonCandidates.find((p) => existsSync(p));
+      if (venvPythonPath) {
         pythonExecutable = venvPythonPath;
         console.log('Using virtual environment Python:', pythonExecutable);
       } else {
