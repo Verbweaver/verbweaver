@@ -109,7 +109,7 @@ function toOrderedNode(path: string, node: { path: string; name: string; metadat
 }
 
 function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, orderedNodes: orderedNodesProp }: NodeOrderingPanelProps) {
-  const { getNode } = useNodeStore()
+  const { getNode, nodes: nodeMap } = useNodeStore()
   const { theme } = useThemeStore()
   const { 
     selectedNodeIndices, 
@@ -153,6 +153,12 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
       onOrderChange(nextOrder)
     }
   }, [selectedNodes, orderedNodesProp, getNode, onOrderChange, clearSelection])
+
+  // Node metadata may arrive after the order is built (e.g. right after app
+  // start, before the node store has loaded). Refresh titles/tags when it does.
+  useEffect(() => {
+    setOrderedNodes(prev => prev.map(n => toOrderedNode(n.path, getNode(n.path))))
+  }, [nodeMap, getNode])
 
   const handleNodeClick = useCallback((index: number, event: React.MouseEvent) => {
     const newSelectedIndices = new Set(selectedNodeIndices || [])
