@@ -487,7 +487,10 @@ function createWindow() {
       webSecurity: true,
       allowRunningInsecureContent: false
     },
-    icon: join(__dirname, '../../resources/icon.png'),
+    // Packaged builds ship icon.png via extraResources; app.asar only contains dist/
+    icon: isDevelopment
+      ? join(__dirname, '../../resources/icon.png')
+      : join(process.resourcesPath, 'icon.png'),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     frame: process.platform !== 'darwin',
     show: true // Show window immediately; still show again on ready-to-show

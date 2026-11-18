@@ -15,21 +15,21 @@ This directory should contain the following icon files:
 
 ## Icon Generation
 
-You can use tools like:
-- [Electron Icon Builder](https://www.npmjs.com/package/electron-icon-builder)
-- [Icon Generator](https://www.electronforge.io/guides/create-and-add-icons)
-
-To generate icons from a single source image:
+`icon.png` (512x512) is the source of truth. `icon.icns` must be a real ICNS
+container, not a renamed PNG. Regenerate it after changing `icon.png`:
 
 ```bash
-npm install -g electron-icon-builder
-electron-icon-builder --input=icon.png --output=./
+python3 -c "from PIL import Image; Image.open('icon.png').save('icon.icns')"
+file icon.icns   # should report: Mac OS X icon
 ```
 
-## Temporary Placeholder
+`icon.ico` can be regenerated the same way:
 
-For development, you can create a simple placeholder icon or download one from:
-- [Placeholder Icons](https://placeholder.com/)
-- [Icon Archive](https://iconarchive.com/)
+```bash
+python3 -c "from PIL import Image; Image.open('icon.png').save('icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+```
 
-Make sure to replace with your actual application icon before distribution. 
+On Linux, packaged builds also copy `icon.png` into the app's resources directory
+(`extraResources` in `desktop/package.json`) for the window icon. The .desktop entry is
+named after `desktopName` (`verbweaver.desktop`), which keeps the Wayland app_id and the
+desktop entry in sync.
