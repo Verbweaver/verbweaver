@@ -3,11 +3,14 @@ import {
   BrowserWindow, 
   Menu, 
   shell, 
-  ipcMain, 
+  ipcMain,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
   dialog,
   protocol
 } from 'electron';
 import { join } from 'path';
+import { pathToFileURL } from 'url';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { spawn, ChildProcess, execFile } from 'child_process';
@@ -197,19 +200,62 @@ async function copyTree(src: string, dst: string) {
 
 const BACKEND_STARTUP_TIMEOUT = 60000; // 60 seconds
 
-// Security: Set Content Security Policy
+const DEV_RENDERER_ORIGIN = 'http://localhost:3000';
+
+// True only for the app's own renderer: the Vite dev server in development, the bundled
+// renderer/index.html when packaged. Every page loaded in the main window gets the preload's
+// window.electronAPI, so nothing else may be loaded there or call IPC.
+function isAppUrl(url: string | undefined | null): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    if (isDevelopment) return parsed.origin === DEV_RENDERER_ORIGIN;
+    if (parsed.protocol !== 'file:') return false;
+    const rendererIndex = pathToFileURL(join(process.resourcesPath, 'renderer', 'index.html'));
+    // Compare decoded paths (Chromium and Node may percent-encode differently, e.g. spaces or
+    // non-ASCII user names); Windows paths are case-insensitive.
+    const norm = (p: string) => {
+      const decoded = decodeURIComponent(p);
+      return process.platform === 'win32' ? decoded.toLowerCase() : decoded;
+    };
+    return norm(parsed.pathname) === norm(rendererIndex.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function assertTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent, channel: string): boolean {
+  const frame = event.senderFrame;
+  if (frame && frame.parent === null && isAppUrl(frame.url)) return true;
+  console.warn(`Rejected IPC "${channel}" from untrusted sender: ${frame?.url ?? '<destroyed frame>'}`);
+  return false;
+}
+
+// ipcMain wrappers that drop messages from anything other than the app's main frame.
+const ipc = {
+  handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: any[]) => any) {
+    ipcMain.handle(channel, (event, ...args) => {
+      if (!assertTrustedSender(event, channel)) throw new Error('Untrusted IPC sender');
+      return listener(event, ...args);
+    });
+  },
+  on(channel: string, listener: (event: IpcMainEvent, ...args: any[]) => void) {
+    ipcMain.on(channel, (event, ...args) => {
+      if (assertTrustedSender(event, channel)) listener(event, ...args);
+    });
+  },
+};
+
 app.on('web-contents-created', (_, contents) => {
   contents.on('will-navigate', (event, navigationUrl) => {
-    const parsedUrl = new URL(navigationUrl);
-    
-    // Only allow navigation to local files and our backend
-    if (parsedUrl.protocol !== 'file:' && 
-        parsedUrl.protocol !== 'http:' && 
-        parsedUrl.protocol !== 'https:') {
-      event.preventDefault();
+    // Keep the window on the app. External http(s) links open in the system browser instead.
+    if (isAppUrl(navigationUrl)) return;
+    event.preventDefault();
+    if (/^https?:\/\//i.test(navigationUrl)) {
+      shell.openExternal(navigationUrl);
     }
   });
-  
+
   contents.setWindowOpenHandler(({ url }) => {
     // Open external links in default browser
     if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -741,7 +787,7 @@ function createMenu() {
 // IPC Handlers with error handling
 function setupIpcHandlers() {
   // Manual update check from renderer
-  ipcMain.handle('update:check', async () => {
+  ipc.handle('update:check', async () => {
     try {
       autoUpdater.autoDownload = true;
       const result = await autoUpdater.checkForUpdates();
@@ -756,27 +802,42 @@ function setupIpcHandlers() {
       return { error: String(e) };
     }
   });
+  // Electron 43+ opens dialogs in Downloads when no defaultPath is given, instead of the
+  // OS-remembered folder. Remember the last folder ourselves (fallback: Documents).
+  const dialogDefaultPath = (fileName?: string): string => {
+    const last = store.get('lastDialogDir') as string | undefined;
+    const dir = last && existsSync(last) ? last : app.getPath('documents');
+    return fileName ? join(dir, path.basename(fileName)) : dir;
+  };
+  const rememberDialogDir = (selected?: string) => {
+    if (selected) store.set('lastDialogDir', path.dirname(selected));
+  };
+
   // File operations
-  ipcMain.handle('dialog:openFile', async () => {
+  ipc.handle('dialog:openFile', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
+      defaultPath: dialogDefaultPath(),
       properties: ['openFile'],
       filters: [
         { name: 'Markdown', extensions: ['md', 'markdown'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     });
+    if (!result.canceled) rememberDialogDir(result.filePaths[0]);
     return result;
   });
 
-  ipcMain.handle('dialog:openDirectory', async () => {
+  ipc.handle('dialog:openDirectory', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openDirectory', 'createDirectory'],
-      title: 'Select Project Location'
+      title: 'Select Project Location',
+      defaultPath: dialogDefaultPath()
     });
+    if (!result.canceled) rememberDialogDir(result.filePaths[0]);
     return result;
   });
 
-  ipcMain.handle('fs:readDirectory', async (_event, dirPath: string) => {
+  ipc.handle('fs:readDirectory', async (_event, dirPath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
       console.log(`[main] fs:readDirectory called with dirPath: "${dirPath}", projectPath: "${projectPath}"`);
@@ -810,8 +871,9 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('dialog:saveFile', async (_, content: string) => {
+  ipc.handle('dialog:saveFile', async (_, content: string) => {
     const result = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: dialogDefaultPath(),
       filters: [
         { name: 'Markdown', extensions: ['md'] },
         { name: 'All Files', extensions: ['*'] }
@@ -820,14 +882,15 @@ function setupIpcHandlers() {
     
     if (!result.canceled && result.filePath) {
       await writeFile(result.filePath, content, 'utf-8');
+      rememberDialogDir(result.filePath);
     }
     
     return result;
   });
 
-  ipcMain.handle('dialog:saveJson', async (_event, defaultName: string, jsonText: string) => {
+  ipc.handle('dialog:saveJson', async (_event, defaultName: string, jsonText: string) => {
     const result = await dialog.showSaveDialog(mainWindow!, {
-      defaultPath: defaultName || 'config.json',
+      defaultPath: dialogDefaultPath(defaultName || 'config.json'),
       filters: [
         { name: 'JSON', extensions: ['json'] },
         { name: 'All Files', extensions: ['*'] }
@@ -835,11 +898,12 @@ function setupIpcHandlers() {
     });
     if (!result.canceled && result.filePath) {
       await writeFile(result.filePath, jsonText, 'utf-8');
+      rememberDialogDir(result.filePath);
     }
     return result;
   });
 
-  ipcMain.handle('dialog:saveBinary', async (_event, data: Uint8Array, defaultName?: string) => {
+  ipc.handle('dialog:saveBinary', async (_event, data: Uint8Array, defaultName?: string) => {
     const name = defaultName || 'export.bin'
     const lower = name.toLowerCase()
     const filters = lower.endsWith('.json')
@@ -855,16 +919,17 @@ function setupIpcHandlers() {
       : [ { name: 'All Files', extensions: ['*'] } ]
 
     const result = await dialog.showSaveDialog(mainWindow!, {
-      defaultPath: name,
+      defaultPath: dialogDefaultPath(name),
       filters,
     });
     if (!result.canceled && result.filePath) {
       await fs.writeFile(result.filePath, Buffer.from(data));
+      rememberDialogDir(result.filePath);
     }
     return result;
   });
 
-  ipcMain.handle('fs:readFile', async (_, filePath: string) => {
+  ipc.handle('fs:readFile', async (_, filePath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
       const fullPath = path.isAbsolute(filePath)
@@ -877,7 +942,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('fs:readFileBinary', async (_, filePath: string) => {
+  ipc.handle('fs:readFileBinary', async (_, filePath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
       const fullPath = path.isAbsolute(filePath)
@@ -890,7 +955,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
+  ipc.handle('fs:writeFile', async (_, filePath: string, content: string) => {
     try {
       // Allow absolute paths; if relative and a project exists, resolve relative to it
       const projectPath = store.get('currentProjectPath') as string | undefined
@@ -910,7 +975,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('fs:deleteFile', async (_event, filePath: string) => {
+  ipc.handle('fs:deleteFile', async (_event, filePath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
       if (!projectPath) throw new Error('No project path set');
@@ -923,7 +988,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('fs:createDirectory', async (_event, dirPath: string) => {
+  ipc.handle('fs:createDirectory', async (_event, dirPath: string) => {
     try {
       const projectPath = store.get('currentProjectPath') as string | undefined;
       const fullPath = path.isAbsolute(dirPath) ? dirPath : (projectPath ? path.join(projectPath, dirPath) : dirPath);
@@ -935,7 +1000,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('fs:writeFileBinary', async (_event, filePath: string, uint8Array: Uint8Array) => {
+  ipc.handle('fs:writeFileBinary', async (_event, filePath: string, uint8Array: Uint8Array) => {
     try {
       const projectPath = store.get('currentProjectPath');
       if (!projectPath) throw new Error('No project path set');
@@ -956,7 +1021,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('fs:moveFile', async (_event, oldPath: string, newPath: string) => {
+  ipc.handle('fs:moveFile', async (_event, oldPath: string, newPath: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
       if (!projectPath) throw new Error('No project path set');
@@ -1043,7 +1108,7 @@ function setupIpcHandlers() {
   });
 
   // Utility: path exists check (absolute or project-relative)
-  ipcMain.handle('fs:pathExists', async (_event, somePath: string) => {
+  ipc.handle('fs:pathExists', async (_event, somePath: string) => {
     try {
       const projectPath = store.get('currentProjectPath') as string | undefined
       const fullPath = path.isAbsolute(somePath) ? somePath : (projectPath ? path.join(projectPath, somePath) : somePath)
@@ -1053,7 +1118,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('fs:readProjectFiles', async (_event, projectPath: string) => {
+  ipc.handle('fs:readProjectFiles', async (_event, projectPath: string) => {
     try {
       const files: Array<{ path: string; isDirectory: boolean }> = [];
       
@@ -1086,7 +1151,7 @@ function setupIpcHandlers() {
   });
 
   // Project operations
-  ipcMain.handle('project:create', async (_, projectName: string, projectPath: string, projectDescription?: string) => {
+  ipc.handle('project:create', async (_, projectName: string, projectPath: string, projectDescription?: string) => {
     try {
       // Create project directory if it doesn't exist
       if (!existsSync(projectPath)) {
@@ -1245,7 +1310,7 @@ function setupIpcHandlers() {
       await new Promise((resolve) => {
         const gitInitMain = spawn('git', ['init', '-b', 'main'], { 
           cwd: projectPath,
-          shell: true 
+          shell: false 
         });
         
         gitInitMain.on('close', (code: number) => {
@@ -1256,12 +1321,12 @@ function setupIpcHandlers() {
           console.warn('git init -b main failed; falling back to legacy init');
           const gitInit = spawn('git', ['init'], { 
             cwd: projectPath,
-            shell: true 
+            shell: false 
           });
           gitInit.on('close', () => {
             const gitCheckout = spawn('git', ['checkout', '-b', 'main'], { 
               cwd: projectPath,
-              shell: true 
+              shell: false 
             });
             gitCheckout.on('close', () => resolve(code));
             gitCheckout.on('error', () => resolve(code));
@@ -1278,7 +1343,7 @@ function setupIpcHandlers() {
       try {
         const gitAdd = spawn('git', ['add', '.'], { 
           cwd: projectPath,
-          shell: true 
+          shell: false 
         });
         
         await new Promise((resolve) => {
@@ -1287,9 +1352,9 @@ function setupIpcHandlers() {
         });
         
         const commitMessage = 'Initial commit'; // Add default commit message
-        const gitCommit = spawn('git', ['commit', '-m', `"${commitMessage}"`, '--'], { 
+        const gitCommit = spawn('git', ['commit', '-m', commitMessage, '--'], { 
           cwd: projectPath,
-          shell: true 
+          shell: false 
         });
         
         await new Promise((resolve) => {
@@ -1318,7 +1383,7 @@ function setupIpcHandlers() {
   });
 
   // Re-seed templates for an existing desktop project from the global templates directory
-  ipcMain.handle('project:reseedTemplates', async (_evt, projectPath: string) => {
+  ipc.handle('project:reseedTemplates', async (_evt, projectPath: string) => {
     try {
       // Validate the target path to prevent misuse: must match current project path
       const current = store.get('currentProjectPath') as string | undefined
@@ -1610,7 +1675,7 @@ function setupIpcHandlers() {
   });
 
   // Seed global templates directory from defaults (repo assets in dev; packaged in prod)
-  ipcMain.handle('templates:seedGlobalDefaults', async (_evt, baseDir?: string) => {
+  ipc.handle('templates:seedGlobalDefaults', async (_evt, baseDir?: string) => {
     try {
       const base = baseDir || (store.get('globalTemplatesDir') as string) || join(app.getPath('userData'), 'templates')
       const dstRoot = base
@@ -1646,7 +1711,7 @@ function setupIpcHandlers() {
     }
   })
 
-  ipcMain.handle('project:open', async (_, projectPath: string) => {
+  ipc.handle('project:open', async (_, projectPath: string) => {
     try {
       if (!existsSync(projectPath)) {
         throw new Error('Project path does not exist');
@@ -1671,11 +1736,11 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('project:getRecent', async () => {
+  ipc.handle('project:getRecent', async () => {
     return store.get('recentProjects', []) as string[];
   });
 
-  ipcMain.handle('project:pruneRecent', async () => {
+  ipc.handle('project:pruneRecent', async () => {
     const recent = (store.get('recentProjects', []) as string[]).filter(p => typeof p === 'string')
     const kept = recent.filter(p => existsSync(p))
     if (kept.length !== recent.length) {
@@ -1685,7 +1750,7 @@ function setupIpcHandlers() {
   });
 
   // Graph operations (new)
-  ipcMain.handle('graph:updateNodeMetadata', async (_, filePath: string, metadataChanges: Record<string, any>) => {
+  ipc.handle('graph:updateNodeMetadata', async (_, filePath: string, metadataChanges: Record<string, any>) => {
     try {
       const projectPath = store.get('currentProjectPath') as string | undefined;
       if (!projectPath) {
@@ -1741,7 +1806,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('graph:loadData', async () => {
+  ipc.handle('graph:loadData', async () => {
     const projectPath = store.get('currentProjectPath') as string | undefined;
     if (!projectPath) {
       console.error('[graph:loadData] No project path set.');
@@ -1890,7 +1955,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('graph:createNodeFile', async (_, initialNodeData: Partial<any>) => {
+  ipc.handle('graph:createNodeFile', async (_, initialNodeData: Partial<any>) => {
     const projectPath = store.get('currentProjectPath') as string | undefined;
     if (!projectPath) {
       throw new Error('No project path set. Cannot create node file.');
@@ -1970,7 +2035,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('graph:createNodeFromTemplateFile', async (_, { templateRelativePath, newNodeName, newParentRelativePath, initialMetadata }: { templateRelativePath: string, newNodeName: string, newParentRelativePath: string, initialMetadata: Record<string, any> }) => {
+  ipc.handle('graph:createNodeFromTemplateFile', async (_, { templateRelativePath, newNodeName, newParentRelativePath, initialMetadata }: { templateRelativePath: string, newNodeName: string, newParentRelativePath: string, initialMetadata: Record<string, any> }) => {
     const projectPath = store.get('currentProjectPath') as string | undefined;
     if (!projectPath) {
       throw new Error('No project path set. Cannot create node from template.');
@@ -2139,7 +2204,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('graph:deleteNodeFile', async (_, relativeFilePath: string) => {
+  ipc.handle('graph:deleteNodeFile', async (_, relativeFilePath: string) => {
     const projectPath = store.get('currentProjectPath') as string | undefined;
     if (!projectPath) {
       throw new Error('No project path set. Cannot delete node file.');
@@ -2279,13 +2344,13 @@ function setupIpcHandlers() {
   });
 
   // Git operations (stubs for now - would integrate with simple-git)
-  ipcMain.handle('git:init', async (_, projectPath: string) => {
+  ipc.handle('git:init', async (_, projectPath: string) => {
     const { spawn } = require('child_process');
     
     return new Promise((resolve, reject) => {
       const git = spawn('git', ['init'], { 
         cwd: projectPath,
-        shell: true 
+        shell: false 
       });
       
       git.on('close', (code: number) => {
@@ -2302,14 +2367,14 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:status', async (_, projectPath: string) => {
+  ipc.handle('git:status', async (_, projectPath: string) => {
     const { spawn } = require('child_process');
     
     return new Promise((resolve, reject) => {
       // Use NUL-delimited porcelain output to robustly parse paths (including nested, spaces, renames)
       const git = spawn('git', ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-z'], { 
         cwd: projectPath,
-        shell: true 
+        shell: false 
       });
       
       const chunks: Buffer[] = [];
@@ -2358,7 +2423,7 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:commit', async (_, projectPath: string, message: string, files?: string[]) => {
+  ipc.handle('git:commit', async (_, projectPath: string, message: string, files?: string[]) => {
     const { spawn } = require('child_process');
     
     // First, add files if specified
@@ -2367,7 +2432,7 @@ function setupIpcHandlers() {
         // Only add specified files
         const gitAdd = spawn('git', ['add', '--'].concat(files), { 
           cwd: projectPath,
-          shell: true 
+          shell: false 
         });
         
         let errorOutput = '';
@@ -2387,14 +2452,11 @@ function setupIpcHandlers() {
     
     // Then commit only the staged changes
     return new Promise((resolve, reject) => {
-      // On Windows, we need special handling for the commit message
-      const commitArgs = process.platform === 'win32'
-        ? ['commit', '-m', `"${message.replace(/"/g, '\\"')}"`]
-        : ['commit', '-m', message];
+      const commitArgs = ['commit', '-m', message];
 
       const gitCommit = spawn('git', commitArgs, { 
         cwd: projectPath,
-        shell: true 
+        shell: false 
       });
       
       let errorOutput = '';
@@ -2417,13 +2479,13 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:push', async (_, projectPath: string) => {
+  ipc.handle('git:push', async (_, projectPath: string) => {
     const { spawn } = require('child_process');
     
     return new Promise((resolve, reject) => {
       const git = spawn('git', ['push'], { 
         cwd: projectPath,
-        shell: true 
+        shell: false 
       });
       
       git.on('close', (code: number) => {
@@ -2440,13 +2502,13 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:pull', async (_, projectPath: string) => {
+  ipc.handle('git:pull', async (_, projectPath: string) => {
     const { spawn } = require('child_process');
     
     return new Promise((resolve, reject) => {
       const git = spawn('git', ['pull'], { 
         cwd: projectPath,
-        shell: true 
+        shell: false 
       });
       
       git.on('close', (code: number) => {
@@ -2463,7 +2525,7 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:getBranches', async (_, projectPath: string) => {
+  ipc.handle('git:getBranches', async (_, projectPath: string) => {
     const { spawn } = require('child_process');
     
     return new Promise((resolve, reject) => {
@@ -2472,7 +2534,7 @@ function setupIpcHandlers() {
         return new Promise<string>((resolve) => {
           const gitRef = spawn('git', ['symbolic-ref', '--short', 'HEAD'], {
             cwd: projectPath,
-            shell: true
+            shell: false
           });
           
           let currentBranch = '';
@@ -2493,7 +2555,7 @@ function setupIpcHandlers() {
       
       const git = spawn('git', ['branch', '-a'], { 
         cwd: projectPath,
-        shell: true 
+        shell: false 
       });
       
       let output = '';
@@ -2540,13 +2602,11 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:getCommits', async (_, projectPath: string, limit: number = 50) => {
+  ipc.handle('git:getCommits', async (_, projectPath: string, limit: number = 50) => {
     const { spawn } = require('child_process');
     
     return new Promise((resolve, reject) => {
-      // Keep pipes inside a single argument. Avoid shell on non‑Windows so '|' isn't treated as a pipeline.
-      const isWin = process.platform === 'win32';
-      const formatString = isWin ? '"%H|%an|%ae|%ad|%s"' : '%H|%an|%ae|%ad|%s';
+      const formatString = '%H|%an|%ae|%ad|%s';
 
       const git = spawn('git', [
         'log',
@@ -2555,7 +2615,7 @@ function setupIpcHandlers() {
         '--date=iso'
       ], {
         cwd: projectPath,
-        shell: isWin
+        shell: false
       });
       
       let output = '';
@@ -2592,13 +2652,16 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:createBranch', async (_, projectPath: string, branchName: string) => {
+  ipc.handle('git:createBranch', async (_, projectPath: string, branchName: string) => {
     const { spawn } = require('child_process');
+    if (typeof branchName !== 'string' || !branchName || branchName.startsWith('-')) {
+      throw new Error(`Invalid branch name: ${branchName}`);
+    }
     
     return new Promise((resolve, reject) => {
       const git = spawn('git', ['checkout', '-b', branchName], { 
         cwd: projectPath,
-        shell: true 
+        shell: false 
       });
       
       let errorOutput = '';
@@ -2621,13 +2684,16 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:switchBranch', async (_, projectPath: string, branchName: string) => {
+  ipc.handle('git:switchBranch', async (_, projectPath: string, branchName: string) => {
     const { spawn } = require('child_process');
+    if (typeof branchName !== 'string' || !branchName || branchName.startsWith('-')) {
+      throw new Error(`Invalid branch name: ${branchName}`);
+    }
     
     return new Promise((resolve, reject) => {
       const git = spawn('git', ['checkout', branchName], { 
         cwd: projectPath,
-        shell: true 
+        shell: false 
       });
       
       let errorOutput = '';
@@ -2650,16 +2716,16 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:getDiff', async (_, projectPath: string, filePath?: string) => {
+  ipc.handle('git:getDiff', async (_, projectPath: string, filePath?: string) => {
     const { spawn } = require('child_process');
     
     const args = ['diff'];
-    if (filePath) args.push(filePath);
+    if (filePath) args.push('--', filePath);
     
     return new Promise((resolve, reject) => {
       const git = spawn('git', args, { 
         cwd: projectPath,
-        shell: true 
+        shell: false 
       });
       
       let output = '';
@@ -2687,13 +2753,16 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:revert', async (_, projectPath: string, commitSha: string) => {
+  ipc.handle('git:revert', async (_, projectPath: string, commitSha: string) => {
     const { spawn } = require('child_process');
+    if (typeof commitSha !== 'string' || !/^[0-9a-f]{4,64}$/i.test(commitSha)) {
+      throw new Error(`Invalid commit SHA: ${commitSha}`);
+    }
     return new Promise((resolve, reject) => {
       // Use 'git revert --no-edit <sha>' for a non-interactive revert
       const git = spawn('git', ['revert', '--no-edit', commitSha], {
         cwd: projectPath,
-        shell: true
+        shell: false
       });
 
       let errorOutput = '';
@@ -2716,13 +2785,13 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('git:resetHard', async (_, projectPath: string) => {
+  ipc.handle('git:resetHard', async (_, projectPath: string) => {
     const { spawn } = require('child_process');
     return new Promise((resolve, reject) => {
       // Discard all uncommitted changes and untracked files
       const git = spawn('git', ['reset', '--hard'], {
         cwd: projectPath,
-        shell: true
+        shell: false
       });
 
       let errorOutput = '';
@@ -2734,7 +2803,7 @@ function setupIpcHandlers() {
       git.on('close', (code: number) => {
         if (code === 0) {
           // Also clean untracked files for a full reset
-          const clean = spawn('git', ['clean', '-fd'], { cwd: projectPath, shell: true });
+          const clean = spawn('git', ['clean', '-fd'], { cwd: projectPath, shell: false });
           let cleanErr = '';
           clean.stderr.on('data', (d: Buffer) => { cleanErr += d.toString(); });
           clean.on('close', (c: number) => {
@@ -2754,27 +2823,27 @@ function setupIpcHandlers() {
   });
 
   // System operations
-  ipcMain.handle('shell:openExternal', async (_, url: string) => {
+  ipc.handle('shell:openExternal', async (_, url: string) => {
     if (url.startsWith('http://') || url.startsWith('https://')) {
       await shell.openExternal(url);
     }
   });
 
-  ipcMain.handle('shell:showItemInFolder', async (_, itemPath: string) => {
+  ipc.handle('shell:showItemInFolder', async (_, itemPath: string) => {
     try { shell.showItemInFolder(itemPath); } catch (e) { console.warn('showItemInFolder failed:', e); }
   });
 
-  ipcMain.handle('shell:openPath', async (_, anyPath: string) => {
+  ipc.handle('shell:openPath', async (_, anyPath: string) => {
     // Open a folder or file path via shell.openPath
     try { await shell.openPath(anyPath); } catch (e) { console.warn('openPath failed:', e); }
   });
 
   // Window operations
-  ipcMain.on('window:minimize', () => {
+  ipc.on('window:minimize', () => {
     mainWindow?.minimize();
   });
 
-  ipcMain.on('window:maximize', () => {
+  ipc.on('window:maximize', () => {
     if (mainWindow?.isMaximized()) {
       mainWindow.unmaximize();
     } else {
@@ -2782,12 +2851,12 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.on('window:close', () => {
+  ipc.on('window:close', () => {
     mainWindow?.close();
   });
 
   // Preferences
-  ipcMain.handle('preferences:get', async () => {
+  ipc.handle('preferences:get', async () => {
     return store.get('preferences', {
       theme: 'system',
       autoSave: true,
@@ -2797,12 +2866,12 @@ function setupIpcHandlers() {
     });
   });
 
-  ipcMain.handle('preferences:set', async (_, prefs: any) => {
+  ipc.handle('preferences:set', async (_, prefs: any) => {
     store.set('preferences', prefs);
   });
 
   // Backend operations
-  ipcMain.handle('backend:start', async () => {
+  ipc.handle('backend:start', async () => {
     try {
       return await startBackend();
     } catch (error) {
@@ -2810,11 +2879,11 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('backend:stop', async () => {
+  ipc.handle('backend:stop', async () => {
     await stopBackend();
   });
 
-  ipcMain.handle('backend:status', async () => {
+  ipc.handle('backend:status', async () => {
     return {
       running: backendProcess !== null,
       port: backendPort,
@@ -2823,20 +2892,20 @@ function setupIpcHandlers() {
   });
 
   // Store operations (already implemented)
-  ipcMain.handle('get-store-value', async (_, key: string) => {
+  ipc.handle('get-store-value', async (_, key: string) => {
     return store.get(key);
   });
 
-  ipcMain.handle('set-store-value', async (_, key: string, value: any) => {
+  ipc.handle('set-store-value', async (_, key: string, value: any) => {
     store.set(key, value);
   });
 
 
-  ipcMain.handle('get-app-version', async () => {
+  ipc.handle('get-app-version', async () => {
     return app.getVersion();
   });
 
-  ipcMain.handle('fs:downloadFile', async (_event, filePath: string, originalName: string) => {
+  ipc.handle('fs:downloadFile', async (_event, filePath: string, originalName: string) => {
     try {
       const projectPath = store.get('currentProjectPath');
       if (!projectPath) throw new Error('No project path set');
@@ -2895,7 +2964,7 @@ function setupIpcHandlers() {
   }
 
   // Docs handlers - update these to match the new names
-  ipcMain.handle('docs:list', async () => {
+  ipc.handle('docs:list', async () => {
     try {
       const docsPath = path.join(app.getAppPath(), '..', 'docs');
       console.log(`Listing docs from: ${docsPath}`);
@@ -2918,7 +2987,7 @@ function setupIpcHandlers() {
     }
   });
   
-  ipcMain.handle('docs:read', async (_event, fileName: string) => {
+  ipc.handle('docs:read', async (_event, fileName: string) => {
     try {
       // Resolve the path relative to the app's location
       const docsPath = path.join(app.getAppPath(), '..', 'docs');
@@ -2940,7 +3009,7 @@ function setupIpcHandlers() {
   });
 
   // Dependency checker handlers
-  ipcMain.handle('dependencies:check', async () => {
+  ipc.handle('dependencies:check', async () => {
     try {
       return await checkDependencies();
     } catch (error) {
@@ -2949,7 +3018,7 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('dependencies:openInstallUrl', async (_, url: string) => {
+  ipc.handle('dependencies:openInstallUrl', async (_, url: string) => {
     try {
       await shell.openExternal(url);
       return { success: true };

@@ -25,7 +25,7 @@
   "devDependencies": {
     "@types/path-browserify": "^1.0.3",
     "concurrently": "^7.6.0",
-    "electron": "^38.8.6"
+    "electron": "^45.3.4"
   },
   "engines": {
     "node": ">=22.13.0",

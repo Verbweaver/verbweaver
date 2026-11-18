@@ -74,7 +74,7 @@ Perfect for teams and collaboration.
 #### Development Setup
 
 1. **System Requirements**
-   - **Operating System**: Windows 10+, macOS 12 (Monterey)+, or Linux (Ubuntu 20.04+)
+   - **Operating System**: Windows 10+, macOS 13 (Ventura)+, or Linux (Ubuntu 20.04+)
    - **Python**: 3.11 or higher
    - **Node.js**: 18.0 or higher
    - **Git**: 2.30 or higher

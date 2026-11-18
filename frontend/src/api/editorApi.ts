@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import { sanitizePreviewHtml } from '../utils/sanitizeHtml'
 
 export interface FileNode {
   path: string
@@ -26,7 +27,7 @@ export const editorApi = {
     const response = await apiClient.post('/preview', requestBody, {
       responseType: 'text',
     })
-    return response.data as string
+    return sanitizePreviewHtml(response.data as string)
   },
 
   getFileTree: async (projectId: string, path: string = ''): Promise<FileNode[]> => {
