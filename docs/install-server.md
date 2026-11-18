@@ -4,7 +4,7 @@ This guide covers installing the server natively with either SQLite (simple) or 
 
 ## Prerequisites
 - OS: Ubuntu 22.04+/Debian 12+/RHEL 9+ (reference), or Windows/macOS for development
-- Python 3.11, Node.js 20+, Git
+- Python 3.11, Node.js 22.13+, Git
 - Optional: PostgreSQL 15, Redis 7, Nginx or Caddy
 
 ## Backend (SQLite quick start)

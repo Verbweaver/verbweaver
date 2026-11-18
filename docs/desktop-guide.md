@@ -29,7 +29,7 @@ Download the latest release from GitHub Releases.
 
 #### Prerequisites
 
-1. **Node.js 18+** and npm
+1. **Node.js 22.13+** and npm
 2. **Python 3.11+** (for embedded backend during development)
 3. **Git**
 4. **Pandoc**
