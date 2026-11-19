@@ -731,19 +731,10 @@ export const useNodeStore = create<NodeState>((set, get) => ({
     
     if (!sourceNode || !targetNode) throw new Error('Node not found');
     
-    // Create edge ID using node IDs instead of paths to avoid URL encoding issues
-    // Use a delimiter that won't appear in node IDs
-    const edgeId = `soft_${sourceNode.metadata.id}_${targetNode.metadata.id}`;
-    
-    // Get current project
-    const { currentProject } = useProjectStore.getState();
-    if (!currentProject) throw new Error('No project selected');
-    
+    // Mirror createSoftLink: soft links live only in front-matter, so remove them from both
+    // nodes via updateNode (desktop: direct file write; web: node PUT). No backend edge call,
+    // so removal works whenever creation does and each file is written once.
     try {
-      // Call the backend API to remove the edge
-      await apiClient.delete(`/projects/${currentProject.id}/edges/${edgeId}`);
-      
-      // Update local state using the existing updateNode function to preserve all metadata
       const sourceId = sourceNode.metadata.id;
       const targetId = targetNode.metadata.id;
       

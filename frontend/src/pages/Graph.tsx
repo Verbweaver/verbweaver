@@ -1447,44 +1447,6 @@ function GraphView() {
     setContextMenu(null)
   }, [])
 
-  // Handle deleting edge
-  const handleDeleteEdge = useCallback(
-    async (edgeId: string) => {
-      // Parse edge ID to get source and target
-      if (edgeId.startsWith('soft-')) {
-        const parts = edgeId.split('-')
-        if (parts.length >= 3) {
-          const sourcePath = parts[1]
-          const targetPath = parts[2]
-          
-          // Find target node to get its ID
-          const targetNode = Array.from(verbweaverNodes.values()).find(n => n.path === targetPath)
-          if (targetNode) {
-            try {
-              await removeSoftLink(sourcePath, targetNode.metadata.id)
-              toast.success('Link removed')
-            } catch (error) {
-              toast.error('Failed to remove link')
-            }
-          }
-        }
-      }
-    },
-    [verbweaverNodes, removeSoftLink]
-  )
-
-  // Handle edge deletion
-  const onEdgesDelete = useCallback(
-    (edgesToDelete: Edge[]) => {
-      edgesToDelete.forEach(edge => {
-        if (edge.id.startsWith('soft-')) {
-          handleDeleteEdge(edge.id)
-        }
-      })
-    },
-    [handleDeleteEdge]
-  )
-
   // Handle node click
   const onNodeClick = useCallback((_: any, node: Node) => {
     setSelectedNode(node.id)
@@ -1917,7 +1879,6 @@ function GraphView() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        onEdgesDelete={onEdgesDelete}
         onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={onNodeContextMenu}
         onEdgeContextMenu={onEdgeContextMenu}
