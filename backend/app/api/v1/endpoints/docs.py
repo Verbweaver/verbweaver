@@ -2,11 +2,12 @@
 API Endpoints for serving documentation files.
 """
 import os
+import re
 import aiofiles # For async file operations
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.responses import PlainTextResponse
 from starlette.status import HTTP_404_NOT_FOUND
-from typing import List
+from typing import List, Optional, Tuple
 import logging
 
 from app.core.config import settings
@@ -26,9 +27,47 @@ DOCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 
 # For now, assuming backend/app/api/v1/endpoints/docs.py -> backend/docs
 
 class DocFileSchema(BaseModel):
-    name: str
-    path: str # filename
-    type: str # 'file'
+    name: str  # filename, e.g. "getting-started.md"
+    path: str  # filename
+    type: str  # 'file'
+    title: str  # first H1 of the doc, else the filename
+
+
+_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+_H1_RE = re.compile(r"^\s{0,3}#[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$")
+_FRONT_MATTER_END_RE = re.compile(r"^(---|\.\.\.)\s*$")
+
+
+def _extract_doc_title(content: str, fallback: str) -> str:
+    """Return the first level-1 ATX heading, skipping front matter and code fences."""
+    lines = content.splitlines()
+    start = 0
+    if lines and lines[0].strip() == "---":
+        for idx in range(1, len(lines)):
+            if _FRONT_MATTER_END_RE.match(lines[idx]):
+                start = idx + 1
+                break
+    fence: Optional[str] = None
+    for line in lines[start:]:
+        fence_match = _FENCE_RE.match(line)
+        if fence_match:
+            marker = fence_match.group(1)
+            if fence is None:
+                fence = marker
+            elif marker[0] == fence[0] and len(marker) >= len(fence):
+                fence = None
+            continue
+        if fence is not None:
+            continue
+        h1 = _H1_RE.match(line)
+        if h1 and h1.group(1).strip():
+            return h1.group(1).strip()
+    return fallback
+
+
+def _help_sort_key(doc: "DocFileSchema") -> Tuple[int, str]:
+    """README first (the default page), then case-insensitive by title."""
+    return (0 if doc.name.lower() == "readme.md" else 1, doc.title.casefold())
 
 @router.get("", response_model=List[DocFileSchema])
 async def list_documentation_files():
@@ -40,12 +79,21 @@ async def list_documentation_files():
             raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Documentation directory not found.")
 
         for item in os.listdir(DOCS_DIR):
-            if item.endswith('.md') and os.path.isfile(os.path.join(DOCS_DIR, item)):
+            item_path = os.path.join(DOCS_DIR, item)
+            if item.endswith('.md') and os.path.isfile(item_path):
+                title = item
+                try:
+                    async with aiofiles.open(item_path, mode='r', encoding='utf-8') as f:
+                        title = _extract_doc_title(await f.read(), item)
+                except (OSError, UnicodeDecodeError) as e:
+                    logger.warning(f"Could not read doc title from {item_path}: {e}")
                 doc_files.append(DocFileSchema(
-                    name=item.replace('.md', '').replace('-', ' ').replace('_', ' ').title(),
-                    path=item, # Just the filename, e.g., "getting-started.md"
-                    type='file'
+                    name=item,
+                    path=item,  # Just the filename, e.g., "getting-started.md"
+                    type='file',
+                    title=title,
                 ))
+        doc_files.sort(key=_help_sort_key)
         return doc_files
     except Exception as e:
         logger.error(f"Error listing documentation files: {e}", exc_info=True)

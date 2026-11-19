@@ -10,6 +10,7 @@ import '../styles/markdown.css';
 type DocFile = {
   name: string;
   path: string;
+  title?: string; // first H1 of the doc, else the file name
   type: 'file' | 'directory';
   children?: DocFile[];
 };
@@ -200,7 +201,7 @@ export default function Help() {
               title={doc.name}
             >
               <FileText className="w-4 h-4 flex-shrink-0" />
-              <span className="text-sm truncate">{doc.name}</span>
+              <span className="text-sm truncate">{doc.title || doc.name}</span>
             </button>
           ))}
         </div>
