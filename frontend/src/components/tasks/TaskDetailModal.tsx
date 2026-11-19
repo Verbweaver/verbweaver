@@ -35,7 +35,28 @@ interface Comment {
   id: string
   author: string
   content: string
-  timestamp: Date
+  // Persisted comments come back from front-matter as strings; new ones are stored as ISO strings
+  timestamp: Date | string
+}
+
+/** Normalize a node's `task.files` (migrating the legacy format) into StoredFile entries. */
+function loadTaskFiles(n: VerbweaverNode): StoredFile[] {
+  const oldFiles = n.metadata?.task?.files || []
+  return oldFiles.map((file: any) => {
+    const migrated = FileStorage.migrateOldFileFormat(file)
+    if (migrated) return migrated
+    // Create a placeholder for old files that can't be recovered
+    return {
+      id: file.id || `old_${Date.now()}`,
+      name: file.name || 'Unknown File',
+      originalName: file.originalName || file.name || 'Unknown File',
+      size: file.size || 0,
+      uploadedAt: file.uploadedAt ? String(file.uploadedAt) : new Date().toISOString(),
+      uploadedBy: file.uploadedBy || 'Unknown User',
+      path: '', // Empty path indicates this file cannot be downloaded
+      mimeType: file.mimeType || 'application/octet-stream'
+    } as StoredFile
+  })
 }
 
 interface TaskDetailModalProps {
@@ -66,6 +87,10 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   const [newComment, setNewComment] = useState('')
   const [comments, setComments] = useState<Comment[]>([])
   const [files, setFiles] = useState<StoredFile[]>([])
+  // Staged soft links (target node IDs); applied to disk only on Save
+  const [draftLinkIds, setDraftLinkIds] = useState<string[]>([])
+  // Files uploaded during the current edit session; deleted from disk if the edit is cancelled
+  const sessionUploadsRef = useRef<StoredFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isCreateLinkModalOpen, setIsCreateLinkModalOpen] = useState(false)
   const dueDateInputRef = useRef<HTMLInputElement | null>(null)
@@ -77,51 +102,70 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   const [previewError, setPreviewError] = useState<string>('')
   const { currentProjectPath } = useProjectStore()
 
-  // Resolve linked nodes (normalized to IDs in node.softLinks)
+  // Resolve the staged links (IDs) to nodes for display
   const linkedNodes = useMemo(
-    () => getLinkedNodes<VerbweaverNode>(node, nodesMap),
-    [node?.path, nodesMap]
+    () => (node ? getLinkedNodes<VerbweaverNode>({ ...node, softLinks: draftLinkIds }, nodesMap) : []),
+    [node?.path, draftLinkIds, nodesMap]
   )
 
+  /** Store copy of a node, cast to this component's local node shape. */
+  const storeNode = (path: string) => getNode(path) as unknown as VerbweaverNode | undefined
+
+  /** Latest copy of this node: the store's if present, else the (possibly stale) prop. */
+  const currentNode = (): VerbweaverNode | null => (node ? storeNode(node.path) || node : null)
+
+  /** Reset all editable draft state to the given node's saved values. Comments are not draft. */
+  const resetDraft = (n: VerbweaverNode) => {
+    const task = n.metadata.task || {}
+    setTitle(n.metadata.title || n.name)
+    setDescription(n.metadata.description || '')
+    setPriority(task.priority || n.metadata.priority || 'medium')
+    setStatus(n.taskStatus || task.status || 'todo')
+    setAssignee(task.assignee || n.metadata.assignee || '')
+    // Prefer task.dueDate; migrate legacy metadata.dueDate
+    setDueDate(task.dueDate || n.metadata.dueDate || '')
+    // Support new fields with legacy fallback
+    setStartDate(task.startDate || n.metadata.startDate || '')
+    setLevelOfEffort(task.levelOfEffort || n.metadata.levelOfEffort || '')
+    setTags(n.metadata.tags || [])
+    setNewTag('')
+    setFiles(loadTaskFiles(n))
+    setDraftLinkIds(Array.isArray(n.softLinks) ? n.softLinks.map(String) : [])
+    sessionUploadsRef.current = []
+  }
+
+  // Initialize when a different task is shown. Keyed on path (not node identity) so parent
+  // re-renders with a new object don't clobber an edit in progress.
   useEffect(() => {
-    if (node) {
-      const task = node.metadata.task || {}
-      setTitle(node.metadata.title || node.name)
-      setDescription(node.metadata.description || '')
-      setPriority(task.priority || node.metadata.priority || 'medium')
-      setStatus(node.taskStatus || task.status || 'todo')
-      setAssignee(task.assignee || node.metadata.assignee || '')
-      // Prefer task.dueDate; migrate legacy metadata.dueDate
-      setDueDate(task.dueDate || node.metadata.dueDate || '')
-      // Support new fields with legacy fallback
-      setStartDate(task.startDate || node.metadata.startDate || '')
-      setLevelOfEffort(task.levelOfEffort || node.metadata.levelOfEffort || '')
-      setTags(node.metadata.tags || [])
-      setComments(task.comments || [])
-      
-      // Handle file migration from old format
-      const oldFiles = task.files || []
-      const migratedFiles = oldFiles.map((file: any) => {
-        const migrated = FileStorage.migrateOldFileFormat(file)
-        if (migrated) {
-          return migrated
-        } else {
-          // Create a placeholder for old files that can't be recovered
-          return {
-            id: file.id || `old_${Date.now()}`,
-            name: file.name || 'Unknown File',
-            originalName: file.originalName || file.name || 'Unknown File',
-            size: file.size || 0,
-            uploadedAt: file.uploadedAt ? String(file.uploadedAt) : new Date().toISOString(),
-            uploadedBy: file.uploadedBy || 'Unknown User',
-            path: '', // Empty path indicates this file cannot be downloaded
-            mimeType: file.mimeType || 'application/octet-stream'
-          } as StoredFile
-        }
-      })
-      setFiles(migratedFiles)
+    const n = currentNode()
+    if (n) {
+      resetDraft(n)
+      setComments(n.metadata.task?.comments || [])
+      setIsEditing(false)
     }
-  }, [node])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-init only when the task changes
+  }, [node?.path])
+
+  /** Delete files uploaded during this edit session (they were never saved to the task). */
+  const discardSessionUploads = async () => {
+    const uploads = sessionUploadsRef.current
+    sessionUploadsRef.current = []
+    for (const f of uploads) {
+      try { await FileStorage.deleteFile(f) } catch (e) { console.error('Failed to discard upload:', e) }
+    }
+  }
+
+  const handleCancel = async () => {
+    await discardSessionUploads()
+    const n = currentNode()
+    if (n) resetDraft(n)
+    setIsEditing(false)
+  }
+
+  const handleClose = async () => {
+    if (isEditing) await handleCancel()
+    onClose()
+  }
 
   // Fetch preview when opened
   useEffect(() => {
@@ -147,10 +191,11 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   }, [previewOpen, node, currentProjectPath])
 
   const handleSave = async () => {
-    if (!node) return
+    const saved = currentNode()
+    if (!node || !saved) return
 
     const updatedMetadata: any = {
-      ...node.metadata,
+      ...saved.metadata,
       title,
       description,
       priority,
@@ -159,14 +204,14 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
       // dueDate,
       tags,
       task: {
-        ...node.metadata.task,
+        ...saved.metadata.task,
         status,
         priority,
         assignee,
         dueDate: dueDate || undefined,
         startDate: startDate || undefined,
         levelOfEffort: levelOfEffort ? levelOfEffort.slice(0, 100) : undefined,
-        comments,
+        // Comments are persisted as they are added; keep the stored list
         files
       }
     }
@@ -176,31 +221,74 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
     if ('startDate' in updatedMetadata) delete updatedMetadata.startDate
     if ('levelOfEffort' in updatedMetadata) delete updatedMetadata.levelOfEffort
 
-    await updateNode(node.path, { metadata: updatedMetadata })
+    try {
+      await updateNode(node.path, { metadata: updatedMetadata })
+
+      // Apply staged link changes after the field write so it can't overwrite them
+      const store = useNodeStore.getState()
+      const pathForId = (id: string) => {
+        for (const other of store.nodes.values()) {
+          if (String(other.metadata?.id || '') === id) return other.path
+        }
+        return null
+      }
+      const savedLinkIds = Array.isArray(saved.softLinks) ? saved.softLinks.map(String) : []
+      for (const id of savedLinkIds.filter((id) => !draftLinkIds.includes(id))) {
+        const target = pathForId(id)
+        if (target) await store.removeSoftLink(node.path, target)
+      }
+      for (const id of draftLinkIds.filter((id) => !savedLinkIds.includes(id))) {
+        const target = pathForId(id)
+        if (target) await store.createSoftLink(node.path, target)
+      }
+    } catch (error) {
+      console.error('Failed to save task:', error)
+      toast.error('Failed to save task')
+      return
+    }
+
+    // Removed attachments are deleted from disk only once the save succeeds
+    const keptIds = new Set(files.map((f) => f.id))
+    for (const f of loadTaskFiles(saved).filter((f) => !keptIds.has(f.id))) {
+      try { await FileStorage.deleteFile(f) } catch (e) { console.error('Failed to delete removed file:', e) }
+    }
+    sessionUploadsRef.current = []
+
     try {
       await loadNodes()
     } catch {}
 
-    const fresh = getNode ? (getNode(node.path) as any) : null
-    const updatedNode = fresh || { ...node, metadata: updatedMetadata, taskStatus: status as TaskState }
-    onUpdate(updatedNode)
-
-    setStatus(status)
+    const fresh = storeNode(node.path) || { ...saved, metadata: updatedMetadata, taskStatus: status as TaskState }
+    onUpdate(fresh)
+    resetDraft(fresh)
     setIsEditing(false)
   }
 
-  const handleAddComment = () => {
-    if (!newComment.trim()) return
+  // Comments are not part of the edit draft: each one is written to the task immediately
+  const handleAddComment = async () => {
+    if (!node || !newComment.trim()) return
 
     const comment: Comment = {
       id: Date.now().toString(),
       author: 'Current User', // TODO: Get from auth context
       content: newComment,
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     }
 
-    setComments([...comments, comment])
-    setNewComment('')
+    try {
+      // Re-read the stored node so unsaved draft edits aren't written along with the comment
+      const saved = currentNode()
+      const task = saved?.metadata?.task || {}
+      const nextComments = [...(Array.isArray(task.comments) ? task.comments : []), comment]
+      await updateNode(node.path, { metadata: { task: { ...task, comments: nextComments } } })
+      setComments(nextComments)
+      setNewComment('')
+      const fresh = storeNode(node.path)
+      if (fresh) onUpdate(fresh)
+    } catch (error) {
+      console.error('Failed to add comment:', error)
+      toast.error('Failed to add comment')
+    }
   }
 
   const handleAddTag = () => {
@@ -220,7 +308,8 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
     setIsUploading(true)
     try {
       const newFiles = await uploadFilesForNode(uploadedFiles, node.path)
-      setFiles([...files, ...newFiles])
+      sessionUploadsRef.current = [...sessionUploadsRef.current, ...newFiles]
+      setFiles((prev) => [...prev, ...newFiles])
     } catch (error) {
       console.error('Failed to upload files:', error)
     } finally {
@@ -244,13 +333,12 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   }
 
   const handleRemoveFile = async (fileToRemove: StoredFile) => {
-    try {
-      const success = await FileStorage.deleteFile(fileToRemove)
-      if (success) {
-        setFiles(files.filter(file => file.id !== fileToRemove.id))
-      }
-    } catch (error) {
-      console.error('Failed to remove file:', error)
+    setFiles((prev) => prev.filter((file) => file.id !== fileToRemove.id))
+    // A file uploaded in this session was never saved to the task, so delete it right away.
+    // Previously saved files are deleted from disk only when the edit is saved.
+    if (sessionUploadsRef.current.some((f) => f.id === fileToRemove.id)) {
+      sessionUploadsRef.current = sessionUploadsRef.current.filter((f) => f.id !== fileToRemove.id)
+      try { await FileStorage.deleteFile(fileToRemove) } catch (error) { console.error('Failed to remove file:', error) }
     }
   }
 
@@ -260,7 +348,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
       // Set the new tab as active
       useTabStore.getState().setActiveTab(tabId)
       navigate(`/editor/${encodeURIComponent(node.path)}`) // Navigate to the editor path
-      onClose() // Close the modal after opening the editor
+      void handleClose() // Close the modal after opening the editor
     }
   }
 
@@ -303,7 +391,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsEditing(!isEditing)}
+              onClick={() => (isEditing ? handleCancel() : setIsEditing(true))}
               className="p-2 rounded hover:bg-accent"
             >
               <Edit3 className="w-4 h-4" />
@@ -317,7 +405,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
               </button>
             )}
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="p-2 rounded hover:bg-accent"
             >
               <X className="w-4 h-4" />
@@ -656,8 +744,8 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                       >
                         <div className="flex-1 flex items-center gap-2 min-w-0">
                           <button
-                            onClick={() => {
-                              onClose()
+                            onClick={async () => {
+                              await handleClose()
                               navigate(`/tasks/${encodeURIComponent(ln.path)}`)
                             }}
                             className="text-left truncate"
@@ -676,27 +764,9 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                         </div>
                         {isEditing && (
                           <button
-                            onClick={async () => {
-                              try {
-                                await useNodeStore.getState().removeSoftLink(node.path, ln.path)
-                                const updatedLinks = (node.metadata.links || []).filter((v: string) => {
-                                  const s = String(v || '').replace(/\\/g,'/')
-                                  return s !== ln.metadata.id && s !== ln.path.replace(/\\/g,'/')
-                                })
-                                const updatedSoftLinks = Array.isArray(node.softLinks)
-                                  ? node.softLinks.filter((id: string) => id !== ln.metadata.id)
-                                  : []
-                                const updatedNode = {
-                                  ...node,
-                                  metadata: { ...node.metadata, links: updatedLinks },
-                                  softLinks: updatedSoftLinks
-                                }
-                                onUpdate(updatedNode)
-                                toast.success('Link removed')
-                              } catch (error) {
-                                console.error('Failed to remove link:', error)
-                                toast.error('Failed to remove link')
-                              }
+                            onClick={() => {
+                              const id = String(ln.metadata?.id || '')
+                              setDraftLinkIds((prev) => prev.filter((v) => v !== id))
                             }}
                             className="p-1 text-muted-foreground hover:text-destructive"
                             title="Remove link"
@@ -719,7 +789,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
             {isEditing && (
               <div className="flex justify-end gap-2">
                 <button
-                  onClick={() => setIsEditing(false)}
+                  onClick={handleCancel}
                   className="px-4 py-2 border border-input rounded-md hover:bg-accent"
                 >
                   Cancel
@@ -751,7 +821,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium">{comment.author}</span>
                     <span className="text-xs text-muted-foreground">
-                      {comment.timestamp.toLocaleDateString()}
+                      {new Date(comment.timestamp).toLocaleDateString()}
                     </span>
                   </div>
                   <p className="text-sm bg-muted p-3 rounded-md">
@@ -816,125 +886,13 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
         <SharedCreateLinkModal
           currentNodePath={node.path}
           onClose={() => setIsCreateLinkModalOpen(false)}
-          onLinkCreated={(updatedLinks) => {
-            setIsCreateLinkModalOpen(false)
-            if (updatedLinks) {
-              // Resolve returned links (may be IDs or paths) into normalized softLinks (IDs)
-              const pathToId = new Map<string, string>()
-              const idSet = new Set<string>()
-              for (const other of nodesMap.values()) {
-                const p = String(other.path || '').replace(/\\/g, '/')
-                const nid = String(other.metadata?.id || '')
-                if (p) pathToId.set(p, nid)
-                if (nid) idSet.add(nid)
-              }
-              const resolvedSoftLinks: string[] = []
-              for (const entry of (Array.isArray(updatedLinks) ? updatedLinks : [])) {
-                const raw = String(entry || '')
-                if (!raw) continue
-                if (idSet.has(raw)) {
-                  if (!resolvedSoftLinks.includes(raw)) resolvedSoftLinks.push(raw)
-                  continue
-                }
-                const norm = raw.replace(/\\/g, '/')
-                const withMd = /\.md$/i.test(norm) ? norm : `${norm}.md`
-                const tid = pathToId.get(norm) || pathToId.get(withMd)
-                if (tid && !resolvedSoftLinks.includes(tid)) resolvedSoftLinks.push(tid)
-              }
-              const updatedNode = { ...node, metadata: { ...node.metadata, links: updatedLinks }, softLinks: resolvedSoftLinks } as any
-              onUpdate(updatedNode)
-            } else {
-              onUpdate({ ...(node as any) })
-            }
+          excludeIds={draftLinkIds}
+          onSelectTarget={(targetPath) => {
+            const id = String(nodesMap.get(targetPath)?.metadata?.id || '')
+            if (id) setDraftLinkIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
           }}
         />
       )}
-    </div>
-  )
-}
-
-// Simple CreateLinkModal component
-interface CreateLinkModalProps {
-  currentNode: VerbweaverNode | null
-  onClose: () => void
-  onLinkCreated: (updatedNode?: VerbweaverNode) => void
-}
-
-function CreateLinkModal({ currentNode, onClose, onLinkCreated }: CreateLinkModalProps) {
-  const { nodes, createSoftLink } = useNodeStore()
-  const [selectedNodePath, setSelectedNodePath] = useState('')
-  
-     const availableNodes = Array.from(nodes.values()).filter(node => 
-     node.path !== currentNode?.path && node.isMarkdown
-   )
-   
-   console.log('Available nodes for linking:', availableNodes.length, availableNodes.map(n => ({ path: n.path, title: n.metadata.title || n.name })))
-  
-  const handleCreateLink = async () => {
-    if (!currentNode || !selectedNodePath) return
-    
-    try {
-      await createSoftLink(currentNode.path, selectedNodePath)
-      // Update current node's metadata locally so subsequent Save keeps the link
-      const selectedNode = nodes.get(selectedNodePath)
-      if (selectedNode) {
-        const updatedLinks = [...(currentNode.metadata.links || []), selectedNode.metadata.id]
-        const updatedNode = {
-          ...currentNode,
-          metadata: {
-            ...currentNode.metadata,
-            links: updatedLinks
-          }
-        }
-        onLinkCreated(updatedNode)
-      } else {
-        onLinkCreated()
-      }
-    } catch (error) {
-      console.error('Failed to create link:', error)
-    }
-  }
-  
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-background border border-border rounded-lg w-96 p-6">
-        <h3 className="text-lg font-semibold mb-4">Create Link</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Link this task to another task
-        </p>
-        
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">Select Task</label>
-          <select
-            value={selectedNodePath}
-            onChange={(e) => setSelectedNodePath(e.target.value)}
-            className="w-full p-2 border border-input rounded-md bg-background"
-          >
-            <option value="">Choose a task...</option>
-            {availableNodes.map((node) => (
-              <option key={node.path} value={node.path}>
-                {node.metadata.title || node.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border border-input rounded-md hover:bg-accent"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleCreateLink}
-            disabled={!selectedNodePath}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
-          >
-            Create Link
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
