@@ -29,6 +29,8 @@ import NodeContextMenu from '../components/graph/NodeContextMenu'
 import RemoveLinksModal from '../components/common/RemoveLinksModal'
 import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
+import { getLinkedNodes } from '../utils/nodeLinks'
+import { attachFilesToNode } from '../utils/nodeAttachments'
 import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers } from 'lucide-react'
 import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
@@ -91,7 +93,8 @@ function GraphView() {
   const [pendingNodePosition, setPendingNodePosition] = useState<{ x: number; y: number } | undefined>()
   const [parentPathForNewNode, setParentPathForNewNode] = useState<string>('')
   const [confirmState, setConfirmState] = useState<{ open: boolean; nodeId?: string; nodeName?: string }>({ open: false })
-  const [attachTarget, setAttachTarget] = useState<string | null>(null)
+  // Object (not string) so re-attaching to the same node after a cancelled picker re-opens it
+  const [attachTarget, setAttachTarget] = useState<{ path: string } | null>(null)
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set())
   const [multiDeleteOpen, setMultiDeleteOpen] = useState(false)
   // Selection that existed when a Shift+drag selection box started; the box adds to it
@@ -2244,7 +2247,7 @@ function GraphView() {
             navigate(`/tasks/${encodeURIComponent(nodeId)}`);
           }}
           onUnlinkEdge={handleUnlinkEdge}
-          onAttachFiles={(nodeId) => setAttachTarget(nodeId)}
+          onAttachFiles={(nodeId) => setAttachTarget({ path: nodeId })}
           onToggleLock={async (nodeId) => {
             try {
               const node = useNodeStore.getState().nodes.get(nodeId)
@@ -2422,20 +2425,8 @@ function GraphView() {
       {/* Remove Links Modal for Mind Map */}
       <RemoveLinksModal
         isOpen={removeLinksOpen}
-        linkedNodes={(() => {
-          if (!removeLinksNodePath) return []
-          const source = verbweaverNodes.get(removeLinksNodePath)
-          if (!source || !Array.isArray(source.softLinks)) return []
-          const results: { path: string; title: string }[] = []
-          for (const targetId of source.softLinks) {
-            const target = Array.from(verbweaverNodes.values()).find(n => n.metadata?.id === targetId)
-            if (target) results.push({ path: target.path, title: target.metadata?.title || target.name })
-          }
-          // De-duplicate by path
-          const uniq = new Map<string, { path: string; title: string }>()
-          results.forEach(r => uniq.set(r.path, r))
-          return Array.from(uniq.values()).sort((a, b) => a.title.localeCompare(b.title))
-        })()}
+        linkedNodes={getLinkedNodes(removeLinksNodePath ? verbweaverNodes.get(removeLinksNodePath) : undefined, verbweaverNodes)
+          .map(n => ({ path: n.path, title: n.metadata?.title || n.name }))}
         onClose={() => { setRemoveLinksOpen(false); setRemoveLinksNodePath(null) }}
         onRemoveSelected={async (paths) => {
           try {
@@ -2463,23 +2454,11 @@ function GraphView() {
           id="graph-attach-input"
           onChange={async (e) => {
             const files = e.target.files
-            const targetPath = attachTarget
+            const targetPath = attachTarget.path
             setAttachTarget(null)
-            if (!files || !targetPath) return
+            if (!files || files.length === 0 || !targetPath) return
             try {
-              const node = verbweaverNodes.get(targetPath)
-              if (!node) return
-              const existingFiles = ((node.metadata as any)?.task?.files) || []
-              const uploaded: StoredFile[] = []
-              for (const f of Array.from(files)) {
-                const sf = await FileStorage.uploadFile(f, targetPath)
-                if (sf) uploaded.push(sf)
-              }
-              const updatedTask = {
-                ...(node.metadata.task || {}),
-                files: [...existingFiles, ...uploaded],
-              }
-              await updateNode(targetPath, { metadata: { task: updatedTask } as any })
+              await attachFilesToNode(targetPath, files)
               toast.success('Files attached')
             } catch (err) {
               console.error('Attach files failed', err)

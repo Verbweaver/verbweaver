@@ -6,6 +6,10 @@ import { useNodeStore } from '../store/nodeStore'
 import { ReactFlow, Background, Controls, Edge, Node, NodeTypes, Connection, useReactFlow, ReactFlowProvider, applyNodeChanges, type NodeChange } from '@xyflow/react'
 import { buildEquivalenceBoxes, computeCoverRelations, computeRemainder } from '../utils/grouping'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
+import SharedCreateLinkModal from '../components/common/CreateLinkModal'
+import RemoveLinksModal from '../components/common/RemoveLinksModal'
+import { getLinkedNodes } from '../utils/nodeLinks'
+import { attachFilesToNode } from '../utils/nodeAttachments'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
 import * as htmlToImage from 'html-to-image'
 import toast from 'react-hot-toast'
@@ -25,7 +29,7 @@ function GroupViewInner() {
   const options = useGroupViewStore(s => s.options)
   const layout = useGroupViewStore(s => s.layout)
   const setBoxLayout = useGroupViewStore(s => s.setBoxLayout)
-  const { nodes: verbweaverNodes, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
+  const { nodes: verbweaverNodes, loadNodes, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
   const { addEditorTab } = useTabStore()
   const flowWrapperRef = useRef<HTMLDivElement>(null)
   const { fitView, getViewport, setViewport } = useReactFlow()
@@ -846,6 +850,53 @@ function GroupViewInner() {
     }
   }, [idToPath, removeSoftLink])
 
+  // Context-menu link/attachment targets, as node paths (menu ids are metadata ids)
+  const [createLinkPath, setCreateLinkPath] = useState<string | null>(null)
+  const [removeLinksPath, setRemoveLinksPath] = useState<string | null>(null)
+  // Object (not string) so re-attaching to the same node after a cancelled picker re-opens it
+  const [attachTarget, setAttachTarget] = useState<{ path: string } | null>(null)
+
+  const removeLinksCandidates = useMemo(
+    () => getLinkedNodes(removeLinksPath ? verbweaverNodes.get(removeLinksPath) : undefined, verbweaverNodes)
+      .map(n => ({ path: n.path, title: n.metadata?.title || n.name })),
+    [removeLinksPath, verbweaverNodes]
+  )
+
+  const handleRemoveLinks = useCallback(async (targetPaths: string[]) => {
+    const sourcePath = removeLinksPath
+    try {
+      if (!sourcePath) return
+      const sourceId = String(verbweaverNodes.get(sourcePath)?.metadata?.id || '')
+      const targetIds = new Set(targetPaths.map(p => String(verbweaverNodes.get(p)?.metadata?.id || '')).filter(Boolean))
+      for (const p of targetPaths) {
+        await removeSoftLink(sourcePath, p)
+      }
+      // Drop optimistic in-group edges for the removed links (either direction)
+      setOptimisticEdges(prev => prev.filter(e => {
+        const idx = e.id.indexOf('::e::')
+        if (idx === -1) return true
+        const [from, to] = e.id.slice(idx + 5).split('->')
+        return !((from === sourceId && targetIds.has(to)) || (to === sourceId && targetIds.has(from)))
+      }))
+      await loadNodes()
+      toast.success('Link(s) removed')
+    } catch (err) {
+      console.error('[GroupView] Failed to remove links', err)
+      toast.error('Failed to remove link(s)')
+    } finally {
+      setRemoveLinksPath(null)
+    }
+  }, [removeLinksPath, verbweaverNodes, removeSoftLink, loadNodes])
+
+  // When an attach target is set, open the hidden file picker
+  useEffect(() => {
+    if (!attachTarget) return
+    const id = setTimeout(() => {
+      (document.getElementById('group-attach-input') as HTMLInputElement | null)?.click()
+    }, 0)
+    return () => clearTimeout(id)
+  }, [attachTarget])
+
   const onConnect = useCallback(async (conn: Connection) => {
     const getUnderlying = (nid?: string | null) => (nid ? parseUnderlyingId(nid) : null)
     const s = getUnderlying(conn.source)
@@ -900,8 +951,52 @@ function GroupViewInner() {
           onDeleteNode={(nid) => { handleDeleteNode(nid || contextMenu.nodeId); setContextMenu(null) }}
           onEditNode={(nid) => { handleEditNode(nid || contextMenu.nodeId); setContextMenu(null) }}
           onUnlinkEdge={(eid) => { handleUnlinkEdge(eid || contextMenu.edgeId); setContextMenu(null) }}
+          onCreateLink={(nid) => { setCreateLinkPath(idToPath.get(nid) ?? null); setContextMenu(null) }}
+          onRemoveLinks={(nid) => { setRemoveLinksPath(idToPath.get(nid) ?? null); setContextMenu(null) }}
+          onAttachFiles={(nid) => { const path = idToPath.get(nid); setAttachTarget(path ? { path } : null); setContextMenu(null) }}
           onClose={() => setContextMenu(null)}
           onExportMapAsPng={exportMapAsPng}
+        />
+      )}
+      {createLinkPath && (
+        <SharedCreateLinkModal
+          currentNodePath={createLinkPath}
+          onClose={() => setCreateLinkPath(null)}
+          onLinkCreated={async () => {
+            try { await loadNodes() } catch (err) { console.error('[GroupView] Failed to refresh after creating link', err) }
+            toast.success('Link created')
+          }}
+        />
+      )}
+      <RemoveLinksModal
+        isOpen={!!removeLinksPath}
+        linkedNodes={removeLinksCandidates}
+        onClose={() => setRemoveLinksPath(null)}
+        onRemoveSelected={handleRemoveLinks}
+      />
+      {attachTarget && (
+        <input
+          type="file"
+          multiple
+          style={{ display: 'none' }}
+          id="group-attach-input"
+          onChange={async (e) => {
+            const input = e.currentTarget
+            const files = input.files
+            const targetPath = attachTarget.path
+            setAttachTarget(null)
+            if (!files || files.length === 0 || !targetPath) return
+            try {
+              await attachFilesToNode(targetPath, files)
+              toast.success('Files attached')
+            } catch (err) {
+              console.error('[GroupView] Attach files failed', err)
+              toast.error('Failed to attach files')
+            } finally {
+              input.value = ''
+            }
+          }}
+          onClick={(e) => e.stopPropagation()}
         />
       )}
     </div>

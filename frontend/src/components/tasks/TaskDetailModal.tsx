@@ -5,6 +5,8 @@ import { useNodeStore } from '../../store/nodeStore'
 import { useTabStore } from '../../store/tabStore'
 import { TaskState } from '@verbweaver/shared'
 import { FileStorage, StoredFile } from '../../utils/fileStorage'
+import { getLinkedNodes } from '../../utils/nodeLinks'
+import { uploadFilesForNode } from '../../utils/nodeAttachments'
 import clsx from 'clsx'
 import SharedCreateLinkModal from '../common/CreateLinkModal'
 import { KanbanColumn } from './ColumnManager'
@@ -76,22 +78,10 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   const { currentProjectPath } = useProjectStore()
 
   // Resolve linked nodes (normalized to IDs in node.softLinks)
-  const linkedNodes = useMemo(() => {
-    if (!node) return [] as VerbweaverNode[]
-    const linkIds: string[] = Array.isArray(node.softLinks) ? node.softLinks : []
-    if (linkIds.length === 0) return []
-    const results: VerbweaverNode[] = []
-    for (const other of nodesMap.values()) {
-      if (!other.isDirectory && linkIds.includes(other.metadata?.id)) {
-        results.push(other as any)
-      }
-    }
-    const uniq = new Map<string, VerbweaverNode>()
-    results.forEach(r => uniq.set(r.path, r))
-    return Array.from(uniq.values()).sort((a, b) => (
-      (a.metadata?.title || a.name).localeCompare(b.metadata?.title || b.name)
-    ))
-  }, [node?.path, nodesMap])
+  const linkedNodes = useMemo(
+    () => getLinkedNodes<VerbweaverNode>(node, nodesMap),
+    [node?.path, nodesMap]
+  )
 
   useEffect(() => {
     if (node) {
@@ -229,15 +219,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
 
     setIsUploading(true)
     try {
-      const newFiles: StoredFile[] = []
-      
-      for (const file of Array.from(uploadedFiles)) {
-        const storedFile = await FileStorage.uploadFile(file, node.path)
-        if (storedFile) {
-          newFiles.push(storedFile)
-        }
-      }
-      
+      const newFiles = await uploadFilesForNode(uploadedFiles, node.path)
       setFiles([...files, ...newFiles])
     } catch (error) {
       console.error('Failed to upload files:', error)

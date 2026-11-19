@@ -13,7 +13,8 @@ import toast from 'react-hot-toast'
 import { EDITOR_DEFAULT_FONT_SIZE, STORAGE_KEYS } from '@verbweaver/shared'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useNodeStore } from '../store/nodeStore'
-import { FileStorage, StoredFile } from '../utils/fileStorage'
+import { getLinkedNodes } from '../utils/nodeLinks'
+import { attachFilesToNode } from '../utils/nodeAttachments'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import SharedCreateLinkModal from '../components/common/CreateLinkModal'
@@ -122,20 +123,8 @@ function EditorView() {
   // Resolve linked nodes (soft links) for the current node
   const linkedNodes = useNodeStore((s) => {
     if (!resolvedNodePath) return [] as Array<{ path: string; name: string; title: string; id: string }>
-    const node = s.nodes.get(resolvedNodePath)
-    if (!node) return []
-    const linkIds: string[] = Array.isArray(node.softLinks) ? node.softLinks : []
-    const results: Array<{ path: string; name: string; title: string; id: string }> = []
-    if (linkIds.length === 0) return results
-    for (const other of s.nodes.values()) {
-      if (!other.isDirectory && linkIds.includes(other.metadata?.id)) {
-        results.push({ path: other.path, name: other.name, title: other.metadata?.title || other.name, id: other.metadata?.id })
-      }
-    }
-    // De-duplicate by path
-    const uniq = new Map<string, { path: string; name: string; title: string; id: string }>()
-    results.forEach(r => uniq.set(r.path, r))
-    return Array.from(uniq.values()).sort((a, b) => a.title.localeCompare(b.title))
+    return getLinkedNodes(s.nodes.get(resolvedNodePath), s.nodes)
+      .map(other => ({ path: other.path, name: other.name, title: other.metadata?.title || other.name, id: other.metadata?.id }))
   })
 
   // Ensure nodes are loaded (fix Links panel empty on Linux when Editor opens first)
@@ -1473,23 +1462,7 @@ function EditorView() {
               return
             }
 
-            const uploaded: StoredFile[] = []
-            for (const f of Array.from(files)) {
-              const sf = await FileStorage.uploadFile(f, nodePath)
-              if (sf) uploaded.push(sf)
-            }
-
-            await store.updateNode(nodePath, {
-              metadata: {
-                task: {
-                  ...((store.nodes.get(nodePath)?.metadata as any)?.task || {}),
-                  files: [
-                    ...((((store.nodes.get(nodePath)?.metadata as any)?.task || {}).files) || []),
-                    ...uploaded,
-                  ],
-                } as any,
-              },
-            })
+            await attachFilesToNode(nodePath, files)
             toast.success('Files attached')
 
             // Refresh Editor content so updated frontmatter is visible immediately
