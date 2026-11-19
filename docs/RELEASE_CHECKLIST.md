@@ -76,8 +76,15 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
 
 ## 6) In‑app updates
 - [ ] Help → “Check for Updates…” shows release notes when available
+- [ ] Support → “Check for Updates” gives the same result as the Help menu
 - [ ] Update downloads silently; “Restart to update” prompt appears after download
 - [ ] A published GitHub Release exists for the version under test
+- [ ] The release has the update metadata electron-updater reads; without it every
+      “Check for Updates” fails with a 404 (#17):
+  - [ ] `latest.yml` (Windows)
+  - [ ] `latest-mac.yml`, listing both the `-arm64` and `-x64` zips
+  - [ ] `latest-linux.yml`
+  - [ ] the matching `*.blockmap` files
 
 ## 7) Preferences (Desktop) – data paths
 - [ ] In Settings → Appearance, set optional overrides
@@ -92,8 +99,14 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
 - [ ] Install and launch on each OS; confirm backend spawns, Help docs visible offline
 
 ## 9) Release pipeline dry‑run (tag)
-- [ ] Create annotated tag `vX.Y.Z` and push
-- [ ] Confirm desktop builds for Windows/macOS/Linux publish to GitHub Releases
+- [ ] Set `version` in `desktop/package.json` (and root `package.json`) to `X.Y.Z`
+- [ ] Create annotated tag `vX.Y.Z` (with the `v`) and push. Only `v*.*.*` tags run the release
+      pipeline, and the `publish` job fails if the tag doesn't match `desktop/package.json`
+- [ ] Never create the release or upload its assets by hand. The `publish` job in
+      `release-desktop.yml` creates a **draft** release with every installer and the update
+      metadata (section 6). Tags with a suffix (`vX.Y.Z-rc.1`) become prereleases
+- [ ] Review the draft's assets, then publish it. Publishing triggers the Homebrew, winget and
+      Docker workflows
 - [ ] Verify Homebrew workflow pushed updated cask (tap repo)
 - [ ] Verify winget workflow created/updated PR in winget‑pkgs
 

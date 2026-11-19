@@ -8,6 +8,9 @@ export const APP_NAME = 'Verbweaver';
 export const APP_VERSION = '1.0.0';
 export const APP_DESCRIPTION = 'A writing and design platform that thinks in relationships';
 
+// Project links
+export const RELEASES_URL = 'https://github.com/Verbweaver/verbweaver/releases';
+
 // API configuration
 export const API_BASE_URL = 'http://localhost:8000';
 export const API_VERSION = 'v1';

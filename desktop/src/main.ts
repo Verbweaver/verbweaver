@@ -15,6 +15,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { spawn, ChildProcess, execFile } from 'child_process';
 import { autoUpdater } from 'electron-updater';
+import { RELEASES_URL, type UpdateCheckOutcome } from '@verbweaver/shared';
 import Store from 'electron-store';
 import * as net from 'net';
 import * as path from 'path';
@@ -679,59 +680,7 @@ function createMenu() {
         {
           label: 'Check for Updates…',
           click: async () => {
-            try {
-              const checking = dialog.showMessageBoxSync(mainWindow!, {
-                type: 'info',
-                message: 'Checking for updates…',
-                buttons: ['OK'],
-              });
-              // Avoid unused var
-              void checking;
-
-              autoUpdater.autoDownload = true;
-              const result = await autoUpdater.checkForUpdates();
-              const update = result?.updateInfo;
-              const current = app.getVersion();
-
-              if (update && update.version && update.version !== current) {
-                let notes = '';
-                const rn: any = (update as any).releaseNotes;
-                if (Array.isArray(rn)) {
-                  notes = rn.map((n: any) => (typeof n === 'string' ? n : n?.note || '')).join('\n\n');
-                } else if (typeof rn === 'string') {
-                  notes = rn;
-                }
-                dialog.showMessageBox(mainWindow!, {
-                  type: 'info',
-                  title: `Update available: ${update.version}`,
-                  message: `A new version is available. It will download in the background and prompt to restart when ready.`,
-                  detail: notes || 'See release notes on the Releases page.',
-                  buttons: ['OK']
-                });
-                // When downloaded, prompt to restart
-                autoUpdater.once('update-downloaded', () => {
-                  dialog.showMessageBox(mainWindow!, {
-                    type: 'info',
-                    buttons: ['Restart Now', 'Later'],
-                    title: 'Update Ready',
-                    message: 'An update has been downloaded. Restart to apply it now?'
-                  }).then((res) => {
-                    if (res.response === 0) {
-                      autoUpdater.quitAndInstall();
-                    }
-                  });
-                });
-              } else {
-                dialog.showMessageBox(mainWindow!, {
-                  type: 'info',
-                  title: 'Up to date',
-                  message: `You are running the latest version (${current}).`,
-                  buttons: ['OK']
-                });
-              }
-            } catch (e) {
-              dialog.showErrorBox('Update check failed', String(e));
-            }
+            await showUpdateOutcome(await checkForUpdatesShared());
           }
         },
         {
@@ -784,24 +733,117 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
+// ---- Updates ----
+// The Help menu and the Support page (IPC 'update:check') share this check. When an update is
+// available it downloads in the background, and setupAutoUpdater() prompts for a restart.
+
+function releaseNotesText(notes: unknown): string {
+  const raw = Array.isArray(notes)
+    ? notes.map((n: any) => (typeof n === 'string' ? n : n?.note || '')).join('\n\n')
+    : typeof notes === 'string' ? notes : '';
+  // The GitHub provider returns HTML, but message boxes show plain text.
+  return raw
+    .replace(/<br\s*\/?>|<\/(p|li|h\d)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+async function checkForUpdatesShared(): Promise<UpdateCheckOutcome> {
+  const current = app.getVersion();
+  try {
+    autoUpdater.autoDownload = true;
+    const result = await autoUpdater.checkForUpdates();
+    // null: electron-updater skips the check in builds that aren't installed (dev / unpacked).
+    if (!result) return { status: 'unsupported', version: current };
+    if (result.isUpdateAvailable) {
+      return {
+        status: 'available',
+        version: result.updateInfo.version,
+        notes: releaseNotesText(result.updateInfo.releaseNotes),
+      };
+    }
+    return { status: 'current', version: current };
+  } catch (e) {
+    const detail = String(e);
+    console.error('Update check failed:', e);
+    // 404 / "Cannot find latest*.yml": the release is missing its update metadata (#17).
+    const missingMetadata = /Cannot find latest|HttpError: 404/i.test(detail);
+    const message = missingMetadata
+      ? "Update information for the latest release wasn't found. " +
+        'You can download the newest version from the Releases page.'
+      : "Couldn't check for updates. Check your internet connection, " +
+        'or download the newest version from the Releases page.';
+    return { status: 'error', message, detail };
+  }
+}
+
+function showAppMessageBox(options: Electron.MessageBoxOptions) {
+  return mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options);
+}
+
+async function showUpdateOutcome(outcome: UpdateCheckOutcome): Promise<void> {
+  switch (outcome.status) {
+    case 'available':
+      await showAppMessageBox({
+        type: 'info',
+        title: `Update available: ${outcome.version}`,
+        message: `Verbweaver ${outcome.version} is available. It will download in the background, and you'll be asked to restart when it's ready.`,
+        detail: outcome.notes || 'See the release notes on the Releases page.',
+        buttons: ['OK'],
+      });
+      return;
+    case 'current':
+      await showAppMessageBox({
+        type: 'info',
+        title: 'Up to date',
+        message: `You are running the latest version (${outcome.version}).`,
+        buttons: ['OK'],
+      });
+      return;
+    case 'unsupported':
+    case 'error': {
+      const isError = outcome.status === 'error';
+      const { response } = await showAppMessageBox({
+        type: isError ? 'error' : 'info',
+        title: isError ? 'Update check failed' : 'Updates unavailable',
+        message: isError
+          ? outcome.message
+          : 'Automatic updates only work in installed builds of Verbweaver.',
+        detail: isError ? outcome.detail : undefined,
+        buttons: ['Open Releases Page', 'OK'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      if (response === 0) shell.openExternal(RELEASES_URL);
+      return;
+    }
+  }
+}
+
+function setupAutoUpdater() {
+  // Registered once, so both check entry points get the restart prompt.
+  autoUpdater.on('update-downloaded', async (info) => {
+    const { response } = await showAppMessageBox({
+      type: 'info',
+      title: 'Update Ready',
+      message: `Verbweaver ${info.version} has been downloaded. Restart to apply it now?`,
+      detail: 'If you choose Later, the update is installed when you quit Verbweaver.',
+      buttons: ['Restart Now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) autoUpdater.quitAndInstall();
+  });
+  autoUpdater.on('error', (e) => console.error('Auto-updater error:', e));
+}
+
 // IPC Handlers with error handling
 function setupIpcHandlers() {
-  // Manual update check from renderer
-  ipc.handle('update:check', async () => {
-    try {
-      autoUpdater.autoDownload = true;
-      const result = await autoUpdater.checkForUpdates();
-      const update = result?.updateInfo;
-      const current = app.getVersion();
-      if (update && update.version && update.version !== current) {
-        // Will prompt when downloaded, as in menu handler
-        return { updateAvailable: true, version: update.version };
-      }
-      return { updateAvailable: false, version: current };
-    } catch (e: any) {
-      return { error: String(e) };
-    }
-  });
+  // Manual update check from renderer (Support page)
+  ipc.handle('update:check', () => checkForUpdatesShared());
   // Electron 43+ opens dialogs in Downloads when no defaultPath is given, instead of the
   // OS-remembered folder. Remember the last folder ourselves (fallback: Documents).
   const dialogDefaultPath = (fileName?: string): string => {
@@ -3067,6 +3109,7 @@ app.whenReady().then(async () => {
   createWindow();
   createMenu();
   setupIpcHandlers();
+  setupAutoUpdater();
   // Persist userData path early so renderer can derive defaults
   try { store.set('userDataPath', app.getPath('userData')); } catch {}
   // Initialize default global templates base if not set

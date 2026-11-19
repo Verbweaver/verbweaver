@@ -170,9 +170,10 @@ jobs:
           fi
 
       # release-testing is the last gate before a release, so it is signed and notarized like main
-      # to catch signing problems (#32) before they ship.
-      - name: Package desktop app (signed on main and release-testing)
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release-testing'
+      # to catch signing problems (#32) before they ship. Release tags (vX.Y.Z) package the same way;
+      # the `publish` job below uploads the result, so no matrix job publishes on its own (#17).
+      - name: Package desktop app (signed on main, release-testing and release tags)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release-testing' || startsWith(github.ref, 'refs/tags/v')
         working-directory: desktop
         shell: bash
         env:
@@ -201,36 +202,6 @@ jobs:
             fi
           else
             npx electron-builder --linux --publish never
-          fi
-
-      - name: Package and publish desktop app (tags/releases)
-        if: startsWith(github.ref, 'refs/tags/')
-        working-directory: desktop
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        shell: bash
-        run: |
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            if [[ -n "$WIN_CSC_LINK" ]]; then export CSC_LINK="$WIN_CSC_LINK"; fi
-            if [[ -n "$WIN_CSC_KEY_PASSWORD" ]]; then export CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"; fi
-            npm run dist:win
-          elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            if [[ "${{ matrix.mac_arch }}" == "arm64" ]]; then
-              npx electron-builder --mac --arm64
-            else
-              npx electron-builder --mac --x64
-            fi
-          else
-            npm run dist:linux
           fi
 
       # electron-builder signs, notarizes and staples the .app before it builds the DMG/ZIP.
@@ -282,5 +253,76 @@ jobs:
             !desktop/dist-app/builder-debug.yml
           if-no-files-found: error
           retention-days: 7
+
+  # Creates a DRAFT GitHub Release from the matrix builds. Review it, then publish it by hand.
+  # electron-updater needs latest.yml (Windows), latest-mac.yml and latest-linux.yml on the release (#17).
+  publish:
+    name: Create draft release
+    needs: build-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check tag matches app version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="$(jq -r .version desktop/package.json)"
+          if [[ "$TAG" != "v$VERSION" ]]; then
+            echo "::error::Tag $TAG does not match desktop/package.json version $VERSION (expected v$VERSION)"
+            exit 1
+          fi
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
+      - name: Merge macOS update metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Each mac arch job writes its own latest-mac.yml. electron-updater expects one file
+          # listing both arches, and it picks the -arm64 asset on Apple silicon.
+          X64=artifacts/desktop-macos-latest-x64/latest-mac.yml
+          ARM=artifacts/desktop-macos-latest-arm64/latest-mac.yml
+          test -f "$X64" && test -f "$ARM"
+          yq -i ".files += load(\"$ARM\").files" "$X64"
+          rm "$ARM"
+          cat "$X64"
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release
+          # Raw distributables only. Never upload Actions artifact zips (see #32).
+          while IFS= read -r -d '' f; do
+            name="$(basename "$f")"
+            if [[ -e "release/$name" ]]; then echo "::error::Duplicate asset name $name"; exit 1; fi
+            mv "$f" "release/$name"
+          done < <(find artifacts -maxdepth 2 -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' \
+            -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.blockmap' \
+            -o -name 'latest*.yml' \) -print0)
+          ls -l release
+          for f in latest.yml latest-mac.yml latest-linux.yml; do
+            test -f "release/$f" || { echo "::error::Missing update metadata $f"; exit 1; }
+          done
+
+      - name: Create draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          FLAGS=(--draft --verify-tag --generate-notes --title "$GITHUB_REF_NAME")
+          # Tags like v1.2.3-rc.1 are prereleases; electron-updater skips them for stable users.
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then FLAGS+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" "${FLAGS[@]}" release/*
 
 

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import type { UpdateCheckOutcome } from '@verbweaver/shared';
 
 // Define types for the API
 export interface DocFile {
@@ -52,6 +53,7 @@ export interface ElectronAPI {
   // System operations
   getAppVersion: () => Promise<string>;
   openExternal: (url: string) => Promise<void>;
+  checkForUpdates: () => Promise<UpdateCheckOutcome>;
   showItemInFolder: (path: string) => Promise<void>;
   openPath: (path: string) => Promise<void>;
   
