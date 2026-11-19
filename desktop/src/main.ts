@@ -156,7 +156,42 @@ interface DocFile {
   name: string;
   path: string;
   type: 'file' | 'directory';
+  title?: string; // first H1 of a Markdown doc, else the file name
   children?: DocFile[];
+}
+
+// Returns the text of the first level-1 ATX heading ("# Title"), ignoring a leading
+// YAML front-matter block and fenced code blocks. Falls back to `fallback`.
+function extractDocTitle(content: string, fallback: string): string {
+  const lines = content.split(/\r?\n/);
+  let i = 0;
+  if (lines[0]?.trim() === '---') {
+    const end = lines.findIndex((l, idx) => idx > 0 && /^(---|\.\.\.)\s*$/.test(l));
+    if (end > 0) i = end + 1;
+  }
+  let fence: string | null = null;
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      if (fence === null) fence = marker;
+      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      continue;
+    }
+    if (fence !== null) continue;
+    const h1 = line.match(/^\s{0,3}#[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/);
+    if (h1 && h1[1].trim()) return h1[1].trim();
+  }
+  return fallback;
+}
+
+// Help list order: README first (default page), the rest by title, case-insensitive.
+function compareDocsForHelp(a: DocFile, b: DocFile): number {
+  const aReadme = a.name.toLowerCase() === 'readme.md';
+  const bReadme = b.name.toLowerCase() === 'readme.md';
+  if (aReadme !== bReadme) return aReadme ? -1 : 1;
+  return (a.title ?? a.name).localeCompare(b.title ?? b.name, undefined, { sensitivity: 'base' });
 }
 
 // Initialize electron store with encryption
@@ -2994,10 +3029,17 @@ function setupIpcHandlers() {
           children
         });
       } else if (item.name.endsWith('.md')) {
+        let title = item.name;
+        try {
+          title = extractDocTitle(await fs.readFile(fullPath, 'utf-8'), item.name);
+        } catch (error) {
+          console.warn(`Could not read doc title from ${fullPath}:`, error);
+        }
         result.push({
           name: item.name,
           path: relativePath,
-          type: 'file'
+          type: 'file',
+          title
         });
       }
     }
@@ -3012,16 +3054,19 @@ function setupIpcHandlers() {
       console.log(`Listing docs from: ${docsPath}`);
       
       const all = await listDocsRecursive(docsPath);
-      console.log(`Found ${JSON.stringify(all, null, 2)} docs`);
-      // Flatten only top-level files; filter out directories for the left list UI
-      const filesOnly: Array<{ name: string; path: string; type: 'file' }> = [];
+      // Flatten to files only; directories are not shown in the left list UI
+      const filesOnly: DocFile[] = [];
       const walk = (nodes: DocFile[]) => {
         for (const n of nodes) {
-          if (n.type === 'file') filesOnly.push({ name: n.name, path: n.path, type: 'file' });
+          if (n.type === 'file') {
+            filesOnly.push({ name: n.name, path: n.path, type: 'file', title: n.title ?? n.name });
+          }
           if (n.children && n.children.length) walk(n.children);
         }
       };
-      walk(all as any);
+      walk(all);
+      filesOnly.sort(compareDocsForHelp);
+      console.log(`Found ${filesOnly.length} docs`);
       return filesOnly;
     } catch (error) {
       console.error('Failed to list docs:', error);

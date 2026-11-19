@@ -6,6 +6,7 @@ declare global {
   interface DocFile {
     name: string;
     path: string;
+    title?: string;
     type: 'file' | 'directory';
     children?: DocFile[];
   }

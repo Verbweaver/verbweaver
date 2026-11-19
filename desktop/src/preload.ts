@@ -5,6 +5,7 @@ import type { UpdateCheckOutcome } from '@verbweaver/shared';
 export interface DocFile {
   name: string;
   path: string; // filename for docs, relative path for general case
+  title?: string; // first H1 of a Markdown doc, else the file name
   type: 'file' | 'directory';
   children?: DocFile[];
 }
