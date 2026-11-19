@@ -952,7 +952,13 @@ function GraphView() {
         const edgesChanged = edgeSig !== prevEdgesSig
 
         if (nodesChanged) {
-          setNodes(flowNodes)
+          // flowNodes are rebuilt from scratch and carry no selection; keep what React Flow had
+          // selected so a rebuild (e.g. after a drag saves positions) doesn't deselect nodes (#71)
+          setNodes(prev => {
+            const selected = new Set(prev.filter(n => n.selected).map(n => n.id))
+            if (selected.size === 0) return flowNodes
+            return flowNodes.map(n => (selected.has(n.id) ? { ...n, selected: true } : n))
+          })
           lastGraphSigsRef.current.nodes = nodeSig
         }
         if (edgesChanged) {
@@ -967,30 +973,38 @@ function GraphView() {
 
   // Handle node drag
   const onNodeDragStop = useCallback(
-    (_: any, node: Node) => {
-      // Prevent drag persistence when locked
-      if ((node.data as any)?.locked) return
+    (_: any, node: Node, dragged?: Node[]) => {
+      // When a selection is dragged, React Flow passes every moved node; handle all of them
+      const moved = (dragged && dragged.length > 0 ? dragged : [node])
+        // Prevent drag persistence when locked
+        .filter(n => !(n.data as any)?.locked)
+      if (moved.length === 0) return
       // Only persist when rigid mode is ON
       if (rigidMode) {
-        updateNode(node.id, {
-          metadata: { position: node.position }
-        }).catch((err: any) => {
-          // Surface details to help diagnose failures in Electron/web
-          try {
-            // eslint-disable-next-line no-console
-            console.error('[Graph] Failed to save node position', { id: node.id, position: node.position, error: err })
-          } catch {}
-          toast.error('Failed to save node position')
+        const folderPositions: Record<string, { x: number; y: number }> = {}
+        moved.forEach(n => {
+          updateNode(n.id, {
+            metadata: { position: n.position }
+          }).catch((err: any) => {
+            // Surface details to help diagnose failures in Electron/web
+            try {
+              // eslint-disable-next-line no-console
+              console.error('[Graph] Failed to save node position', { id: n.id, position: n.position, error: err })
+            } catch {}
+            toast.error('Failed to save node position')
+          })
+          // Persist per-project position for folders and nodes root
+          const isFolder = (n.data as any)?.isDirectory || (n.data as any)?.type === 'folder' || n.id === 'nodes'
+          if (isFolder) folderPositions[n.id] = { x: n.position.x, y: n.position.y }
         })
-        // Persist per-project position for folders and nodes root
-        const isFolder = (node.data as any)?.isDirectory || (node.data as any)?.type === 'folder' || node.id === 'nodes'
-        if (isFolder) {
-          setGraphPositions(prev => ({ ...prev, [node.id]: { x: node.position.x, y: node.position.y } }))
+        if (Object.keys(folderPositions).length > 0) {
+          setGraphPositions(prev => ({ ...prev, ...folderPositions }))
         }
       }
       // After moving, recompute edge handles to ensure closest-side attachments
       setEdges(prev => {
-        const nodePositions = new Map(nodes.map(n => [n.id, n.id === node.id ? node.position : n.position]))
+        const movedPositions = new Map(moved.map(n => [n.id, n.position]))
+        const nodePositions = new Map(nodes.map(n => [n.id, movedPositions.get(n.id) ?? n.position]))
         const choose = (s: { x: number; y: number }, t: { x: number; y: number }) => {
           const dx = t.x - s.x; const dy = t.y - s.y
           if (Math.abs(dy) >= Math.abs(dx)) return dy > 0 ? { sourceHandle: 'bottom', targetHandle: 'top' } : { sourceHandle: 'top', targetHandle: 'bottom' }
