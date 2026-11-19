@@ -7,9 +7,16 @@ interface SharedCreateLinkModalProps {
   currentNodePath: string
   onClose: () => void
   onLinkCreated?: (updatedLinks?: string[]) => void
+  /**
+   * Stage-only mode: when given, picking a target calls this instead of writing the link, so the
+   * caller can apply it later (e.g. on Save). `onLinkCreated` is not called in this mode.
+   */
+  onSelectTarget?: (targetPath: string) => void
+  /** Node IDs to hide from the candidates; defaults to the source node's stored `metadata.links`. */
+  excludeIds?: string[]
 }
 
-export function SharedCreateLinkModal({ currentNodePath, onClose, onLinkCreated }: SharedCreateLinkModalProps) {
+export function SharedCreateLinkModal({ currentNodePath, onClose, onLinkCreated, onSelectTarget, excludeIds }: SharedCreateLinkModalProps) {
   const { nodes, createSoftLink } = useNodeStore()
   const [search, setSearch] = useState('')
   const [selectedPath, setSelectedPath] = useState('')
@@ -18,7 +25,9 @@ export function SharedCreateLinkModal({ currentNodePath, onClose, onLinkCreated 
   // Build list of candidate nodes (exclude current node, directories, non-markdown, and existing links)
   const candidates = useMemo(() => {
     const source = nodes.get(currentNodePath)
-    const existingIds = new Set<string>(Array.isArray(source?.metadata?.links) ? (source!.metadata.links as string[]) : [])
+    const existingIds = new Set<string>(
+      excludeIds ?? (Array.isArray(source?.metadata?.links) ? (source!.metadata.links as string[]) : [])
+    )
     const all = Array.from(nodes.values()).filter(n => {
       if (n.path === currentNodePath) return false
       if (!n.isMarkdown || n.isDirectory) return false
@@ -36,7 +45,7 @@ export function SharedCreateLinkModal({ currentNodePath, onClose, onLinkCreated 
       .filter(x => x.score > 0)
       .sort((a, b) => b.score - a.score || (a.node.metadata.title || a.node.name).localeCompare(b.node.metadata.title || b.node.name))
       .map(x => x.node)
-  }, [nodes, currentNodePath, search])
+  }, [nodes, currentNodePath, search, excludeIds])
 
   useEffect(() => {
     if (!selectedPath && candidates.length > 0) {
@@ -46,6 +55,11 @@ export function SharedCreateLinkModal({ currentNodePath, onClose, onLinkCreated 
 
   const handleCreate = async () => {
     if (!selectedPath) return
+    if (onSelectTarget) {
+      onSelectTarget(selectedPath)
+      onClose()
+      return
+    }
     setIsBusy(true)
     try {
       await createSoftLink(currentNodePath, selectedPath)
