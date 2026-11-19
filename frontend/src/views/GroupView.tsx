@@ -10,6 +10,7 @@ import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import RemoveLinksModal from '../components/common/RemoveLinksModal'
 import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
+import { chooseHandleIds, type XY } from '../utils/edgeHandles'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
 import * as htmlToImage from 'html-to-image'
 import toast from 'react-hot-toast'
@@ -224,11 +225,13 @@ function GroupViewInner() {
           const cardW = 180
           const cardH = 80
           const padX = 12, padY = 28
+          const cardPos = new Map<string, XY>()
           childIds.forEach((cid, cidx) => {
             const col = cidx % columns
             const row = Math.floor(cidx / columns)
             const cx = padX + col * (cardW + 12)
             const cy = padY + row * (cardH + 12)
+            cardPos.set(cid, { x: cx, y: cy })
             const meta = idToMeta.get(cid)
             const path = idToPath.get(cid)
             const storeNode = path ? verbweaverNodes.get(path) : undefined
@@ -247,18 +250,19 @@ function GroupViewInner() {
             } as any)
           })
           // Intra-group soft-link edges between child nodes
-          const idSet = new Set(childIds)
           childIds.forEach(from => {
             const links = idToMeta.get(from)?.links || []
             links.forEach(to => {
-              if (idSet.has(String(to))) {
+              const fromPos = cardPos.get(from)
+              const toPos = cardPos.get(String(to))
+              if (fromPos && toPos) {
                 edges.push({
                   id: `${sid}::e::${from}->${to}`,
                   source: `${sid}::n::${from}`,
                   target: `${sid}::n::${to}`,
                   type: 'default',
-                  sourceHandle: 'right-source',
-                  targetHandle: 'left-target',
+                  // Attach to the facing sides so links to an earlier card don't overshoot both cards (#85)
+                  ...chooseHandleIds(fromPos, toPos),
                 } as any)
               }
             })
@@ -368,11 +372,13 @@ function GroupViewInner() {
           const cardW = 180
           const cardH = 80
           const padX = 12, padY = 20
+          const cardPos = new Map<string, XY>()
           childIds.forEach((cid, cidx) => {
             const col = cidx % columns
             const row = Math.floor(cidx / columns)
             const cx = padX + col * (cardW + 12)
             const cy = padY + row * (cardH + 12) + 24 // leave space for header
+            cardPos.set(cid, { x: cx, y: cy })
             const meta = idToMeta.get(cid)
             const path = idToPath.get(cid)
             const storeNode = path ? verbweaverNodes.get(path) : undefined
@@ -391,18 +397,19 @@ function GroupViewInner() {
             } as any)
           })
           // Soft-link edges restricted to childIds within this base box
-          const idSet = new Set(childIds)
           childIds.forEach(from => {
             const links = idToMeta.get(from)?.links || []
             links.forEach(to => {
-              if (idSet.has(String(to))) {
+              const fromPos = cardPos.get(from)
+              const toPos = cardPos.get(String(to))
+              if (fromPos && toPos) {
                 edges.push({
                   id: `${baseId}::e::${from}->${to}`,
                   source: `${baseId}::n::${from}`,
                   target: `${baseId}::n::${to}`,
                   type: 'default',
-                  sourceHandle: 'right-source',
-                  targetHandle: 'left-target',
+                  // Attach to the facing sides so links to an earlier card don't overshoot both cards (#85)
+                  ...chooseHandleIds(fromPos, toPos),
                 } as any)
               }
             })
