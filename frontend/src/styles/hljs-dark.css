@@ -1,0 +1,104 @@
+/*
+  highlight.js "GitHub Dark" token colors, scoped to dark mode for Markdown views.
+  Generated from highlight.js/styles/github-dark.css (highlight.js 11.11.1); the base
+  .hljs color/background rule is omitted so code blocks use the app theme's colors.
+  Light mode uses highlight.js/styles/github.css directly.
+
+  Theme: GitHub Dark - Author: github.com - Maintainer: @Hirse
+  highlight.js: BSD 3-Clause License, Copyright (c) 2006, Ivan Sagalaev.
+*/
+.dark .prose .hljs-doctag,
+.dark .prose .hljs-keyword,
+.dark .prose .hljs-meta .hljs-keyword,
+.dark .prose .hljs-template-tag,
+.dark .prose .hljs-template-variable,
+.dark .prose .hljs-type,
+.dark .prose .hljs-variable.language_ {
+  /* prettylights-syntax-keyword */
+  color: #ff7b72
+}
+.dark .prose .hljs-title,
+.dark .prose .hljs-title.class_,
+.dark .prose .hljs-title.class_.inherited__,
+.dark .prose .hljs-title.function_ {
+  /* prettylights-syntax-entity */
+  color: #d2a8ff
+}
+.dark .prose .hljs-attr,
+.dark .prose .hljs-attribute,
+.dark .prose .hljs-literal,
+.dark .prose .hljs-meta,
+.dark .prose .hljs-number,
+.dark .prose .hljs-operator,
+.dark .prose .hljs-variable,
+.dark .prose .hljs-selector-attr,
+.dark .prose .hljs-selector-class,
+.dark .prose .hljs-selector-id {
+  /* prettylights-syntax-constant */
+  color: #79c0ff
+}
+.dark .prose .hljs-regexp,
+.dark .prose .hljs-string,
+.dark .prose .hljs-meta .hljs-string {
+  /* prettylights-syntax-string */
+  color: #a5d6ff
+}
+.dark .prose .hljs-built_in,
+.dark .prose .hljs-symbol {
+  /* prettylights-syntax-variable */
+  color: #ffa657
+}
+.dark .prose .hljs-comment,
+.dark .prose .hljs-code,
+.dark .prose .hljs-formula {
+  /* prettylights-syntax-comment */
+  color: #8b949e
+}
+.dark .prose .hljs-name,
+.dark .prose .hljs-quote,
+.dark .prose .hljs-selector-tag,
+.dark .prose .hljs-selector-pseudo {
+  /* prettylights-syntax-entity-tag */
+  color: #7ee787
+}
+.dark .prose .hljs-subst {
+  /* prettylights-syntax-storage-modifier-import */
+  color: #c9d1d9
+}
+.dark .prose .hljs-section {
+  /* prettylights-syntax-markup-heading */
+  color: #1f6feb;
+  font-weight: bold
+}
+.dark .prose .hljs-bullet {
+  /* prettylights-syntax-markup-list */
+  color: #f2cc60
+}
+.dark .prose .hljs-emphasis {
+  /* prettylights-syntax-markup-italic */
+  color: #c9d1d9;
+  font-style: italic
+}
+.dark .prose .hljs-strong {
+  /* prettylights-syntax-markup-bold */
+  color: #c9d1d9;
+  font-weight: bold
+}
+.dark .prose .hljs-addition {
+  /* prettylights-syntax-markup-inserted */
+  color: #aff5b4;
+  background-color: #033a16
+}
+.dark .prose .hljs-deletion {
+  /* prettylights-syntax-markup-deleted */
+  color: #ffdcd7;
+  background-color: #67060c
+}
+.dark .prose .hljs-char.escape_,
+.dark .prose .hljs-link,
+.dark .prose .hljs-params,
+.dark .prose .hljs-property,
+.dark .prose .hljs-punctuation,
+.dark .prose .hljs-tag {
+  /* purposely ignored */
+}

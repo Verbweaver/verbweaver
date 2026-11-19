@@ -343,16 +343,15 @@ To reset all settings and data:
 
 ## Next Steps
 
-- Read the [User Guide](user-guide.md) for detailed features
+- Read the [Desktop Application Guide](desktop-guide.md) for detailed features
 - Check the [API Reference](api-reference.md) for automation
 - Join our [community](https://github.com/Verbweaver/verbweaver/discussions)
 
 ## Getting Help
 
 ### Documentation
-- [User Guide](user-guide.md)
-- [FAQ](faq.md)
-- [Troubleshooting](troubleshooting.md)
+- [Desktop Application Guide](desktop-guide.md)
+- [Documentation index](README.md)
 
 ### Community
 - [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues)
@@ -361,5 +360,5 @@ To reset all settings and data:
 
 ### Support
 - Email: support@verbweaver.com
-- Documentation: [docs/](.)
+- Documentation: [Documentation index](README.md)
 - Bug Reports: [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues) 

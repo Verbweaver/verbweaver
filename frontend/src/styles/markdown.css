@@ -1,6 +1,7 @@
-/* GitHub-style Markdown rendering */
+/* GitHub-style Markdown rendering.
+   Theme variables (styles/index.css) are bare HSL triplets, so always wrap them: hsl(var(--x)). */
 .prose {
-  color: var(--foreground);
+  color: hsl(var(--foreground));
   max-width: 100%;
 }
 
@@ -18,7 +19,7 @@
   font-size: 2em;
   margin-top: 0;
   margin-bottom: 0.8888889em;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid hsl(var(--border));
   padding-bottom: 0.3em;
 }
 
@@ -26,7 +27,7 @@
   font-size: 1.5em;
   margin-top: 1.5555556em;
   margin-bottom: 0.8888889em;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid hsl(var(--border));
   padding-bottom: 0.3em;
 }
 
@@ -54,7 +55,7 @@
   margin-bottom: 1.7142857em;
   border-radius: 0.375rem;
   padding: 0.8571429em 1.1428571em;
-  background-color: var(--muted);
+  background-color: hsl(var(--muted));
   overflow-x: auto;
 }
 
@@ -82,7 +83,7 @@
 
 .prose thead {
   border-bottom-width: 1px;
-  border-bottom-color: var(--border);
+  border-bottom-color: hsl(var(--border));
 }
 
 .prose thead th {
@@ -95,7 +96,7 @@
 
 .prose tbody tr {
   border-bottom-width: 1px;
-  border-bottom-color: var(--border);
+  border-bottom-color: hsl(var(--border));
 }
 
 .prose tbody tr:last-child {
@@ -110,26 +111,25 @@
 .prose blockquote {
   font-style: italic;
   border-left-width: 0.25rem;
-  border-left-color: var(--primary);
+  border-left-color: hsl(var(--primary));
   margin-top: 1.6em;
   margin-bottom: 1.6em;
   padding-left: 1em;
-  color: var(--muted-foreground);
+  color: hsl(var(--muted-foreground));
 }
 
 .prose a {
-  color: var(--primary);
+  color: hsl(var(--primary));
   text-decoration: underline;
+  text-underline-offset: 0.15em;
   font-weight: 500;
+  transition: opacity 0.15s ease;
 }
 
+/* No padding/background on hover: it shifted the surrounding text */
 .prose a:hover {
-  color: var(--primary-foreground);
-  background-color: var(--primary);
-  text-decoration: none;
-  padding: 0 0.2em;
-  border-radius: 0.2em;
-  transition: all 0.2s ease;
+  opacity: 0.8;
+  text-decoration-thickness: 2px;
 }
 
 .prose strong {
@@ -143,9 +143,37 @@
   padding-left: 1.625em;
 }
 
+.prose ul {
+  list-style-type: disc;
+}
+
+.prose ol {
+  list-style-type: decimal;
+}
+
+.prose ul ul,
+.prose ol ul {
+  list-style-type: circle;
+}
+
+.prose ul ul ul,
+.prose ol ul ul {
+  list-style-type: square;
+}
+
 .prose li {
   margin-top: 0.5em;
   margin-bottom: 0.5em;
+}
+
+.prose li::marker {
+  color: hsl(var(--muted-foreground));
+}
+
+.prose li > ul,
+.prose li > ol {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
 }
 
 .prose > ul > li p,
@@ -164,18 +192,22 @@
 }
 
 .prose hr {
-  border-color: var(--border);
+  border-color: hsl(var(--border));
   margin-top: 3em;
   margin-bottom: 3em;
 }
 
-/* Syntax highlighting adjustments for dark mode */
-.dark .prose pre {
+/* Inline code (not inside code blocks) */
+.prose :not(pre) > code {
   background-color: hsl(var(--muted));
+  padding: 0.125em 0.375em;
+  border-radius: 0.25rem;
 }
 
-.dark .prose code {
-  color: hsl(var(--muted-foreground));
+/* Code blocks keep the pre's theme background; the highlight.js theme only colors tokens */
+.prose pre code.hljs {
+  background: transparent;
+  padding: 0;
 }
 
 /* Task lists */
@@ -184,8 +216,12 @@
   vertical-align: middle;
 }
 
+.prose .contains-task-list,
 .prose .task-list-item {
   list-style: none;
+}
+
+.prose .task-list-item {
   margin-left: -1.5em;
 }
 
@@ -193,7 +229,7 @@
 .prose .footnotes {
   font-size: 0.875em;
   margin-top: 3em;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid hsl(var(--border));
   padding-top: 2em;
 }
 
