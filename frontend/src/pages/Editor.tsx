@@ -22,6 +22,8 @@ import RemoveLinksModal from '../components/common/RemoveLinksModal'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+// Tooltip for node-only actions when the open file is not a node (#86)
+const NOT_A_NODE_TITLE = 'This file is not a node.'
 
 function EditorView() {
   const { nodeId, filePath } = useParams()
@@ -120,6 +122,15 @@ function EditorView() {
     return (n.metadata as any)?.task?.tracked !== false
   })
 
+  // Whether the open file is a node (e.g. a root README or an upload without a .metadata.md
+  // sidecar is not); node-only actions are disabled otherwise.
+  const isNode = useNodeStore((s) => {
+    if (!resolvedNodePath) return false
+    const n = s.nodes.get(resolvedNodePath)
+    return !!n && !n.isDirectory
+  })
+  const isNodeRef = useRef(false)
+
   // Resolve linked nodes (soft links) for the current node
   const linkedNodes = useNodeStore((s) => {
     if (!resolvedNodePath) return [] as Array<{ path: string; name: string; title: string; id: string }>
@@ -151,6 +162,7 @@ function EditorView() {
 
   // Now that dependencies exist, wire ref-updaters
   useEffect(() => { resolvedNodePathRef.current = resolvedNodePath }, [resolvedNodePath])
+  useEffect(() => { isNodeRef.current = isNode }, [isNode])
   useEffect(() => { isModifiedRef.current = isModified }, [isModified])
   useEffect(() => {
     const navigateFn = (projectRelativePath: string) => {
@@ -875,18 +887,18 @@ function EditorView() {
             {/* Create Link */}
             <button
               onClick={() => setCreateLinkOpen(true)}
-              className="p-1.5 rounded hover:bg-accent"
-              title="Create link (Ctrl+Shift+L)"
-              disabled={!resolvedNodePath}
+              className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+              title={isNode ? 'Create link (Ctrl+Shift+L)' : NOT_A_NODE_TITLE}
+              disabled={!isNode}
             >
               <LinkIcon className="w-4 h-4" />
             </button>
             {/* Remove Link(s) – adjacent to Create */}
             <button
               onClick={() => setRemoveLinksOpen(true)}
-              className="p-1.5 rounded hover:bg-accent"
-              title="Remove link(s)"
-              disabled={!resolvedNodePath}
+              className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+              title={isNode ? 'Remove link(s)' : NOT_A_NODE_TITLE}
+              disabled={!isNode}
             >
               <Unlink className="w-4 h-4" />
             </button>
@@ -897,9 +909,9 @@ function EditorView() {
                 const current = resolvedNodePathRef.current
                 if (current) navigate(`/tasks/${encodeURIComponent(current)}`)
               }}
-              className="p-1.5 rounded hover:bg-accent"
-              title="See Task"
-              disabled={!resolvedNodePath}
+              className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+              title={isNode ? 'See Task' : NOT_A_NODE_TITLE}
+              disabled={!isNode}
             >
               <ListTodo className="w-4 h-4" />
             </button>
@@ -918,8 +930,9 @@ function EditorView() {
 
           <button
             onClick={() => setAttachOpen(true)}
-            className="p-1.5 rounded hover:bg-accent"
-            title="Attach files"
+            className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isNode ? 'Attach files' : NOT_A_NODE_TITLE}
+            disabled={!isNode}
           >
             <Paperclip className="w-4 h-4" />
           </button>
@@ -975,8 +988,9 @@ function EditorView() {
                 setTrackingBusy(false)
               }
             }}
-            className={`p-1.5 rounded hover:bg-accent ${trackingBusy ? 'opacity-60 pointer-events-none' : ''}`}
-            title="Toggle tracking as Task"
+            className={`p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed ${trackingBusy ? 'opacity-60 pointer-events-none' : ''}`}
+            title={isNode ? 'Toggle tracking as Task' : NOT_A_NODE_TITLE}
+            disabled={!isNode}
           >
             <span className="inline-flex items-center gap-1 text-xs">
               <svg
@@ -1132,7 +1146,7 @@ function EditorView() {
                     keybindings: [
                       (monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyMod.Shift | (monaco as any).KeyCode.KeyL,
                     ],
-                    run: () => setCreateLinkOpen(true),
+                    run: () => { if (isNodeRef.current) setCreateLinkOpen(true) },
                   })
                   editorInstance.addAction({
                     id: 'vw-toggle-preview',
@@ -1325,10 +1339,10 @@ function EditorView() {
           </ul>
         )}
         {linksExpanded && linkedNodes.length === 0 && (
-          <div className="text-xs text-muted-foreground mt-2">No links</div>
+          <div className="text-xs text-muted-foreground mt-2">{isNode ? 'No links' : NOT_A_NODE_TITLE}</div>
         )}
       </div>
-      {createLinkOpen && resolvedNodePath && (
+      {createLinkOpen && isNode && resolvedNodePath && (
         <SharedCreateLinkModal
           currentNodePath={resolvedNodePath}
           onClose={() => setCreateLinkOpen(false)}
