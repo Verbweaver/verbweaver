@@ -66,6 +66,8 @@ const nodeTypes: NodeTypes = {
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+// Any of these held while clicking a node toggles it in/out of the selection
+const MULTI_SELECT_KEYS = ['Shift', 'Control', 'Meta']
 
 function GraphView() {
   const navigate = useNavigate()
@@ -91,9 +93,8 @@ function GraphView() {
   const [attachTarget, setAttachTarget] = useState<string | null>(null)
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set())
   const [multiDeleteOpen, setMultiDeleteOpen] = useState(false)
-  const [isShiftMarquee, setIsShiftMarquee] = useState(false)
-  const [selectionBase, setSelectionBase] = useState<Set<string> | null>(null)
-  const [ctrlMetaPressed, setCtrlMetaPressed] = useState(false)
+  // Selection that existed when a Shift+drag selection box started; the box adds to it
+  const boxSelectionBaseRef = useRef<Set<string> | null>(null)
   const [removeLinksOpen, setRemoveLinksOpen] = useState(false)
   const [removeLinksNodePath, setRemoveLinksNodePath] = useState<string | null>(null)
   const reactFlowWrapperRef = useRef<HTMLDivElement | null>(null)
@@ -443,22 +444,6 @@ function GraphView() {
       loadNodes()
     }
   }, [currentProject, loadNodes])
-
-  // Track Ctrl/Cmd modifier globally for selection union/toggle semantics
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.key === 'Control' || e.key === 'Meta') setCtrlMetaPressed(true)
-    }
-    const up = (e: KeyboardEvent) => {
-      if (e.key === 'Control' || e.key === 'Meta') setCtrlMetaPressed(false)
-    }
-    window.addEventListener('keydown', down)
-    window.addEventListener('keyup', up)
-    return () => {
-      window.removeEventListener('keydown', down)
-      window.removeEventListener('keyup', up)
-    }
-  }, [])
 
   // Keyboard: Delete selected nodes
   useEffect(() => {
@@ -1841,41 +1826,41 @@ function GraphView() {
     return lines.join('\n')
   }
 
-  // React Flow 12 re-runs onSelectionChange whenever the handler's identity changes. An inline
-  // handler that sets state therefore loops ("Maximum update depth exceeded"). Keep one stable
-  // handler that reads the latest state through a ref, so it only runs when the selection changes.
-  const selectionChangeRef = useRef<(params: OnSelectionChangeParams) => void>(() => {})
-  selectionChangeRef.current = (params: OnSelectionChangeParams) => {
-    const clicked = new Set((params.nodes || []).map(n => n.id))
-    if (isShiftMarquee && selectionBase) {
-      const union = new Set(selectionBase)
-      clicked.forEach(id => union.add(id))
-      setSelectedNodeIds(union)
-      setNodes(prev => prev.map(n => ({ ...n, selected: union.has(n.id) })))
-      return
-    }
-    if (ctrlMetaPressed) {
-      setSelectedNodeIds(prev => {
-        const next = new Set(prev)
-        if (clicked.size === 1) {
-          const id = Array.from(clicked)[0]
-          if (next.has(id)) next.delete(id); else next.add(id)
-        } else {
-          clicked.forEach(id => next.add(id))
-        }
-        setNodes(prevNodes => prevNodes.map(n => ({ ...n, selected: next.has(n.id) })))
-        return next
-      })
-      return
-    }
-    // default replace behavior
-    setSelectedNodeIds(clicked)
-    setNodes(prev => prev.map(n => ({ ...n, selected: clicked.has(n.id) })))
-  }
-  const handleSelectionChange = useCallback(
-    (params: OnSelectionChangeParams) => selectionChangeRef.current(params),
-    []
-  )
+  // Selection is React Flow's own: Shift/Ctrl/Cmd+click toggles a node, Shift+drag draws a box.
+  // We only mirror it into selectedNodeIds, plus make a Shift+drag box add to the existing
+  // selection (React Flow's box replaces it). The handler must stay stable: React Flow 12 re-runs
+  // onSelectionChange whenever its identity changes, which loops when it sets state.
+  const latestSelectionRef = useRef<Set<string>>(new Set())
+  const pendingBoxBaseRef = useRef<Set<string> | null>(null)
+  const applyBoxUnion = useCallback((boxIds: Set<string>) => {
+    const base = boxSelectionBaseRef.current
+    if (!base) return boxIds
+    const union = new Set(base)
+    boxIds.forEach(id => union.add(id))
+    setNodes(prev => prev.map(n => (n.selected === union.has(n.id) ? n : { ...n, selected: union.has(n.id) })))
+    return union
+  }, [setNodes])
+  const handleSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+    const ids = applyBoxUnion(new Set((params.nodes || []).map(n => n.id)))
+    latestSelectionRef.current = ids
+    setSelectedNodeIds(ids)
+  }, [applyBoxUnion])
+  // Snapshot the selection before React Flow clears it for a new box. Taken at pointer-down
+  // (capture, ahead of React Flow) and only used if that pointer-down becomes a box selection.
+  const handleCanvasPointerDownCapture = useCallback((e: React.PointerEvent) => {
+    pendingBoxBaseRef.current = e.shiftKey ? new Set(latestSelectionRef.current) : null
+  }, [])
+  const handleSelectionStart = useCallback(() => {
+    boxSelectionBaseRef.current = pendingBoxBaseRef.current
+  }, [])
+  const handleSelectionEnd = useCallback(() => {
+    // Re-apply once in case React Flow's final box update landed after the last union
+    const ids = applyBoxUnion(new Set(latestSelectionRef.current))
+    latestSelectionRef.current = ids
+    setSelectedNodeIds(ids)
+    boxSelectionBaseRef.current = null
+    pendingBoxBaseRef.current = null
+  }, [applyBoxUnion])
 
   if (!currentProject) {
     return (
@@ -1902,26 +1887,11 @@ function GraphView() {
   }
 
   return (
-    <div
-      className="h-full w-full"
-      onMouseDown={(e) => {
-        if (e.shiftKey) {
-          setIsShiftMarquee(true)
-          setSelectionBase(new Set(selectedNodeIds))
-        } else {
-          setIsShiftMarquee(false)
-          setSelectionBase(null)
-        }
-      }}
-      onMouseUp={() => {
-        setIsShiftMarquee(false)
-        setSelectionBase(null)
-      }}
-    >
+    <div className="h-full w-full">
       {/* Right-side panel (Mind Map/Outline switch + per-view controls) is rendered per subview below */}
 
       {subView === 'mindmap' && (
-      <div ref={reactFlowWrapperRef} className="h-full w-full">
+      <div ref={reactFlowWrapperRef} className="h-full w-full" onPointerDownCapture={handleCanvasPointerDownCapture}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -1941,8 +1911,11 @@ function GraphView() {
           setSelectedNode(node.id)
         }}
         onSelectionChange={handleSelectionChange}
+        onSelectionStart={handleSelectionStart}
+        onSelectionEnd={handleSelectionEnd}
         selectNodesOnDrag
-        multiSelectionKeyCode={null as any}
+        selectionKeyCode="Shift"
+        multiSelectionKeyCode={MULTI_SELECT_KEYS}
         deleteKeyCode={null as any}
         nodeTypes={nodeTypes}
         fitView
@@ -2082,6 +2055,9 @@ function GraphView() {
                     </div>
                   )
                 })()}
+                <div className="text-[11px] text-muted-foreground px-1">
+                  Shift+drag to box-select · Shift/Ctrl+click to add or remove
+                </div>
               </div>
             )}
           </div>
