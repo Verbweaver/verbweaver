@@ -9,7 +9,7 @@ export interface StoredFile {
   name: string
   originalName: string
   size: number
-  uploadedAt: Date
+  uploadedAt: string // ISO 8601; front-matter is parsed with JSON_SCHEMA, so this stays a string at rest
   uploadedBy: string
   path: string // Path within the project repository
   mimeType: string
@@ -105,7 +105,7 @@ export class FileStorage {
         name: candidateName,
         originalName: sanitizedOriginal,
         size: file.size,
-        uploadedAt: new Date(),
+        uploadedAt: new Date().toISOString(),
         uploadedBy: 'Current User', // TODO: Get from auth context
         path: candidatePath,
         mimeType: file.type || 'application/octet-stream'
@@ -203,6 +203,13 @@ export class FileStorage {
     const sizes = ['Bytes', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  /** Locale date for a stored file's upload time; '' if missing or not a valid date. */
+  static formatUploadDate(value: unknown): string {
+    if (typeof value !== 'string' && typeof value !== 'number' && !(value instanceof Date)) return ''
+    const d = new Date(value)
+    return isNaN(d.getTime()) ? '' : d.toLocaleDateString()
   }
 
   // Helper method to migrate old file format to new format

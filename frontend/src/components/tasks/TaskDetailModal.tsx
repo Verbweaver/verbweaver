@@ -112,7 +112,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
             name: file.name || 'Unknown File',
             originalName: file.originalName || file.name || 'Unknown File',
             size: file.size || 0,
-            uploadedAt: file.uploadedAt ? new Date(file.uploadedAt) : new Date(),
+            uploadedAt: file.uploadedAt ? String(file.uploadedAt) : new Date().toISOString(),
             uploadedBy: file.uploadedBy || 'Unknown User',
             path: '', // Empty path indicates this file cannot be downloaded
             mimeType: file.mimeType || 'application/octet-stream'
@@ -550,7 +550,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                         <div>
                           <div className="text-sm font-medium">{file.originalName}</div>
                           <div className="text-xs text-muted-foreground">
-                            {FileStorage.formatFileSize(file.size)} • {file.uploadedAt.toLocaleDateString()}
+                            {[FileStorage.formatFileSize(file.size), FileStorage.formatUploadDate(file.uploadedAt)].filter(Boolean).join(' • ')}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {file.path ? `ID: ${file.id} • Location: ${file.path}` : '⚠️ File cannot be downloaded (old format)'}
