@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Bug, Mail, HeartHandshake, MessageSquare, RefreshCcw } from 'lucide-react'
+import { RELEASES_URL } from '@verbweaver/shared'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined
@@ -39,22 +40,37 @@ export default function Support() {
   const handleCheckUpdates = async () => {
     try {
       setChecking(true)
-      if (isElectron && (window as any).electronAPI?.checkForUpdates) {
-        const res = await (window as any).electronAPI.checkForUpdates()
-        if (res?.error) {
-          alert('Update check failed: ' + res.error)
-        } else if (res?.updateAvailable) {
-          alert(`Update available: ${res.version}. It will download in the background and prompt to restart when ready.`)
-        } else {
-          const v = version ? ` (${version})` : ''
-          alert(`You are running the latest version${v}.`)
-        }
-      } else {
+      const checkForUpdates = window.electronAPI?.checkForUpdates
+      if (!isElectron || !checkForUpdates) {
         // Web fallback: open Releases page
-        openExternal('https://github.com/Verbweaver/verbweaver/releases')
+        openExternal(RELEASES_URL)
+        return
       }
-    } catch (e: any) {
-      alert('Update check failed: ' + String(e))
+      const res = await checkForUpdates()
+      switch (res.status) {
+        case 'available':
+          alert(`Verbweaver ${res.version} is available. It will download in the background, and you'll be asked to restart when it's ready.`)
+          break
+        case 'current':
+          alert(`You are running the latest version (${res.version}).`)
+          break
+        case 'unsupported':
+          if (confirm('Automatic updates only work in installed builds of Verbweaver. Open the Releases page?')) {
+            openExternal(RELEASES_URL)
+          }
+          break
+        case 'error':
+          console.error('Update check failed:', res.detail)
+          if (confirm(`${res.message}\n\nOpen the Releases page?`)) {
+            openExternal(RELEASES_URL)
+          }
+          break
+      }
+    } catch (e) {
+      console.error('Update check failed:', e)
+      if (confirm("Couldn't check for updates. Open the Releases page?")) {
+        openExternal(RELEASES_URL)
+      }
     } finally {
       setChecking(false)
     }

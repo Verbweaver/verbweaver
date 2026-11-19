@@ -13,6 +13,14 @@ export type ExportFormat = typeof EXPORT_FORMATS[keyof typeof EXPORT_FORMATS];
 export type Theme = typeof THEMES[keyof typeof THEMES];
 export type AuthProvider = typeof AUTH_PROVIDERS[keyof typeof AUTH_PROVIDERS];
 
+// Result of a desktop "Check for Updates" (IPC 'update:check').
+// 'unsupported': not an installed build, so electron-updater skips the check.
+export type UpdateCheckOutcome =
+  | { status: 'available'; version: string; notes: string }
+  | { status: 'current'; version: string }
+  | { status: 'unsupported'; version: string }
+  | { status: 'error'; message: string; detail: string };
+
 // Markdown metadata format
 export interface MarkdownMetadata {
   id: string;

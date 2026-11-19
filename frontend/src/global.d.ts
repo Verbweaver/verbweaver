@@ -1,3 +1,5 @@
+import type { UpdateCheckOutcome } from '@verbweaver/shared';
+
 declare global {
   // Define DocFile interface here as well, or import from a shared types location if possible
   // For now, defining it directly for simplicity, ensure it matches preload.ts
@@ -58,6 +60,7 @@ declare global {
       // System operations
       getAppVersion: () => Promise<string>;
       openExternal: (url: string) => Promise<void>;
+      checkForUpdates?: () => Promise<UpdateCheckOutcome>;
       showItemInFolder: (path: string) => Promise<void>;
       
       // Window operations
