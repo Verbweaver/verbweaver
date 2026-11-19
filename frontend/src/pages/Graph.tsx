@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import ReactFlow, {
+import {
+  ReactFlow,
   Node,
   Edge,
-  addEdge,
   Background,
   Controls,
   MiniMap,
@@ -14,7 +14,8 @@ import ReactFlow, {
   MarkerType,
   ReactFlowProvider,
   useReactFlow,
-} from 'react-flow-renderer'
+  type OnSelectionChangeParams,
+} from '@xyflow/react'
 import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
 import { useWebSocket } from '../services/websocket'
@@ -78,8 +79,8 @@ function GraphView() {
   const activeTabId = useTabStore(s => s.activeTabId)
   const tabs = useTabStore(s => s.tabs)
   
-  const [nodes, setNodes, onNodesChange] = useNodesState([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; edgeId?: string; isFolder?: boolean; hasTask?: boolean } | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
@@ -1060,7 +1061,7 @@ function GraphView() {
   )
 
   const onPaneContextMenu = useCallback(
-    (event: React.MouseEvent) => {
+    (event: React.MouseEvent | MouseEvent) => {
       event.preventDefault()
       const reactFlowBounds = (event.target as HTMLElement).getBoundingClientRect()
       const position = {
@@ -1122,7 +1123,8 @@ function GraphView() {
         const all = nodes.map(n => n.id)
         if (all.length > 0) {
           // includeHiddenNodes in case some are filtered by UI; fit all nodes without unsafe casts
-          reactFlow.fitView({ includeHiddenNodes: true, padding: 0.2 })
+          // fitView is async since React Flow 12; wait so the image shows the fitted viewport
+          await reactFlow.fitView({ includeHiddenNodes: true, padding: 0.2 })
         }
       } catch (err) {
         // Log error to aid debugging; fitView failures are not fatal but should be visible
@@ -1839,6 +1841,42 @@ function GraphView() {
     return lines.join('\n')
   }
 
+  // React Flow 12 re-runs onSelectionChange whenever the handler's identity changes. An inline
+  // handler that sets state therefore loops ("Maximum update depth exceeded"). Keep one stable
+  // handler that reads the latest state through a ref, so it only runs when the selection changes.
+  const selectionChangeRef = useRef<(params: OnSelectionChangeParams) => void>(() => {})
+  selectionChangeRef.current = (params: OnSelectionChangeParams) => {
+    const clicked = new Set((params.nodes || []).map(n => n.id))
+    if (isShiftMarquee && selectionBase) {
+      const union = new Set(selectionBase)
+      clicked.forEach(id => union.add(id))
+      setSelectedNodeIds(union)
+      setNodes(prev => prev.map(n => ({ ...n, selected: union.has(n.id) })))
+      return
+    }
+    if (ctrlMetaPressed) {
+      setSelectedNodeIds(prev => {
+        const next = new Set(prev)
+        if (clicked.size === 1) {
+          const id = Array.from(clicked)[0]
+          if (next.has(id)) next.delete(id); else next.add(id)
+        } else {
+          clicked.forEach(id => next.add(id))
+        }
+        setNodes(prevNodes => prevNodes.map(n => ({ ...n, selected: next.has(n.id) })))
+        return next
+      })
+      return
+    }
+    // default replace behavior
+    setSelectedNodeIds(clicked)
+    setNodes(prev => prev.map(n => ({ ...n, selected: clicked.has(n.id) })))
+  }
+  const handleSelectionChange = useCallback(
+    (params: OnSelectionChangeParams) => selectionChangeRef.current(params),
+    []
+  )
+
   if (!currentProject) {
     return (
       <div className="h-full flex items-center justify-center bg-background">
@@ -1902,33 +1940,7 @@ function GraphView() {
           // Let ReactFlow set selection; we'll adjust in onSelectionChange using modifiers
           setSelectedNode(node.id)
         }}
-        onSelectionChange={(params) => {
-          const clicked = new Set((params.nodes || []).map(n => n.id))
-          if (isShiftMarquee && selectionBase) {
-            const union = new Set(selectionBase)
-            clicked.forEach(id => union.add(id))
-            setSelectedNodeIds(union)
-            setNodes(prev => prev.map(n => ({ ...n, selected: union.has(n.id) })))
-            return
-          }
-          if (ctrlMetaPressed) {
-            setSelectedNodeIds(prev => {
-              const next = new Set(prev)
-              if (clicked.size === 1) {
-                const id = Array.from(clicked)[0]
-                if (next.has(id)) next.delete(id); else next.add(id)
-              } else {
-                clicked.forEach(id => next.add(id))
-              }
-              setNodes(prevNodes => prevNodes.map(n => ({ ...n, selected: next.has(n.id) })))
-              return next
-            })
-            return
-          }
-          // default replace behavior
-          setSelectedNodeIds(clicked)
-          setNodes(prev => prev.map(n => ({ ...n, selected: clicked.has(n.id) })))
-        }}
+        onSelectionChange={handleSelectionChange}
         selectNodesOnDrag
         multiSelectionKeyCode={null as any}
         deleteKeyCode={null as any}

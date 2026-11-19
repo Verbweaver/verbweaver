@@ -3,7 +3,7 @@ import { useProjectStore } from '../store/projectStore'
 import { useTabStore } from '../store/tabStore'
 import { useGroupViewStore } from '../store/groupViewState'
 import { useNodeStore } from '../store/nodeStore'
-import ReactFlow, { Background, Controls, Edge, Node, NodeTypes, Connection, useReactFlow, ReactFlowProvider } from 'react-flow-renderer'
+import { ReactFlow, Background, Controls, Edge, Node, NodeTypes, Connection, useReactFlow, ReactFlowProvider, applyNodeChanges, type NodeChange } from '@xyflow/react'
 import { buildEquivalenceBoxes, computeCoverRelations, computeRemainder } from '../utils/grouping'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
@@ -230,7 +230,7 @@ function GroupViewInner() {
             const storeNode = path ? verbweaverNodes.get(path) : undefined
             nodes.push({
               id: `${sid}::n::${cid}`,
-              parentNode: sid,
+              parentId: sid,
               position: { x: cx, y: cy },
               type: 'custom',
               draggable: false,
@@ -352,7 +352,7 @@ function GroupViewInner() {
           style: { width: boxWidth, height: boxHeight },
           type: 'groupBox',
           draggable: !parentSafeId,
-          parentNode: parentSafeId,
+          parentId: parentSafeId,
           extent: parentSafeId ? 'parent' : undefined,
         } as any)
 
@@ -374,7 +374,7 @@ function GroupViewInner() {
             const storeNode = path ? verbweaverNodes.get(path) : undefined
             nodes.push({
               id: `${baseId}::n::${cid}`,
-              parentNode: baseId,
+              parentId: baseId,
               position: { x: cx, y: cy },
               type: 'custom',
               draggable: false,
@@ -426,6 +426,25 @@ function GroupViewInner() {
   }, [equivalence, layout.boxes, options.nestGroups, options.showNodeCards, options.maxCardsPerGroup, options.showCapIndicator, idToMeta])
 
   const [optimisticEdges, setOptimisticEdges] = useState<Edge[]>([])
+  // React Flow 12 reports measured node sizes through onNodesChange; nodes stay hidden until those
+  // are applied. Keep a local copy of the derived nodes that accepts size, drag and selection
+  // changes (not removals: those must go through the node store), and carry measured sizes across
+  // recomputes so nodes don't flicker back to hidden.
+  const [rfNodes, setRfNodes] = useState<Node[]>(flowNodes)
+  useEffect(() => {
+    setRfNodes(prev => {
+      const prevById = new Map(prev.map(n => [n.id, n]))
+      return flowNodes.map(n => {
+        const measured = prevById.get(n.id)?.measured
+        return measured ? { ...n, measured } : n
+      })
+    })
+  }, [flowNodes])
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    const applicable = changes.filter(c => c.type === 'dimensions' || c.type === 'position' || c.type === 'select')
+    if (applicable.length > 0) setRfNodes(nds => applyNodeChanges(applicable, nds))
+  }, [])
+
   const renderEdges = useMemo(() => {
     const nodeIds = new Set(flowNodes.map(n => n.id))
     const baseEdges = options.nestGroups
@@ -454,7 +473,7 @@ function GroupViewInner() {
 
   const onNodeDragStop = useCallback((_: any, n: Node) => {
     if (!n?.id) return
-    setBoxLayout(n.id, { x: n.position.x, y: n.position.y, w: n.width ?? undefined, h: n.height ?? undefined })
+    setBoxLayout(n.id, { x: n.position.x, y: n.position.y, w: n.measured?.width ?? undefined, h: n.measured?.height ?? undefined })
     const tab = tabs.find(t => t.id === activeTabId)
     const graphTabId = tab && tab.type === 'graph' ? tab.id : undefined
     if (currentProject?.id && graphTabId) {
@@ -854,10 +873,10 @@ function GroupViewInner() {
   return (
     <div ref={flowWrapperRef} className="h-full w-full">
       <ReactFlow
-        nodes={flowNodes}
+        nodes={rfNodes}
         edges={renderEdges}
         nodeTypes={groupNodeTypes}
-        onNodesChange={undefined as any}
+        onNodesChange={onNodesChange}
         onEdgesChange={undefined as any}
         onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={onNodeContextMenu}

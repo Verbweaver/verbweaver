@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react'
-import { Handle, Position, type NodeProps } from 'react-flow-renderer'
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 
 type Chip = { id: string; title: string }
 
@@ -15,7 +15,9 @@ type Data = {
   showCapIndicator?: boolean
 }
 
-function GroupBoxNode({ data, selected }: NodeProps<Data>) {
+export type GroupBoxNodeType = Node<Data, 'groupBox'>
+
+function GroupBoxNode({ data, selected }: NodeProps<GroupBoxNodeType>) {
   const { label, isEquivalent, chips = [], remainderChips = [], showNodeCards, linkPairs = [], visibleCardCount, totalCardCount, showCapIndicator } = data || {}
   const showCap = showCapIndicator !== false
   const chipItems = useMemo(() => chips.slice(0, 30), [chips])

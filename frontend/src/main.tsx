@@ -4,6 +4,8 @@ import { BrowserRouter, HashRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
+// React Flow 12 no longer injects its styles; load them before ours so our overrides win.
+import '@xyflow/react/dist/style.css'
 import './styles/index.css'
 import './index.css'
 
