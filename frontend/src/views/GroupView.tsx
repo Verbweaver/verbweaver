@@ -844,9 +844,14 @@ function GroupViewInner() {
     const to = parts[1]
     const fromPath = idToPath.get(from)
     const toPath = idToPath.get(to)
-    if (fromPath && toPath) {
+    if (!fromPath || !toPath) return
+    try {
       await removeSoftLink(fromPath, toPath)
       setOptimisticEdges(prev => prev.filter(e => e.id !== edgeId))
+      toast.success('Link removed')
+    } catch (err) {
+      console.error('[GroupView] Failed to remove link', err)
+      toast.error('Failed to remove link')
     }
   }, [idToPath, removeSoftLink])
 
