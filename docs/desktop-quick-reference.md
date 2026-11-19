@@ -54,7 +54,8 @@
 - **Create Node**: Double-click empty space
 - **Create Link**: Drag from node to node
 - **Delete**: Select + `Delete` key
-- **Multi-select**: `Ctrl/⌘` + Click
+- **Multi-select**: `Shift` or `Ctrl/⌘` + Click (click again to deselect)
+- **Box select**: `Shift` + drag on empty canvas
 
 ### Editor View
 - **New File**: Right-click folder → New File
