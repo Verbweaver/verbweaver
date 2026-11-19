@@ -28,12 +28,13 @@ interface NodeContextMenuProps {
   isLocked?: boolean
   onToggleCollapse?: (nodeId: string) => void
   isCollapsed?: boolean
+  onCreateLink?: (nodeId: string) => void
   onRemoveLinks?: (nodeId: string) => void
   onExportMapAsPng?: () => void
   variant?: 'group-pane'
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed, onRemoveLinks, onExportMapAsPng, variant }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed, onCreateLink, onRemoveLinks, onExportMapAsPng, variant }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -265,24 +266,28 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
                 Edit
               </button>
               
-              <button
-                onClick={() => {
-                  // Future: create link
-                  onClose()
-                }}
-                className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-              >
-                <Link className="w-3 h-3" />
-                Create Link
-              </button>
+              {onCreateLink && (
+                <button
+                  onClick={() => {
+                    onCreateLink(nodeId)
+                    onClose()
+                  }}
+                  className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                >
+                  <Link className="w-3 h-3" />
+                  Create Link
+                </button>
+              )}
 
-              <button
-                onClick={() => { if (nodeId && onRemoveLinks) { onRemoveLinks(nodeId) } else { onClose() } }}
-                className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-              >
-                <Unlink className="w-3 h-3" />
-                Remove Link(s)
-              </button>
+              {onRemoveLinks && (
+                <button
+                  onClick={() => onRemoveLinks(nodeId)}
+                  className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                >
+                  <Unlink className="w-3 h-3" />
+                  Remove Link(s)
+                </button>
+              )}
 
               {onToggleTrackTask && (
                 <button

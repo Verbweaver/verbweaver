@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNodeStore } from '../../store/nodeStore'
 import { X, Search, Link as LinkIcon } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 interface SharedCreateLinkModalProps {
   currentNodePath: string
@@ -58,6 +59,7 @@ export function SharedCreateLinkModal({ currentNodePath, onClose, onLinkCreated 
       onClose()
     } catch (e) {
       console.error('Create link failed', e)
+      toast.error('Failed to create link')
     } finally {
       setIsBusy(false)
     }

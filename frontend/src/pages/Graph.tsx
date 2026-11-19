@@ -27,6 +27,7 @@ import { apiClient } from '../api/client'
 import CustomNode from '../components/graph/CustomNode'
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 import RemoveLinksModal from '../components/common/RemoveLinksModal'
+import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
 import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers } from 'lucide-react'
 import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
@@ -97,6 +98,7 @@ function GraphView() {
   const boxSelectionBaseRef = useRef<Set<string> | null>(null)
   const [removeLinksOpen, setRemoveLinksOpen] = useState(false)
   const [removeLinksNodePath, setRemoveLinksNodePath] = useState<string | null>(null)
+  const [createLinkNodePath, setCreateLinkNodePath] = useState<string | null>(null)
   const reactFlowWrapperRef = useRef<HTMLDivElement | null>(null)
   // Stable fallback positions for nodes without saved positions (prevents re-randomizing)
   const fallbackPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map())
@@ -2266,6 +2268,7 @@ function GraphView() {
             const id = contextMenu.nodeId || ''
             return !!graphCollapsed[id]
           })()}
+          onCreateLink={(nodeId) => { setCreateLinkNodePath(nodeId); setContextMenu(null) }}
           onRemoveLinks={(nodeId) => openRemoveLinksForNode(nodeId)}
           onUploadFiles={() => {
             const input = document.getElementById('graph-canvas-upload-input') as HTMLInputElement | null
@@ -2402,6 +2405,19 @@ function GraphView() {
         onSelectTemplate={handleTemplateSelected}
         parentPath={parentPathForNewNode}
       />
+
+      {/* Create Link Modal (context menu) */}
+      {createLinkNodePath && (
+        <SharedCreateLinkModal
+          currentNodePath={createLinkNodePath}
+          onClose={() => setCreateLinkNodePath(null)}
+          onLinkCreated={async () => {
+            // Refresh from source-of-truth so the new edge renders (mirrors onConnect)
+            try { await loadNodes() } catch (err) { console.error('[Graph] Failed to refresh after creating link', err) }
+            toast.success('Link created')
+          }}
+        />
+      )}
 
       {/* Remove Links Modal for Mind Map */}
       <RemoveLinksModal
