@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Handle, Position } from 'react-flow-renderer'
+import { Handle, Position } from '@xyflow/react'
 import { NODE_TYPES } from '@verbweaver/shared'
 import { FileText, User, MapPin, CheckCircle, Package, Folder, FolderOpen } from 'lucide-react'
 import clsx from 'clsx'

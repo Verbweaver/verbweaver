@@ -1,5 +1,5 @@
 import dagre from 'dagre'
-import { Node, Edge } from 'react-flow-renderer'
+import { Node, Edge } from '@xyflow/react'
 
 export type LayoutDirection = 'TB' | 'LR' | 'BT' | 'RL'
 
@@ -145,7 +145,7 @@ export function getExpandedLayout(
       const bIsFolder = b.data?.isDirectory || b.data?.type === 'folder';
       if (aIsFolder && !bIsFolder) return -1;
       if (!aIsFolder && bIsFolder) return 1;
-      return (a.data?.label || '').localeCompare(b.data?.label || '');
+      return String(a.data?.label || '').localeCompare(String(b.data?.label || ''));
     });
 
     let childX;
