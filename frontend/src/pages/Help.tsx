@@ -4,7 +4,8 @@ import { FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import 'highlight.js/styles/github-dark.css';
+import 'highlight.js/styles/github.css';
+import '../styles/hljs-dark.css';
 import '../styles/markdown.css';
 // Local DocFile type to avoid importing Electron preload from the frontend build
 type DocFile = {
@@ -282,38 +283,6 @@ export default function Help() {
                     <a {...props} href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                       {children}
                     </a>
-                  );
-                },
-                p: ({ children, ...props }) => {
-                  const hasBlockCode = React.Children.toArray(children).some(
-                    child =>
-                      React.isValidElement(child) &&
-                      child.type === 'code' &&
-                      !child.props.inline
-                  );
-                  const hasPre = React.Children.toArray(children).some(
-                    child =>
-                      React.isValidElement(child) &&
-                      child.type === 'pre'
-                  );
-                  if (hasBlockCode || hasPre) {
-                    return <>{children}</>;
-                  }
-                  return <p {...props}>{children}</p>;
-                },
-                code: ({ node, inline, className, children, ...props }: any) => {
-                  if (inline) {
-                    return (
-                      <code {...props} className="bg-muted px-1 py-0.5 rounded text-sm font-normal">
-                        {children}
-                      </code>
-                    );
-                  }
-                  // For block code, react-markdown wraps this in <pre>, so render only <code>
-                  return (
-                    <code {...props} className={className}>
-                      {children}
-                    </code>
                   );
                 },
               }}

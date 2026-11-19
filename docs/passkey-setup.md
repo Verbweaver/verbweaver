@@ -74,4 +74,4 @@ Your server should now be ready to handle Passkey registration and login request
 
 -   Implement the Passkey registration and login UI on the frontend.
 -   Thoroughly test the Passkey authentication flow.
--   Review the [Security Checklist](../security-checklist.md) for other important security considerations. 
+-   Review the [Security Checklist](security-checklist.md) for other important security considerations. 
