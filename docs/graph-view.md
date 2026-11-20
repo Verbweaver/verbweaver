@@ -11,6 +11,8 @@ The Graph view shows your whole project and how its pages connect. It has four v
 
 The Mind Map shows every page in your project as a card on a board, with lines for the links between them. Use it to see how characters, places, chapters, and ideas connect, and to arrange them in a way that makes sense to you.
 
+![The Mind Map: page cards linked together, with the Layout and view buttons on the right](images/graph-mind-map.png)
+
 ### Moving around
 
 - Drag empty space to move the board. Use the zoom buttons in the corner, or your mouse wheel, to zoom.
@@ -60,6 +62,8 @@ The Outline lists your project's pages as a tidy, indented list, like a table of
 
 Changes here only affect how the list is arranged. Your actual files are never moved.
 
+![The Outline: an indented list of folders and pages, with sorting options on the right](images/graph-outline.png)
+
 ### Reading the list
 
 - Click **▸** next to a folder to open it, or **▾** to close it.
@@ -87,6 +91,8 @@ Changes here only affect how the list is arranged. Your actual files are never m
 ## Group
 
 The Group view sorts your pages into named collections and shows them as boxes, so you can compare them at a glance. For example, you could make groups for "Act One", "Main characters", or "Needs revision" and see which pages belong to more than one.
+
+![The Group view: boxes for Characters, Northern Reaches, Northern characters and Southern Coast, with the Groups list on the right](images/graph-group.png)
 
 ### Making a group
 
@@ -146,6 +152,8 @@ You can now see which resources belong to each environment, which databases are 
 ## Progression
 
 The Progression view draws a line chart from details you've recorded on your pages. Use it to see how something changes across your work, for example a character's mood across chapters or the tension level from scene to scene.
+
+![The Progression chart: Mira's and Rowan's tension plotted across five chapters](images/graph-progression.png)
 
 ### Before you start
 

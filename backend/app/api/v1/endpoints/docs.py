@@ -5,7 +5,7 @@ import os
 import re
 import aiofiles # For async file operations
 from fastapi import APIRouter, HTTPException, Security
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from starlette.status import HTTP_404_NOT_FOUND
 from typing import List, Optional, Tuple
 import logging
@@ -98,6 +98,32 @@ async def list_documentation_files():
     except Exception as e:
         logger.error(f"Error listing documentation files: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Could not retrieve documentation list.")
+
+DOC_IMAGE_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+
+
+@router.get("/images/{filename}")
+async def get_documentation_image(filename: str):
+    """Serves an image referenced by the docs (docs/images/<filename>)."""
+    media_type = DOC_IMAGE_TYPES.get(os.path.splitext(filename)[1].lower())
+    if media_type is None or "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid image name.")
+
+    images_dir = os.path.abspath(os.path.join(DOCS_DIR, "images"))
+    file_path = os.path.abspath(os.path.join(images_dir, filename))
+    if os.path.dirname(file_path) != images_dir:
+        raise HTTPException(status_code=403, detail="Access forbidden.")
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=f"Image '{filename}' not found.")
+    return FileResponse(file_path, media_type=media_type)
+
 
 @router.get("/{filename}", response_class=PlainTextResponse)
 async def get_documentation_file(filename: str):

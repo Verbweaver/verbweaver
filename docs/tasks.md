@@ -8,6 +8,8 @@ Use the buttons at the top to switch between four views: **Board**, **Calendar**
 
 The Board shows your tasks as cards in columns, such as **To Do**, **In Progress**, **Review**, and **Done**.
 
+![The Board: task cards in To Do, In Progress, Review and Done columns](images/tasks-board.png)
+
 - **Create a task:** click **New Task**, or click **+** at the top of a column.
 - **Change a task's status:** drag its card to another column.
 - **Open a task:** click its card.
@@ -42,6 +44,8 @@ To read the page itself, expand **Node Content Preview** or click the page icon 
 
 The Calendar shows tasks on their due dates. Switch between **Month** and **Week**, and use **Today** and the arrows to move around.
 
+![The Calendar: tasks shown on their due dates for the month](images/tasks-calendar.png)
+
 - **Reschedule a task:** drag it to another day.
 - **Create a task due on a day:** click that empty day.
 - **Schedule an undated task:** click **Show Unscheduled**, then drag the task onto a day.
@@ -49,6 +53,8 @@ The Calendar shows tasks on their due dates. Switch between **Month** and **Week
 ## To-Do
 
 The To-Do view is a daily checklist. Pick a day from the strip at the top to see **Today's Tasks** for that day and any **Overdue Tasks**.
+
+![The To-Do view: overdue tasks on the left and today's tasks on the right](images/tasks-todo.png)
 
 - **Mark a task done:** tick its checkbox. It moves to your Completed Column.
 - **Reopen a finished task:** untick it and choose which status to move it back to.
@@ -58,6 +64,8 @@ The To-Do view is a daily checklist. Pick a day from the strip at the top to see
 ## Charts
 
 Charts give you an overview of your schedule.
+
+![The Charts view: a Gantt chart and a Burndown chart](images/tasks-charts.png)
 
 - The **Gantt Chart** shows each task as a bar from its start date to its due date.
 - The **Burndown Chart** shows how many tasks are still open over time.

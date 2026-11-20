@@ -2,6 +2,8 @@
 
 The Compiler (the **Export Document** page) turns pages from your project into one finished document, such as a manuscript, a report, or an e-book. Pick the pages, put them in order, choose a format, and export.
 
+![The Compiler: pages to include on the left, their order in the middle, and export settings on the right](images/compiler.png)
+
 ## 1. Choose your pages
 
 In **Select Files** on the left, tick the pages to include. Ticking a folder includes everything inside it.

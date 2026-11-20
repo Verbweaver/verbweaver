@@ -95,6 +95,7 @@ export interface ElectronAPI {
   // For Help View
   listDocs: () => Promise<DocFile[]>;
   readDocContent: (fileName: string) => Promise<string>;
+  readDocImage: (imageName: string) => Promise<string>;
   
   // File watching
   watchProject: (callback: (event: any) => void) => void;
@@ -226,6 +227,7 @@ const electronAPI = {
   // For Help View
   listDocs: () => ipcRenderer.invoke('docs:list'),
   readDocContent: (fileName: string) => ipcRenderer.invoke('docs:read', fileName),
+  readDocImage: (imageName: string) => ipcRenderer.invoke('docs:image', imageName),
   
   // Dependency checker
   checkDependencies: () => ipcRenderer.invoke('dependencies:check'),

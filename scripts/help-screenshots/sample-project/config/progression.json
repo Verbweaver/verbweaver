@@ -1,0 +1,36 @@
+{
+  "xVar": "chapter",
+  "xType": "number",
+  "colocateRepeats": false,
+  "yVars": [
+    {
+      "name": "mira_tension",
+      "color": "#e11d48"
+    },
+    {
+      "name": "rowan_tension",
+      "color": "#2563eb"
+    }
+  ],
+  "labelAxes": true,
+  "showNodeTitles": true,
+  "showXAxisNodeTitles": false,
+  "background": "white",
+  "maxNodes": 20,
+  "manualOrdering": false,
+  "orderedNodes": [],
+  "filters": {
+    "tags": [
+      "chapter"
+    ],
+    "tagsLogic": "ANY",
+    "nameKeyword": "",
+    "descriptionKeyword": "",
+    "startsWith": "",
+    "endsWith": "",
+    "startsEndsCaseSensitive": false,
+    "hasAttachments": false,
+    "linkedFromNodeTags": []
+  },
+  "selectedNodes": []
+}

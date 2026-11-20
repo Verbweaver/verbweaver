@@ -20,12 +20,14 @@
     "build:backend": "cd backend && echo 'Backend is Python, no build needed'",
     "build:desktop": "cd desktop && npm run build",
     "test": "npm run test --workspaces",
-    "lint": "npm run lint --workspaces"
+    "lint": "npm run lint --workspaces",
+    "docs:screenshots": "node scripts/help-screenshots/capture.mjs"
   },
   "devDependencies": {
     "@types/path-browserify": "^1.0.3",
     "concurrently": "^7.6.0",
-    "electron": "^45.3.4"
+    "electron": "^45.3.4",
+    "playwright-core": "^1.65.1"
   },
   "engines": {
     "node": ">=22.13.0",

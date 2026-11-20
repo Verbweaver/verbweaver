@@ -33,8 +33,8 @@ const textOf = (children: React.ReactNode): string =>
     .map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : React.isValidElement<{ children?: React.ReactNode }>(c) ? textOf(c.props.children) : ''))
     .join('');
 
-const scrollToSection = (id: string) => {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+const scrollToSection = (id: string, behavior: ScrollBehavior = 'smooth') => {
+  document.getElementById(id)?.scrollIntoView({ behavior, block: 'start' });
 };
 
 const heading = (Tag: 'h1' | 'h2' | 'h3' | 'h4') =>
@@ -44,6 +44,48 @@ const heading = (Tag: 'h1' | 'h2' | 'h3' | 'h4') =>
     return <Tag id={slugify(textOf(children))} {...props}>{children}</Tag>;
   };
 const headingComponents = { h1: heading('h1'), h2: heading('h2'), h3: heading('h3'), h4: heading('h4') };
+
+// Docs reference screenshots as `images/<name>`; returns <name>, or null for any other src
+const docImageName = (src?: string): string | null => {
+  const match = /^(?:\.\/)?images\/([^/\\]+)$/.exec(src || '');
+  return match ? match[1] : null;
+};
+
+// Images live in docs/images: loaded over IPC on desktop, from the docs API on web
+function DocImage({ src, alt, title }: { src?: string; alt?: string; title?: string }) {
+  const name = docImageName(src);
+  const [dataUrl, setDataUrl] = useState<{ name: string; url: string } | null>(null);
+  const [failedName, setFailedName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!name || !isElectron || !window.electronAPI?.readDocImage) return;
+    let cancelled = false;
+    window.electronAPI.readDocImage(name)
+      .then((url) => { if (!cancelled) setDataUrl({ name, url }); })
+      .catch(() => { if (!cancelled) setFailedName(name); });
+    return () => { cancelled = true; };
+  }, [name]);
+
+  const resolved = !name
+    ? src
+    : isElectron
+      ? (dataUrl?.name === name ? dataUrl.url : undefined)
+      : `${API_URL}/docs/images/${encodeURIComponent(name)}`;
+
+  if (name && failedName === name) {
+    return <span className="text-muted-foreground italic">[Image unavailable: {alt || name}]</span>;
+  }
+  if (!resolved) return null;
+  return (
+    <img
+      src={resolved}
+      alt={alt || ''}
+      title={title}
+      onError={() => setFailedName(name)}
+      className="rounded-md border border-border shadow-sm max-w-full h-auto"
+    />
+  );
+}
 
 export default function Help() {
   const [docFiles, setDocFiles] = useState<DocFile[]>([]);
@@ -131,8 +173,25 @@ export default function Help() {
   const requestedSection = searchParams.get('section');
   useEffect(() => {
     if (!requestedSection || isLoading || !docContent) return;
-    const frame = requestAnimationFrame(() => scrollToSection(requestedSection));
-    return () => cancelAnimationFrame(frame);
+    const container = document.getElementById('help-doc-container');
+    const content = container?.querySelector('.prose');
+    let done = false;
+    const jump = () => { if (!done) scrollToSection(requestedSection, 'auto'); };
+    const frame = requestAnimationFrame(jump);
+    // Images load after the text and push the section down; keep it in view while the content
+    // settles, until the reader scrolls or clicks, or a few seconds pass
+    const observer = content ? new ResizeObserver(jump) : null;
+    if (content) observer!.observe(content);
+    const stop = () => { done = true; observer?.disconnect(); };
+    const timer = window.setTimeout(stop, 5000);
+    const userEvents = ['wheel', 'touchstart', 'mousedown', 'keydown'] as const;
+    userEvents.forEach((type) => container?.addEventListener(type, stop, { once: true }));
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      stop();
+      userEvents.forEach((type) => container?.removeEventListener(type, stop));
+    };
   }, [requestedSection, isLoading, docContent]);
 
   // Basic Ctrl+F handling within this view (client-side search in rendered text)
@@ -282,6 +341,7 @@ export default function Help() {
               rehypePlugins={[rehypeHighlight]}
               components={{ 
                 ...headingComponents,
+                img: ({ src, alt, title }) => <DocImage src={typeof src === 'string' ? src : undefined} alt={alt} title={title} />,
                 pre: ({ children, ...props }: any) => (
                   <pre {...props} className="bg-muted p-4 rounded-lg overflow-x-auto text-sm">
                     {children}
