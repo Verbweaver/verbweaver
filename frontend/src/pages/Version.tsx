@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { GitBranch, GitCommit, Plus, RefreshCw, Upload, Download, Eye, X } from 'lucide-react';
+import { HELP_DOCS } from '@verbweaver/shared';
+import HelpButton from '../components/HelpButton';
 import { api } from '../services/auth';
 import { useProjectStore } from '../store/projectStore';
 import toast from 'react-hot-toast';
@@ -434,7 +436,10 @@ export default function VersionControlView() {
       {/* Right Panel - History */}
       <div className="flex-1 p-6 overflow-y-auto">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold mb-2">Version Control</h2>
+          <div className="flex items-center gap-1 mb-2">
+            <h2 className="text-2xl font-bold">Version Control</h2>
+            <HelpButton doc={HELP_DOCS.VERSION_CONTROL} label="Version Control" />
+          </div>
           <div className="flex items-center gap-2 text-muted-foreground">
             <GitBranch className="h-4 w-4" />
             <span>{currentBranch}</span>

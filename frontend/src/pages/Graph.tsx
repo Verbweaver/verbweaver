@@ -31,12 +31,13 @@ import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
 import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
-import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers } from 'lucide-react'
+import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers, HelpCircle } from 'lucide-react'
 import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
 import * as htmlToImage from 'html-to-image'
 import clsx from 'clsx'
-import { STORAGE_KEYS } from '@verbweaver/shared'
+import { HELP_DOCS, HELP_GRAPH_SECTIONS, STORAGE_KEYS } from '@verbweaver/shared'
+import { useOpenHelp } from '../hooks/useOpenHelp'
 import LayoutControls from '../components/graph/LayoutControls'
 import { editorApi } from '../api/editorApi'
 import { projectsApi } from '../api/projects'
@@ -244,6 +245,7 @@ function GraphView() {
   // Outline subview state
   type GraphSubView = 'mindmap' | 'outline' | 'progression' | 'group'
   const { getActiveTab, updateTab, updateTabMetadata } = useTabStore()
+  const openHelp = useOpenHelp()
   const activeGraphTabId = useMemo(() => {
     const t = tabs.find(t => t.id === activeTabId)
     return t && t.type === 'graph' ? t.id : undefined
@@ -1926,6 +1928,7 @@ function GraphView() {
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('group')} title="Group"><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')} title="Outline"><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')} title="Progression"><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
+            <button className={'px-2 py-1 text-sm'} onClick={()=>openHelp(HELP_DOCS.GRAPH, HELP_GRAPH_SECTIONS.MIND_MAP)} title="Open Mind Map User Guide"><span className="inline-flex items-center gap-1"><HelpCircle className="w-4 h-4"/>Help</span></button>
             <div className="pt-1 border-t border-border" />
             <div className="flex flex-col gap-2">
               <label className="text-xs font-medium">Layout</label>
@@ -2081,6 +2084,7 @@ function GraphView() {
               <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('group')} disabled><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')}><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')}><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>openHelp(HELP_DOCS.GRAPH, HELP_GRAPH_SECTIONS.GROUP)} title="Open Group User Guide"><span className="inline-flex items-center gap-1"><HelpCircle className="w-4 h-4"/>Help</span></button>
               <div className="pt-1 border-t border-border" />
               <GroupManagerPanel />
             </div>
@@ -2103,6 +2107,7 @@ function GraphView() {
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('group')}><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
               <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('outline')} disabled><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')}><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
+              <button className={'px-2 py-1 text-sm'} onClick={()=>openHelp(HELP_DOCS.GRAPH, HELP_GRAPH_SECTIONS.OUTLINE)} title="Open Outline User Guide"><span className="inline-flex items-center gap-1"><HelpCircle className="w-4 h-4"/>Help</span></button>
               <div className="pt-1 border-t border-border" />
               <label className="inline-flex items-center gap-2 text-xs" title="Hide files inside the uploads/ directory from the Outline.">
                 <input

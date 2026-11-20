@@ -24,6 +24,27 @@ const API_URL = (() => {
 })();
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
+// GitHub-style heading slug ("Mind Map" -> "mind-map") so `?section=` and `#anchor` links can target headings.
+const slugify = (text: string) =>
+  text.trim().toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-');
+
+const textOf = (children: React.ReactNode): string =>
+  React.Children.toArray(children)
+    .map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : React.isValidElement<{ children?: React.ReactNode }>(c) ? textOf(c.props.children) : ''))
+    .join('');
+
+const scrollToSection = (id: string) => {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+const heading = (Tag: 'h1' | 'h2' | 'h3' | 'h4') =>
+  function Heading(allProps: React.HTMLAttributes<HTMLHeadingElement> & { node?: unknown }) {
+    const { children, ...props } = allProps;
+    delete props.node; // react-markdown's AST node; not a DOM attribute
+    return <Tag id={slugify(textOf(children))} {...props}>{children}</Tag>;
+  };
+const headingComponents = { h1: heading('h1'), h2: heading('h2'), h3: heading('h3'), h4: heading('h4') };
+
 export default function Help() {
   const [docFiles, setDocFiles] = useState<DocFile[]>([]);
   const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
@@ -105,6 +126,14 @@ export default function Help() {
       loadDocContent(selectedDocPath);
     }
   }, [selectedDocPath, loadDocContent]);
+
+  // Scroll to the requested section (e.g. /help?doc=graph-view.md&section=group) once the doc is rendered
+  const requestedSection = searchParams.get('section');
+  useEffect(() => {
+    if (!requestedSection || isLoading || !docContent) return;
+    const frame = requestAnimationFrame(() => scrollToSection(requestedSection));
+    return () => cancelAnimationFrame(frame);
+  }, [requestedSection, isLoading, docContent]);
 
   // Basic Ctrl+F handling within this view (client-side search in rendered text)
   useEffect(() => {
@@ -252,12 +281,28 @@ export default function Help() {
               remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
               rehypePlugins={[rehypeHighlight]}
               components={{ 
+                ...headingComponents,
                 pre: ({ children, ...props }: any) => (
                   <pre {...props} className="bg-muted p-4 rounded-lg overflow-x-auto text-sm">
                     {children}
                   </pre>
                 ),
                 a: ({ node, href, children, ...props }) => {
+                  if (href && href.startsWith('#')) {
+                    return (
+                      <a
+                        {...props}
+                        href={href}
+                        onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
+                          e.preventDefault();
+                          scrollToSection(decodeURIComponent(href.slice(1)));
+                        }}
+                        className="text-primary hover:underline cursor-pointer"
+                      >
+                        {children}
+                      </a>
+                    );
+                  }
                   if (href && !href.startsWith('http') && !href.startsWith('#')) {
                     const cleanedHref = href.replace(/^\.?\//, '');
                     const targetFile = docFiles.find(f => f.path.toLowerCase() === cleanedHref.toLowerCase());

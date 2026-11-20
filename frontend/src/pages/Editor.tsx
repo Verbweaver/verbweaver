@@ -10,11 +10,12 @@ import { useTabStore } from '../store/tabStore'
 import EditorSidebar from '../components/editor/EditorSidebar'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import toast from 'react-hot-toast'
-import { EDITOR_DEFAULT_FONT_SIZE, STORAGE_KEYS } from '@verbweaver/shared'
+import { EDITOR_DEFAULT_FONT_SIZE, HELP_DOCS, STORAGE_KEYS } from '@verbweaver/shared'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useNodeStore } from '../store/nodeStore'
 import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
+import { useOpenHelp } from '../hooks/useOpenHelp'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import SharedCreateLinkModal from '../components/common/CreateLinkModal'
@@ -28,6 +29,7 @@ const NOT_A_NODE_TITLE = 'This file is not a node.'
 function EditorView() {
   const { nodeId, filePath } = useParams()
   const navigate = useNavigate()
+  const openHelp = useOpenHelp()
   const { currentProject, currentProjectPath } = useProjectStore()
   const { theme } = useThemeStore()
   const { deleteNode } = useNodeStore()
@@ -872,10 +874,7 @@ function EditorView() {
 
             {/* Editor user guide in Help view */}
             <button
-              onClick={() => {
-                // Route to Help with doc filter to open Editor guide
-                navigate('/help?doc=editor.md')
-              }}
+              onClick={() => openHelp(HELP_DOCS.EDITOR)}
               className="p-1.5 rounded hover:bg-accent"
               title="Open Editor User Guide"
             >
