@@ -7,6 +7,8 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTabStore } from '../../store/tabStore'
 import { Network, ListTree, LineChart } from 'lucide-react'
 import clsx from 'clsx'
+import { HELP_DOCS, HELP_GRAPH_SECTIONS } from '@verbweaver/shared'
+import { useOpenHelp } from '../../hooks/useOpenHelp'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined
@@ -56,6 +58,7 @@ export default function ProgressionPanel(
   const { currentProject } = useProjectStore()
   const { nodes: nodeMap, loadNodes } = useNodeStore()
   const { getActiveTab, updateTabMetadata } = useTabStore()
+  const openHelp = useOpenHelp()
 
   const computeInitialConfig = (explicitTabId?: string): { cfg: ProgressionConfig; restored: boolean } => {
     try {
@@ -509,7 +512,7 @@ export default function ProgressionPanel(
             <input type="file" accept="application/json" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; if(f) onLoadConfig(f) }} />
           </label>
           <button className="px-2 py-1 text-sm border rounded w-full" onClick={()=> setFiltersOpen(true)}>Filters</button>
-          <button className="px-2 py-1 text-sm border rounded w-full" onClick={()=>{ try{ window.open('#/help?doc=graph-view.md','_self') }catch{ location.hash = '/help?doc=graph-view.md' } }}>Help</button>
+          <button className="px-2 py-1 text-sm border rounded w-full" onClick={()=> openHelp(HELP_DOCS.GRAPH, HELP_GRAPH_SECTIONS.PROGRESSION)} title="Open Progression User Guide">Help</button>
         </div>
         <div className="pt-1 border-t border-border" />
         <label className="text-xs font-medium">X variable</label>

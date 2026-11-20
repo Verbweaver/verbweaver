@@ -2,6 +2,17 @@
 
 Welcome to the Verbweaver documentation! This guide will help you understand, use, and contribute to Verbweaver.
 
+## User Guides
+
+How to use each page of Verbweaver. Each page also has a Help button that opens its guide.
+
+- [Editor](editor.md)
+- [Graph View](graph-view.md): Mind Map, Outline, Group, and Progression
+- [Tasks](tasks.md)
+- [Version Control](version-control.md)
+- [Compiler](compiler.md)
+- [Settings](settings.md)
+
 ## Table of Contents
 
 1. [Getting Started](getting-started.md)

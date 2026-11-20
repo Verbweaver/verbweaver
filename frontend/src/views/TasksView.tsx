@@ -23,7 +23,8 @@ import { useProjectStore } from '../store/projectStore'
 import { useNodeStore } from '../store/nodeStore'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { projectsApi } from '../api/projects'
-import { TaskState } from '@verbweaver/shared'
+import { HELP_DOCS, TaskState } from '@verbweaver/shared'
+import HelpButton from '../components/HelpButton'
 import TaskCard from '../components/tasks/TaskCard'
 import CreateTaskModal from '../components/tasks/CreateTaskModal'
 import TaskDetailModal from '../components/tasks/TaskDetailModal'
@@ -764,7 +765,10 @@ function TasksView() {
       <div className="px-6 py-4 border-b border-border">
         <div className="grid items-start gap-2 md:grid-cols-[1fr_auto]">
           <div>
-            <h1 className="text-2xl font-bold">Tasks</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-2xl font-bold">Tasks</h1>
+              <HelpButton doc={HELP_DOCS.TASKS} label="Tasks" />
+            </div>
             <p className="text-sm text-muted-foreground mt-1">
               Manage your project tasks and track progress. Every node in your project is a task.
             </p>

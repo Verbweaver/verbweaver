@@ -3,6 +3,8 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Save, Moon, Sun, Bell, GitBranch, Shield, LogOut, UserCircle, Palette, FolderOpen, FileCode, AlertTriangle } from 'lucide-react';
 import { useAuthStore } from '../services/auth';
 import { cn } from '@/lib/utils';
+import { HELP_DOCS } from '@verbweaver/shared';
+import HelpButton from '../components/HelpButton';
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -20,6 +22,10 @@ const settingsTabs = [
 
 export default function Settings() {
   const { logout } = useAuthStore();
+  const location = useLocation();
+  // Open the Settings guide at the section for the current tab (its heading slug is the lower-cased tab name)
+  const currentPath = location.pathname.replace(/\/$/, '');
+  const activeTab = settingsTabs.find((tab) => (tab.exact ? currentPath === tab.href : currentPath.startsWith(tab.href)));
 
   const handleLogout = async () => {
     await logout();
@@ -29,7 +35,10 @@ export default function Settings() {
   return (
     <div className="p-4 md:p-6 max-w-none w-full h-full flex flex-col md:flex-row md:space-x-6 overflow-hidden">
       <div className="md:w-1/4 mb-6 md:mb-0 md:max-h-[calc(100vh-2rem)] md:overflow-auto">
-        <h1 className="text-2xl font-bold mb-6 text-foreground">Settings</h1>
+        <div className="flex items-center gap-1 mb-6">
+          <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+          <HelpButton doc={HELP_DOCS.SETTINGS} label="Settings" section={activeTab?.name.toLowerCase()} />
+        </div>
         <nav className="space-y-1">
           {settingsTabs.map((tab) => (
             <NavLink

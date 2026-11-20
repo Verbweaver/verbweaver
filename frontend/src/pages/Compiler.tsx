@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { FileDown, FileText, Book, Package, Globe, Code, Loader2, FileType, AlertTriangle } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import { useTabStore } from '../store/tabStore'
-import { EXPORT_FORMATS } from '@verbweaver/shared'
+import { EXPORT_FORMATS, HELP_DOCS } from '@verbweaver/shared'
+import HelpButton from '../components/HelpButton'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
 import { compilerApi } from '../api/compilerApi'
@@ -872,7 +873,10 @@ function CompilerView() {
       <div className="flex-1 flex flex-col">
         <div className="p-6 space-y-6 overflow-y-auto h-full">
           <div>
-            <h1 className="text-2xl font-bold mb-2">Export Document</h1>
+            <div className="flex items-center gap-1 mb-2">
+              <h1 className="text-2xl font-bold">Export Document</h1>
+              <HelpButton doc={HELP_DOCS.COMPILER} label="Compiler" />
+            </div>
             <p className="text-muted-foreground">
               Configure and export your project as a document
             </p>

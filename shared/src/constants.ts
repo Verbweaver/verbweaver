@@ -28,6 +28,25 @@ export const METADATA_FILE_SUFFIX = '.metadata.md';
 export const TEMPLATES_FOLDER = 'templates';
 export const DOCS_FOLDER = 'docs';
 
+// In-app Help guides (file names inside DOCS_FOLDER), one per view
+export const HELP_DOCS = {
+  EDITOR: 'editor.md',
+  GRAPH: 'graph-view.md',
+  TASKS: 'tasks.md',
+  VERSION_CONTROL: 'version-control.md',
+  COMPILER: 'compiler.md',
+  SETTINGS: 'settings.md',
+} as const;
+export type HelpDoc = typeof HELP_DOCS[keyof typeof HELP_DOCS];
+
+// Section ids (slugs of the "## <Sub-view>" headings) within HELP_DOCS.GRAPH
+export const HELP_GRAPH_SECTIONS = {
+  MIND_MAP: 'mind-map',
+  OUTLINE: 'outline',
+  GROUP: 'group',
+  PROGRESSION: 'progression',
+} as const;
+
 // UI configuration
 export const SIDEBAR_WIDTH_DEFAULT = 240;
 export const SIDEBAR_WIDTH_MIN = 180;
