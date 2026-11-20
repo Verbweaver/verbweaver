@@ -13,7 +13,7 @@ The desktop app is in beta. A web server version for teams is in development and
 - **Graph:** see how your notes connect as a mind map, an outline, groups, or charts of the values in your notes.
 - **Editor:** write in Markdown ([Pandoc's flavour](https://pandoc.org/MANUAL.html#pandocs-markdown)), with preview, links between notes, images and maths.
 - **Tasks:** turn any note into a task, and track tasks on a Kanban board, a calendar, a to-do list, or Gantt and burndown charts.
-- **Unified Data Model**: Everything is a node; a node is everything. A single file can be a written document, tracked as a Task, and visualized as a node on a graph. 
+- **Unified Data Model:** Everything is a node; a node is everything. A single file can be a written document, tracked as a Task, and visualized as a node on a graph. 
 - **Compiler:** export your notes as PDF, Word, OpenDocument, EPUB, HTML or Markdown, with templates you can customise.
 - **Version control:** every project is a Git repository, so you can save versions, go back to earlier ones, and sync with GitHub or another Git host.
 - **Plain files:** your work is stored as Markdown files with a short details metadata block at the top, in a folder you choose. Use any other editor alongside Verbweaver.
