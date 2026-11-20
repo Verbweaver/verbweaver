@@ -1,0 +1,11 @@
+{
+  "hiddenOn": {
+    "desktop": [
+      "install-server.md",
+      "docker-deploy.md",
+      "oauth-setup.md",
+      "passkey-setup.md"
+    ],
+    "web": []
+  }
+}

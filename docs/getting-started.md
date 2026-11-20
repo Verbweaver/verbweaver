@@ -1,364 +1,80 @@
-# Getting Started with Verbweaver
+# Getting Started
 
-Welcome to Verbweaver! This guide will help you get up and running quickly.
+This guide takes you from installing Verbweaver to writing in your first project.
 
-## Installation Options
+## Install
 
-### Option 1: Desktop Application (Recommended for Writers)
+Download the installer for your computer from the [Releases page](https://github.com/Verbweaver/verbweaver/releases).
 
-The desktop application provides the best experience for individual writers who want to work offline with their local Git repositories.
+| Computer | File to download |
+|---|---|
+| Windows | `Verbweaver-Setup-<version>.exe` |
+| Mac with Apple silicon (M1 or later) | `Verbweaver-v<version>-arm64.dmg` |
+| Mac with an Intel processor | `Verbweaver-v<version>-x64.dmg` |
+| Linux | the `.AppImage`, or the `.deb` (Debian, Ubuntu) or `.rpm` (Fedora, RHEL) package |
 
-#### Pre-built Releases
+Not sure which Mac you have? Open the Apple menu and choose **About This Mac**. "Chip: Apple M…" means Apple silicon.
 
-Download the installer for your platform from GitHub Releases:
-- **Windows**: `Verbweaver-Setup-x.y.z.exe`
-- **macOS**: `Verbweaver-x.y.z.dmg`
-- **Linux**: `Verbweaver-x.y.z.AppImage` (or `.deb`/`.rpm`)
+- **Windows:** run the installer and follow the steps. If Windows SmartScreen warns you, click **More info**, then **Run anyway**.
+- **Mac:** open the `.dmg` and drag Verbweaver into Applications. If macOS won't open it, go to **System Settings → Privacy & Security** and click **Open Anyway**.
+- **Linux:** install the `.deb` or `.rpm` with your software installer, or make the `.AppImage` executable and double-click it.
 
-#### Building from Source
+### Also install Git
 
-1. **Prerequisites**
-   - Node.js 22.13+ and npm
-   - Python 3.11+
-   - Git
-   - Pandoc
+Verbweaver keeps the history of your work with Git, a free program that isn't included in the installer. You need it to create projects and save versions.
 
-2. **Clone and Setup**
-   ```bash
-   git clone https://github.com/Verbweaver/verbweaver.git
-   cd verbweaver
-   
-   # Install shared dependencies
-   cd shared
-   npm install
-   npm run build
-   cd ..
-   
-   # Setup backend (required for desktop app and web)
-   cd backend
-   pip install -r requirements.txt
-   python init_db.py
-   cd ..
-   
-   # Setup desktop app
-   cd desktop
-   npm install
-   ```
+- **Windows:** install it from [git-scm.com](https://git-scm.com/downloads).
+- **Mac:** open Terminal, type `git --version` and press Enter. If Git is missing, macOS offers to install it.
+- **Linux:** install the `git` package with your software installer.
 
-3. **Run in Development Mode**
-   ```bash
-   # From project root (Windows)
-   .\start-dev.ps1
-
-   # From project root (Linux/macOS)
-   ./start-dev.sh
-   ```
-   This starts FastAPI at http://localhost:8000 and Vite at http://localhost:3000.
-
-4. **Build for Distribution**
-   ```bash
-   # Build for production
-   npm run dist
-   # Or per-platform
-   npm run dist:win   # Windows
-   npm run dist:mac   # macOS
-   npm run dist:linux # Linux
-   ```
-   
-   Built applications will be in `desktop/dist/`
-
-### Option 2: Web Application
-
-Perfect for teams and collaboration.
-
-#### Development Setup
-
-1. **System Requirements**
-   - **Operating System**: Windows 10+, macOS 13 (Ventura)+, or Linux (Ubuntu 20.04+)
-   - **Python**: 3.11 or higher
-   - **Node.js**: 18.0 or higher
-   - **Git**: 2.30 or higher
-   - **Memory**: 4GB RAM minimum (8GB recommended)
-   - **Storage**: 2GB free space
-
-2. **Clone and Setup**
-   ```bash
-   git clone https://github.com/Verbweaver/verbweaver.git
-   cd verbweaver
-   ```
-
-   **Setting up the Backend (Python)**
-
-   It is highly recommended to use a Python virtual environment to manage dependencies for the backend and avoid conflicts with system-wide packages. This isolates the project's requirements.
-
-   ```bash
-   # Navigate to the backend directory
-   cd backend
-
-   # Create a virtual environment (e.g., named .venv)
-   # This only needs to be done once.
-   python -m venv .venv
-
-   # Activate the virtual environment
-   # Windows (PowerShell):
-   # If you get an error, you might need to run: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-   .\.venv\Scripts\Activate.ps1
-   
-   # Windows (Command Prompt - cmd.exe):
-   # .\.venv\Scripts\activate.bat
-
-   # Linux/macOS (bash/zsh):
-   # source .venv/bin/activate
-
-   # Once activated, your terminal prompt should change (e.g., showing '(.venv)').
-   # Now, install the required Python packages into this isolated environment.
-   pip install -r requirements.txt
-
-   # If you encounter issues with specific packages (like bcrypt),
-   # especially after updating requirements.txt, try reinstalling:
-   # pip install -r requirements.txt --force-reinstall
-   
-   # Any subsequent Python commands (e.g., python init_db.py or running the server)
-   # while the environment is active will use the packages installed here.
-   ```
-
-   **Setting up the Frontend (Node.js)**
-   ```bash
-   # Navigate to the frontend directory from the project root
-   cd ../frontend # If you were in backend/
-   # Or 'cd frontend' if you are in the project root
-
-   # Install Node.js dependencies
-   npm install
-   ```
-   After setting up both backend and frontend, you can typically return to the project root:
-   ```bash
-   cd .. # If you were in frontend/ or backend/
-   ```
-
-   To leave/deactivate the Python virtual environment when you're done:
-   ```bash
-   # This command works in any shell where the venv is active
-   deactivate
-   ```
-
-3. **Configure the Backend**
-   ```bash
-   cd backend
-   # Optional: copy a .env if you maintain one
-   # Initialize the SQLite database (auto-creates tables on first run as well)
-   python init_db.py
-   ```
-
-4. **Start the Servers**
-   ```bash
-   # From project root
-   # Windows:
-   .\start-dev.ps1
-   
-   # Linux/Mac:
-   ./start-dev.sh
-   ```
-
-5. **Access Verbweaver**
-   - Open http://localhost:3000 in your browser
-   - The API is available at http://localhost:8000
-
-### Option 3: Docker Deployment
-
-For production deployments or isolated development:
+Then tell Git your name and email, which are recorded with each version you save. In a terminal (Command Prompt on Windows):
 
 ```bash
-# Start all services
-docker compose up -d
-
-# Access the application
-# Frontend: http://localhost:3000
-# API: http://localhost:8000
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
 ```
 
-## Advanced Authentication Setup
+Everything else Verbweaver needs, including the tools for exporting to PDF, Word and e-book, comes with the app.
 
-Verbweaver supports several advanced authentication methods for the web application, providing enhanced security and user convenience.
+## Create your first project
 
-### OAuth 2.0 (Google & GitHub)
+A project is a folder on your computer that holds all your pages. When Verbweaver opens, you'll see the **Dashboard**.
 
-For detailed instructions on setting up OAuth 2.0 with Google and GitHub, please refer to the dedicated documentation:
+1. Click **Create New Project**.
+2. Enter a **Project Name** and, if you like, a **Description**.
+3. Under **Project Location**, click **Browse** and choose an empty folder, or type the path of a new folder. Verbweaver creates the folder if it doesn't exist.
+4. Click **Create Project**.
 
--   [OAuth Setup Guide](./oauth-setup.md)
+To open a project you already have, click **Open Existing Project** and choose its folder, or pick it from **Recent Projects**. To see a project's files on your computer, click **Open Project Folder**.
 
-This guide covers creating API credentials with Google Cloud Console and GitHub Developer Settings, configuring the necessary environment variables, and understanding the OAuth flow within Verbweaver.
+Your pages are ordinary text files, so you can back them up, sync them, or edit them in other programs. [Project Files and Folders](repository-paths.md) explains what's inside a project.
 
-### Passkey (WebAuthn) Authentication
+## Find your way around
 
-Passkeys (based on the WebAuthn standard) allow users to sign in using biometric sensors (like fingerprints or facial recognition), mobile devices, or hardware security keys, instead of traditional passwords. This method is generally more secure and user-friendly.
+Use the sidebar on the left to move between pages. Each page opens in a tab along the top, so you can keep several open at once. Every page has a **Help** button that opens its guide.
 
-To enable and configure Passkey authentication for your Verbweaver server, please refer to the following guide:
+| Page | What it's for | Guide |
+|---|---|---|
+| **Editor** | Write and edit your pages. | [Editor](editor.md) |
+| **Graph** | See how your pages connect, as a mind map, an outline, groups, or a chart. | [Graph View](graph-view.md) |
+| **Tasks** | Track work on a board, a calendar, or a to-do list. | [Tasks](tasks.md) |
+| **Version Control** | Save versions of your project and go back to earlier ones. | [Version Control](version-control.md) |
+| **Compiler** | Turn your pages into one finished document, such as a PDF or Word file. | [Compiler](compiler.md) |
 
--   [Passkey (WebAuthn) Setup Guide](./passkey-setup.md)
+At the bottom of the sidebar:
 
-This guide includes:
--   Prerequisites, such as setting up a Redis instance.
--   Required backend environment variable configurations (`WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_EXPECTED_ORIGIN`, `REDIS_URL`).
--   Detailed steps for database migrations using Alembic to add the `user_passkeys` table.
+- **Help** opens these guides.
+- **Settings** changes how Verbweaver looks and behaves. You can also use **File → Settings**, or **Ctrl+,** (**⌘,** on Mac). See the [Settings](settings.md) guide.
+- **Support** shows your version and links for reporting a problem or getting in touch.
 
-## Desktop Application Features
+[Keyboard Shortcuts](shortcuts.md) lists the keys for moving around quickly.
 
-The desktop version includes:
+## Get updates
 
-### Integrated Backend
-- No need to run separate servers
-- Automatic backend startup
-- Local SQLite database
-- Git integration for local repos
+Verbweaver doesn't update on its own. To check for a new version, choose **Help → Check for Updates…**, or click **Check for Updates** on the **Support** page. If there is one, it downloads in the background, and you'll be asked to restart when it's ready.
 
-### Native Features
-- System tray integration
-- Native file dialogs
-- OS-specific keyboard shortcuts
-- Auto-updater for new versions
-- Offline mode support
+## If something goes wrong
 
-### Security
-- Local data storage
-- No authentication required
-- Secure IPC communication
-- Sandboxed execution
-
-### Performance
-- Faster file operations
-- Native Git integration
-- Optimized for local workflows
-- Background processing
-
-## Desktop Application Usage
-
-### First Launch
-
-1. **Windows**: Double-click `Verbweaver.exe`
-2. **macOS**: Open `Verbweaver.app`
-3. **Linux**: Run `./Verbweaver.AppImage`
-
-### Creating Projects
-
-1. Click "New Project" or `Ctrl/Cmd + N`
-2. Choose a local directory for your Git repository
-3. Configure project settings
-4. Start creating!
-
-### Settings
-
-Access desktop-specific settings:
-- **File → Preferences** (Windows/Linux)
-- **Verbweaver → Preferences** (macOS)
-
-Configure:
-- Default project directory
-- Git author information
-- Editor preferences
-- Export settings
-
-### Keyboard Shortcuts
-
-| Action | Windows/Linux | macOS |
-|--------|--------------|-------|
-| New Project | Ctrl+N | Cmd+N |
-| Open Project | Ctrl+O | Cmd+O |
-| Save | Ctrl+S | Cmd+S |
-| Settings | Ctrl+, | Cmd+, |
-| Toggle DevTools | Ctrl+Shift+I | Cmd+Opt+I |
-
-## Troubleshooting Desktop App
-
-### Common Issues
-
-**App won't start**
-- Check antivirus software isn't blocking it
-- Run as administrator (Windows)
-- Check Gatekeeper settings (macOS)
-- Make executable: `chmod +x Verbweaver.AppImage` (Linux)
-
-**Backend connection failed**
-- Check if port 8000 is available
-- Look at logs in `%APPDATA%/verbweaver/logs` (Windows) or `~/.config/verbweaver/logs` (Linux/Mac)
-- Try restarting the application
-
-**Git operations fail**
-- Ensure Git is installed and in PATH
-- Configure Git credentials in settings
-- Check repository permissions
-
-### Debug Mode
-
-Run with debug logging:
-```bash
-# Windows
-set VERBWEAVER_DEBUG=true && Verbweaver.exe
-
-# Linux/Mac
-VERBWEAVER_DEBUG=true ./Verbweaver
-```
-
-### Reset Application
-
-To reset all settings and data:
-
-**Windows**: Delete `%APPDATA%\verbweaver`
-**macOS**: Delete `~/Library/Application Support/verbweaver`
-**Linux**: Delete `~/.config/verbweaver`
-
-## Creating Your First Project
-
-1. **Sign Up** (Web version only)
-   - Click "Sign Up" and create an account
-   - Verify your email address
-
-2. **Create a Project**
-   - Click "New Project"
-   - Enter project name and description
-   - Choose a Git repository location
-
-3. **Start Creating**
-   - Use the Graph view to create nodes
-   - Switch to Editor view to write content
-   - Create tasks in the Tasks view
-
-## Basic Concepts
-
-### Nodes
-- Each file in your project is a "node"
-- Nodes can be documents, images, or any file type
-- Markdown files have special metadata headers
-
-### Links
-- **Hard Links**: Structural relationships (folders/files)
-- **Soft Links**: Content relationships you define
-
-### Views
-- **Graph**: Visual representation of your project
-- **Editor**: Write and edit files
-- **Tasks**: Task management
-- **Version Control**: Git history and operations
-- **Compiler**: Export your project
-
-## Next Steps
-
-- Read the [Desktop Application Guide](desktop-guide.md) for detailed features
-- Check the [API Reference](api-reference.md) for automation
-- Join our [community](https://github.com/Verbweaver/verbweaver/discussions)
-
-## Getting Help
-
-### Documentation
-- [Desktop Application Guide](desktop-guide.md)
-- [Documentation index](README.md)
-
-### Community
-- [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues)
-- [Discord Server](https://discord.gg/verbweaver)
-- [Discussion Forum](https://github.com/Verbweaver/verbweaver/discussions)
-
-### Support
-- Email: support@verbweaver.com
-- Documentation: [Documentation index](README.md)
-- Bug Reports: [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues) 
+- **"Failed to start the backend server" when the app opens:** Verbweaver runs a small helper program in the background. Security software sometimes blocks it. Allow Verbweaver in your antivirus, then restart the app.
+- **Saving a version fails:** check that Git is installed and that you've set your name and email (see [Also install Git](#also-install-git)).
+- **Something else:** choose **Help → Report Issue** to tell us about it on GitHub. Include what you were doing and, if you can, a screenshot.

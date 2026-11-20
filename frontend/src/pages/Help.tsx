@@ -111,11 +111,15 @@ export default function Help() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
+  // Section picked by a link inside the docs ("guide.md#section"); '' = none. Takes over from the
+  // URL's ?section= until the URL changes again.
+  const [linkSection, setLinkSection] = useState<string | null>(null);
 
   const loadDocumentationStructure = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     setDocFiles([]);
+    setLinkSection(null);
     try {
       let files: DocFile[] = [];
       if (isElectron && window.electronAPI?.listDocs) {
@@ -182,7 +186,7 @@ export default function Help() {
   }, [selectedDocPath, loadDocContent]);
 
   // Scroll to the requested section (e.g. /help?doc=graph-view.md&section=group) once the doc is rendered
-  const requestedSection = searchParams.get('section');
+  const requestedSection = linkSection ?? searchParams.get('section');
   useEffect(() => {
     if (!requestedSection || isLoading || !docContent) return;
     const container = document.getElementById('help-doc-container');
@@ -295,7 +299,7 @@ export default function Help() {
           {docFiles.map((doc) => (
             <button
               key={doc.path}
-              onClick={() => setSelectedDocPath(doc.path)}
+              onClick={() => { setLinkSection(''); setSelectedDocPath(doc.path); }}
               className={`flex items-center gap-2 py-1.5 px-2.5 hover:bg-accent rounded-md w-full text-left transition-colors duration-100 ease-in-out ${
                 selectedDocPath === doc.path ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'
               }`}
@@ -376,7 +380,8 @@ export default function Help() {
                     );
                   }
                   if (href && !href.startsWith('http') && !href.startsWith('#')) {
-                    const cleanedHref = href.replace(/^\.?\//, '');
+                    const [docHref, anchor = ''] = href.split('#');
+                    const cleanedHref = docHref.replace(/^\.?\//, '');
                     const targetFile = docFiles.find(f => f.path.toLowerCase() === cleanedHref.toLowerCase());
                     if (targetFile) {
                       return (
@@ -385,6 +390,7 @@ export default function Help() {
                           href={targetFile.path}
                           onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
                             e.preventDefault();
+                            setLinkSection(decodeURIComponent(anchor));
                             setSelectedDocPath(targetFile.path);
                           }}
                           className="text-primary hover:underline cursor-pointer"
@@ -393,8 +399,8 @@ export default function Help() {
                         </a>
                       );
                     }
-                    console.warn('Could not find target for internal link:', href, 'Cleaned:', cleanedHref);
-                    return <span className="text-muted-foreground" title={`Unresolved link: ${href}`}>{children}</span>;
+                    // e.g. a doc that isn't shown on this platform: keep the words, drop the link
+                    return <span>{children}</span>;
                   }
                   return (
                     <a {...props} href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">

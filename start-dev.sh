@@ -30,7 +30,7 @@ fi
 # Start Backend
 echo -e "\n\033[33mStarting Backend Server ($PY)...\033[0m"
 cd backend
-"$PY" -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 &
+"$PY" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 cd ..
 

@@ -2,7 +2,7 @@ Write-Host "Starting Verbweaver Development Servers..." -ForegroundColor Cyan
 
 # Start Backend
 Write-Host "`nStarting Backend Server..." -ForegroundColor Yellow
-$backend = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000" -PassThru
+$backend = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000" -PassThru
 Write-Host "Backend server starting on http://localhost:8000" -ForegroundColor Green
 
 # Wait a bit for backend to start

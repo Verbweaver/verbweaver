@@ -1,4 +1,4 @@
-# Tasks User Guide
+# Tasks
 
 The Tasks page helps you plan and track your work, such as drafting chapters, revising scenes, or finishing designs. Every page in your project is also a task, so changes you make here appear in the Graph and the Editor too.
 

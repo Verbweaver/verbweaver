@@ -1,145 +1,33 @@
-# Dependency Checker
+# Export Tools
 
-## Overview
+The [Compiler](compiler.md) uses two free programs to turn your pages into finished documents:
 
-The Verbweaver desktop application includes a built-in dependency checker that ensures required system software is available for document export and preview features.
+- **Pandoc** converts your pages to every format, and also draws the Editor's preview.
+- A **PDF engine** (Tectonic, which comes with Verbweaver, or a LaTeX program such as xelatex) is used when exporting to PDF.
 
-## What It Checks
+Both come with the desktop app, so you normally don't need to install anything.
 
-### Pandoc
-- **Required for**: Document export (PDF, DOCX, EPUB, ODT, HTML) and live preview
-- **Detection**: Checks if `pandoc --version` command is available
-- **Installation**: Provides platform-specific installation instructions
+## Checking that they work
 
-### LaTeX (xelatex/pdflatex)
-- **Required for**: PDF export
-- **Windows (MiKTeX)**: After installing, open MiKTeX Console → Settings → General and set "Install missing packages on-the-fly" to **Always**. This prevents errors such as `rerunfilecheck.sty not found`.
-- **macOS**: Install MacTeX (or via Homebrew: `brew install --cask mactex`)
-- **Linux**: Install TeX Live (e.g., `sudo apt-get install texlive texlive-xetex`)
-## How It Works
+Open **Settings → Dependencies**. Each tool shows a green tick when it's ready, with "(using bundled)" if Verbweaver is using the copy it came with.
 
-### Automatic Detection
-1. **Startup Check**: When the desktop app starts, it automatically checks for required dependencies
-2. **Missing Dependencies**: If dependencies are missing, a floating indicator appears in the bottom-right corner
-3. **User Notification**: Clicking the indicator opens a detailed dialog with installation instructions
+![Settings, Dependencies: Pandoc and the PDF engine, both installed](images/settings-dependencies.png)
 
-### Manual Checking
-1. **Settings Page**: Navigate to Settings > Dependencies to manually check dependencies
-2. **Compiler Page**: The Compiler page shows warnings when dependencies are missing
-3. **Real-time Updates**: Use "Check Again" to re-verify after installing dependencies
+If a tool is missing, Verbweaver also shows a red **Missing Dependencies** button in the corner of the window, and a warning on the Compiler page.
 
-## Installation Instructions
+## If a tool is missing
 
-### Windows
-```powershell
-# Option 1: Using winget (recommended)
-winget install pandoc
+1. Click its **Install** button, such as **Install Pandoc**. This opens the tool's download page.
+2. Install it and follow the installer's steps.
+3. Back in Verbweaver, click **Check Again**. If it still isn't found, restart Verbweaver.
 
-# Option 2: Using Chocolatey
-choco install pandoc
+You can also install them from a terminal:
 
-# Option 3: Download installer
-# Visit https://pandoc.org/installing.html
+| Computer | Pandoc | PDF engine |
+|---|---|---|
+| Windows | `winget install pandoc` | [MiKTeX](https://miktex.org/download) |
+| Mac | `brew install pandoc` | `brew install --cask mactex` |
+| Debian, Ubuntu | `sudo apt install pandoc` | `sudo apt install texlive-xetex` |
+| Fedora | `sudo dnf install pandoc` | `sudo dnf install texlive-xetex` |
 
-# MiKTeX (required for PDF via LaTeX)
-# After installing MiKTeX, open MiKTeX Console → Settings → General
-# Set "Install missing packages on-the-fly" to Always.
-```
-
-### macOS
-```bash
-# Option 1: Using Homebrew (recommended)
-brew install pandoc
-
-# Option 2: Download installer
-# Visit https://pandoc.org/installing.html
-```
-
-### Linux
-```bash
-# Ubuntu/Debian
-sudo apt-get install pandoc
-
-# Fedora
-sudo dnf install pandoc
-
-# Arch Linux
-sudo pacman -S pandoc
-
-# Or download from https://pandoc.org/installing.html
-```
-
-## User Experience
-
-### Startup Flow
-1. App starts and checks dependencies in background
-2. If missing dependencies found:
-   - Floating indicator appears
-   - User can click to see details
-   - User can choose to install or skip
-3. If all dependencies available:
-   - No interruption to normal workflow
-
-### Settings Integration
-- **Dependencies Tab**: Dedicated page in Settings for dependency management
-- **Status Display**: Clear visual indicators for available/missing dependencies
-- **Installation Help**: Direct links to installation guides and package managers
-
-### Compiler Integration
-- **Warning Banner**: Shows when trying to export without required dependencies
-- **Format-specific**: Only warns about dependencies needed for selected export format
-- **Quick Install**: Direct links to install missing dependencies
-
-## Technical Implementation
-
-### Backend (Main Process)
-- **Detection**: Uses `child_process.spawn` to check `pandoc --version`
-- **Version Parsing**: Extracts version number from command output
-- **Error Handling**: Graceful fallback when commands fail
-
-### Frontend (Renderer Process)
-- **IPC Communication**: Uses Electron IPC to communicate with main process
-- **UI Components**: React components for dependency display and management
-- **State Management**: Local state for dependency status and loading states
-
-### Platform Support
-- **Cross-platform**: Works on Windows, macOS, and Linux
-- **Platform-specific**: Provides appropriate installation instructions per OS
-- **Package Managers**: Supports common package managers (winget, brew, apt, etc.)
-
-## Troubleshooting
-
-### Common Issues
-
-#### Pandoc Not Found After Installation
-1. **Restart the app**: The dependency checker runs on startup
-2. **Check PATH**: Ensure Pandoc is in your system PATH
-3. **Manual verification**: Try running `pandoc --version` in terminal
-
-#### Installation Fails
-1. **Admin privileges**: Some installers require administrator access
-2. **Antivirus**: Check if antivirus software is blocking the installation
-3. **Manual download**: Use the direct download option from pandoc.org
-
-#### Version Detection Issues
-1. **Multiple installations**: Check for conflicting Pandoc installations
-2. **PATH conflicts**: Ensure the correct Pandoc version is in PATH
-3. **Restart terminal**: PATH changes may require terminal restart
-
-### Getting Help
-- **Installation Guide**: Visit https://pandoc.org/installing.html
-- **Community Support**: Check the Verbweaver community forums
-- **Issue Reporting**: Report bugs through the app's help system
-
-## Future Enhancements
-
-### Planned Features
-- **Auto-installation**: Automatic installation with user consent
-- **Version requirements**: Check for minimum required versions
-- **Update notifications**: Alert when newer versions are available
-
-### Technical Improvements
-- **Caching**: Cache dependency status to improve performance
-- **Background monitoring**: Monitor for dependency changes
-- **Installation progress**: Show installation progress for auto-install
-- **Rollback support**: Ability to revert dependency installations
+With MiKTeX on Windows, open **MiKTeX Console → Settings → General** and set **Install missing packages on-the-fly** to **Always**. Otherwise some PDF exports stop with a "file not found" error.

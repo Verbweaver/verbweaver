@@ -1,37 +1,27 @@
----
-id: node-1748520961585-9hmiz5x
-title: README
-type: file
-position:
-  x: 152.7670057796534
-  'y': 30.03682611754199
-modified: '2025-05-29T12:16:33.062Z'
----
-# TestingNodes
+# Verbweaver Desktop
 
-This is a Verbweaver project for TestingNodes.
+The Electron app that wraps the shared React frontend (`../frontend`) and runs the Python backend (`../backend`) in the background.
 
-## Getting Started
+- `src/main.ts`: the main process. Starts the backend, builds the menus, and handles the IPC channels the frontend uses for files, projects, the graph, Git, templates, Help docs and dependency checks.
+- `src/preload.ts`: exposes those channels to the frontend as `window.electronAPI`. Types are in `src/global.d.ts` and `../frontend/src/global.d.ts`.
+- `resources/`: icons, macOS entitlements and the bundled Pandoc and Tectonic binaries (see [resources/README.md](resources/README.md)).
 
-This project uses Verbweaver to organize ideas, tasks, and content using a graph-based approach.
-All content nodes (which can also be managed as tasks) are stored as Markdown files in the `nodes/` directory.
-Task-specific information (like status, due date) is stored in the metadata (frontmatter) of these files.
+## Run in development
 
-### Project Structure
+From the repo root, `./desktop/build-and-run.sh` (or `desktop\build-and-run.ps1` on Windows) does everything. To run it by hand, start the frontend dev server (`cd frontend && npm run dev`, port 3000), then:
 
-- `nodes/` - Contains all content nodes and task items (Markdown files).
-- `docs/` - Project documentation.
-- `templates/` - Reusable templates for content or graph appearance.
-- `.verbweaver/` - Verbweaver configuration and metadata for this project.
+```bash
+cd desktop
+NODE_ENV=development npm run dev
+```
 
-### Views
+Without `NODE_ENV=development`, the app looks for the packaged frontend instead of the dev server. In development it starts the backend with the Python in `<repo>/.venv` or `backend/.venv`; set `SKIP_BACKEND=true` if you run the backend yourself on port 8000.
 
-- **Graph** - Visual representation of relationships between content in `nodes/`.
-- **Editor** - Edit content and metadata of files in `nodes/`.
-- **Tasks** - Task management view that operates on items in `nodes/` based on their metadata.
-- **Version Control** - Git integration for tracking changes.
-- **Compiler** - Export content to various formats.
+## Check and package
 
-## Version Control
+```bash
+npm run typecheck
+npm run dist:linux     # or dist:win, dist:mac; dist:full:* also builds the frontend
+```
 
-This project is backed by Git for version control. All changes are tracked and you can view the history in the Version Control view.
+Installers are written to `dist-app/`. Packaged builds also need the PyInstaller backend in `resources/backend/<platform>/`, which the release workflow builds; see [the release checklist](../dev-docs/RELEASE_CHECKLIST.md).

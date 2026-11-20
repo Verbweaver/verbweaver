@@ -1,4 +1,4 @@
-# Graph View User Guide
+# Graph View
 
 The Graph view shows your whole project and how its pages connect. It has four views. Switch between them with the buttons at the top right, and click **Help** there to jump to the section for the view you're in.
 
@@ -96,7 +96,7 @@ The Group view sorts your pages into named collections and shows them as boxes, 
 
 ### Making a group
 
-1. Click **+ Add** on the right. A new group starts out containing every page.
+1. Click **Add** on the right. A new group starts out containing every page.
 2. Click the funnel icon to choose which pages belong in it, for example everything tagged "villain".
 3. Click the pencil icon to give it a name.
 
@@ -134,7 +134,7 @@ Say you're building a fantasy world and you've tagged each lore article. Tags mi
 
 1. Make a group called **Characters**. Set its filter to the tag `character`.
 2. Make a group called **Northern Reaches**. Set its filter to the tag `northern-reaches`.
-3. Make a group called **Northern characters**. Set its filter to the tags `character, northern-reaches` and choose **Match: ALL**, so only articles with both tags are included.
+3. Make a group called **Northern characters**. Set its filter to the tags `character, northern-reaches` and set **Match:** to **ALL**, so only articles with both tags are included.
 
 An arrow now points from **Characters** and from **Northern Reaches** to **Northern characters**, because it sits inside both. Turn on **Nest groups** to see it drawn inside them instead. At a glance you can see who lives where, and spot any character you forgot to place in a region.
 
@@ -144,7 +144,7 @@ Say you document your organisation's network, with one page per server, database
 
 1. Make a group called **Production**. Set its filter to the tag `production`.
 2. Make a group called **Staging**. Set its filter to the tag `staging`.
-3. Make a group called **Production databases**. Set its filter to the tags `production, database` with **Match: ALL**.
+3. Make a group called **Production databases**. Set its filter to the tags `production, database` with **Match:** set to **ALL**.
 4. Make a group called **Firewalls**. Set its filter to the tag `firewall`.
 
 You can now see which resources belong to each environment, which databases are in production, and where your firewalls sit. If a page shows up in both **Production** and **Staging**, it may be tagged by mistake, or it may be shared between them, which is worth knowing either way.
@@ -199,7 +199,7 @@ Say you want to see how tense things get for two characters, Mira and Rowan, as 
 
 ```yaml
 ---
-title: Chapter 1 – The Letter
+title: "Chapter 1: The Letter"
 tags: [chapter]
 chapter: 1
 mira_tension: 3
@@ -209,7 +209,7 @@ rowan_tension: 5
 
 ```yaml
 ---
-title: Chapter 2 – The Crossing
+title: "Chapter 2: The Crossing"
 tags: [chapter]
 chapter: 2
 mira_tension: 6
@@ -219,7 +219,7 @@ rowan_tension: 4
 
 ```yaml
 ---
-title: Chapter 3 – The Storm
+title: "Chapter 3: The Storm"
 tags: [chapter]
 chapter: 3
 mira_tension: 9

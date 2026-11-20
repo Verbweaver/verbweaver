@@ -1,89 +1,35 @@
-# Verbweaver Documentation
+# Verbweaver Help
 
-Welcome to the Verbweaver documentation! This guide will help you understand, use, and contribute to Verbweaver.
+Verbweaver is a place to write and plan in pieces. Each page you write is at once:
 
-## User Guides
+- a **document** you edit in the Editor;
+- a **card** on the Graph, linked to related pages;
+- a **task** you can track on the Tasks board.
 
-How to use each page of Verbweaver. Each page also has a Help button that opens its guide.
+When you're ready, the Compiler puts chosen pages together, in order, into one finished document such as a PDF, Word file or e-book. Your work is stored as ordinary text files in a folder you choose, and Verbweaver keeps a history of every version you save.
 
-- [Editor](editor.md)
-- [Graph View](graph-view.md): Mind Map, Outline, Group, and Progression
-- [Tasks](tasks.md)
-- [Version Control](version-control.md)
-- [Compiler](compiler.md)
+## Start here
+
+- [Getting Started](getting-started.md): install Verbweaver and create your first project.
+- [Keyboard Shortcuts](shortcuts.md)
+
+## Guides for each page
+
+Each page also has a **Help** button that opens its guide.
+
+- [Editor](editor.md): write and format your pages.
+- [Graph View](graph-view.md): see how pages connect, with the Mind Map, Outline, Group and Progression views.
+- [Tasks](tasks.md): track work on a board, a calendar or a to-do list.
+- [Version Control](version-control.md): save versions and go back to earlier ones.
+- [Compiler](compiler.md): export your pages as one document.
 - [Settings](settings.md)
 
-## Table of Contents
+## More
 
-1. [Getting Started](getting-started.md)
-2. [Desktop Guide](desktop-guide.md)
-3. [Desktop Quick Reference](desktop-quick-reference.md)
-4. [Architecture](architecture.md)
-5. [API Reference](api-reference.md)
-6. [Install: Desktop](install-desktop.md)
-7. [Install: Server](install-server.md)
-8. [Deploy with Docker](docker-deploy.md)
-9. [OAuth Setup](oauth-setup.md)
-10. [Passkey (WebAuthn) Setup](passkey-setup.md)
-11. [Compiler Template System](compiler-template-system.md)
-12. [Dependency Checker](dependency-checker.md)
-13. [Repository Paths](repository-paths.md)
-14. [Security Checklist](security-checklist.md)
-15. [Release Checklist](RELEASE_CHECKLIST.md)
+- [Project Files and Folders](repository-paths.md): what's inside a project folder.
+- [Export Tools](dependency-checker.md): the programs used for exporting, and what to do if one is missing.
+- [Compiler Template System](compiler-template-system.md): build your own layouts for exported documents. This one is more technical.
 
-## What is Verbweaver?
+## Getting help
 
-Verbweaver is a revolutionary writing and design platform that thinks in relationships (graphs). It's designed for:
-
-- **Writers**: Organize your stories, characters, and worlds in interconnected nodes
-- **Developers**: Track documentation, design docs, and technical specifications
-- **Teams**: Collaborate on projects with full version control and task management
-- **Anyone**: Who thinks in relationships and wants to organize their ideas
-
-## Key Concepts
-
-### Nodes
-Every piece of content in Verbweaver is a node. A node can be:
-- A markdown file with your content
-- A task to track work
-- A chapter, scene, or character in your story
-- Documentation for your project
-- Any file in your Git repository
-
-### Edges (Links)
-Nodes are connected by edges, which represent relationships:
-- **Hard links**: Structural relationships (e.g., directory contains files)
-- **Soft links**: Content relationships you define
-- **Dependencies**: Task relationships
-- **References**: Citations and cross-references
-
-### Projects
-Each project in Verbweaver is backed by a Git repository, giving you:
-- Full version control
-- Collaboration capabilities
-- Offline access
-- Integration with existing workflows
-
-### Views
-Verbweaver provides multiple views to work with your content:
-- **Graph View**: Visualize relationships
-- **Editor View**: Write and edit content
-- **Tasks View**: Manage tasks
-- **Version Control View**: Track changes
-- **Compiler View**: Export your work
-
-## Quick Start
-
-1. **Install Verbweaver** (see [Getting Started](getting-started.md))
-2. **Create a Project** backed by a Git repository
-3. **Add Content** in the Editor view
-4. **Link Ideas** in the Graph view
-5. **Track Progress** with Tasks
-6. **Export** your work with the Compiler
-
-## Need Help?
-
-- See [Desktop Guide](desktop-guide.md) for usage tips
-- Read the [API Reference](api-reference.md) for technical details
-- Join our community discussions
-- Report issues on GitHub 
+Choose **Help → Report Issue** to report a problem on GitHub. The **Support** page, at the bottom of the sidebar, has more ways to get in touch.
