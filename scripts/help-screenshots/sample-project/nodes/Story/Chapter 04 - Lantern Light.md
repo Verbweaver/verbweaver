@@ -6,7 +6,7 @@ tags: [chapter, draft]
 chapter: 4
 mira_tension: 5
 rowan_tension: 9
-links: [rowan-ashby, lantern-guild]
+links: [lantern-guild]
 task:
   status: todo
   priority: high

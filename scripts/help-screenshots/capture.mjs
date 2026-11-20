@@ -34,7 +34,10 @@ const OUT_DIR = path.resolve(REPO, typeof args.out === 'string' ? args.out : 'do
 const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',')) : null;
 const FRONTEND_URL = 'http://localhost:3000';
 const WINDOW = { width: 1440, height: 900 };
-const PROJECT_NAME = 'The Emberfall Chronicles';
+// Sample projects (folders next to this script): a fantasy novel for most views, and a small
+// plant growth study for the Mind Map (a simpler map) and the Progression chart
+const NOVEL = { name: 'The Emberfall Chronicles', folder: 'Emberfall Chronicles', fixture: 'sample-project', description: 'A fantasy novel and its world.' };
+const PLANT = { name: 'Plant Growth Study', folder: 'Plant Growth Study', fixture: 'sample-plant-study', description: 'A weekly plant growth experiment.' };
 
 // Commits in the sample project use a made-up author, and no personal git config is read,
 // so nothing from the machine running the script ends up in the screenshots
@@ -131,32 +134,40 @@ function git(cwd, ...gitArgs) {
   execFileSync('git', gitArgs, { cwd, stdio: 'ignore', env: { ...process.env, ...GIT_ENV } });
 }
 
-/** Hand-placed Mind Map positions for pages, written into their front matter (used in Rigid mode). */
-async function applyMindMapPositions(projectPath) {
-  const config = path.join(HERE, 'sample-project', 'config', 'mind-map.json');
-  const { positions } = JSON.parse(await fs.readFile(config, 'utf8'));
-  for (const [rel, { x, y }] of Object.entries(positions)) {
-    const file = path.join(projectPath, rel);
-    const text = await fs.readFile(file, 'utf8');
-    // Insert before the closing '---' of the front matter
-    await fs.writeFile(file, text.replace(/\n---\n/, `\nposition:\n  x: ${x}\n  y: ${y}\n---\n`));
-  }
-}
-
-async function populateProject(projectPath) {
-  const nodesDir = path.join(projectPath, 'nodes');
-  await copyNodes(path.join(HERE, 'sample-project', 'nodes', 'World'), path.join(nodesDir, 'World'));
+async function createProject(win, project, projectPath) {
+  log(`Creating sample project "${project.name}"...`);
+  await win.evaluate(
+    ([name, p, description]) => window.electronAPI.createProject(name, p, description),
+    [project.name, projectPath, project.description]
+  );
   try {
     await fs.access(path.join(projectPath, '.git'));
   } catch {
     git(projectPath, 'init', '-q', '-b', 'main');
   }
+}
+
+/** The novel is added in two commits, so Version Control has some history to show. */
+async function populateNovel(projectPath) {
+  const src = path.join(HERE, NOVEL.fixture, 'nodes');
+  const nodesDir = path.join(projectPath, 'nodes');
+  await copyNodes(path.join(src, 'World'), path.join(nodesDir, 'World'));
   git(projectPath, 'add', '-A');
   git(projectPath, 'commit', '-q', '-m', 'Build the world: characters, places and factions');
-  await copyNodes(path.join(HERE, 'sample-project', 'nodes', 'Story'), path.join(nodesDir, 'Story'));
-  await applyMindMapPositions(projectPath);
+  await copyNodes(path.join(src, 'Story'), path.join(nodesDir, 'Story'));
   git(projectPath, 'add', '-A');
   git(projectPath, 'commit', '-q', '-m', 'Draft chapters 1 to 5');
+}
+
+async function populatePlantStudy(projectPath) {
+  await copyNodes(path.join(HERE, PLANT.fixture, 'nodes'), path.join(projectPath, 'nodes'));
+  git(projectPath, 'add', '-A');
+  git(projectPath, 'commit', '-q', '-m', 'Weeks 1 to 6 of observations');
+}
+
+async function openProject(win, projectPath) {
+  await win.evaluate((p) => window.electronAPI.openProject(p), projectPath);
+  await settle(win, 4000);
 }
 
 /** One uncommitted edit, made after the app has opened (and committed) the project. */
@@ -200,7 +211,6 @@ async function main() {
   buildDesktop();
   const frontend = await ensureFrontend();
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'vw-help-shots-'));
-  const projectPath = path.join(tmp, 'Emberfall Chronicles');
   await fs.mkdir(OUT_DIR, { recursive: true });
 
   const app = await _electron.launch({
@@ -233,18 +243,8 @@ async function main() {
     }, WINDOW);
     await settle(win, 3000);
 
-    log('Creating sample project...');
-    await win.evaluate(
-      ([name, p]) => window.electronAPI.createProject(name, p, 'A fantasy novel and its world.'),
-      [PROJECT_NAME, projectPath]
-    );
-    await populateProject(projectPath);
-    await win.evaluate((p) => window.electronAPI.openProject(p), projectPath);
-    await settle(win, 4000);
-    await makeUncommittedEdit(projectPath);
-
     try {
-      await captureAll(win);
+      await captureAll(win, tmp);
     } catch (err) {
       const debugShot = path.join(os.tmpdir(), 'vw-help-shots-error.png');
       await win.screenshot({ path: debugShot }).catch(() => {});
@@ -277,9 +277,10 @@ async function fitView(win) {
   }
 }
 
-async function importJson(win, fixture) {
+/** Load a config through the view's own Import JSON / Load Config file input. */
+async function importJson(win, project, fixture) {
   await win.locator('input[type=file][accept*="json"]').first()
-    .setInputFiles(path.join(HERE, 'sample-project', 'config', fixture));
+    .setInputFiles(path.join(HERE, project.fixture, 'config', fixture));
   await settle(win, 1500);
 }
 
@@ -315,7 +316,14 @@ async function clickText(win, text, wait = 800) {
   await settle(win, wait);
 }
 
-async function captureAll(win) {
+async function captureAll(win, tmp) {
+  // --- The novel: every view except Progression ---------------------------------------------
+  const novelPath = path.join(tmp, NOVEL.folder);
+  await createProject(win, NOVEL, novelPath);
+  await populateNovel(novelPath);
+  await openProject(win, novelPath);
+  await makeUncommittedEdit(novelPath);
+
   // Version Control first, while the only uncommitted change is the Chapter 3 edit
   await openSidebar(win, 'Version Control');
   await settle(win, 1500);
@@ -324,28 +332,17 @@ async function captureAll(win) {
   // --- Graph -----------------------------------------------------------------------------------
   await openSidebar(win, 'Graph');
   await settle(win, 2500);
-  // Fold the Options tray so it doesn't cover the top-left of the map
-  await win.getByRole('button', { name: /^Options/ }).first().click();
-  await sleep(400);
-  await fitView(win);
-  await zoomOut(win, 1);
-  await panBy(win, -90);
-  await shot(win, 'graph-mind-map');
 
   await clickButton(win, 'Outline');
   await clickButton(win, 'Expand all');
   await shot(win, 'graph-outline');
 
   await clickButton(win, 'Group', 1500);
-  await importJson(win, 'group-view.json');
+  await importJson(win, NOVEL, 'group-view.json');
   await fitView(win);
   await zoomOut(win, 2);
   await panBy(win, -90, 40);
   await shot(win, 'graph-group');
-
-  await clickButton(win, 'Progression', 1500);
-  await importJson(win, 'progression.json');
-  await shot(win, 'graph-progression');
 
   // --- Tasks -----------------------------------------------------------------------------------
   await openSidebar(win, 'Tasks');
@@ -389,6 +386,30 @@ async function captureAll(win) {
     await settle(win, 1200);
     await shot(win, name);
   }
+
+  // --- The plant study: Mind Map and Progression --------------------------------------------------
+  const plantPath = path.join(tmp, PLANT.folder);
+  await createProject(win, PLANT, plantPath);
+  await populatePlantStudy(plantPath);
+  await openProject(win, plantPath);
+  await openSidebar(win, 'Graph');
+  await settle(win, 2500);
+  await captureMindMap(win);
+  await clickButton(win, 'Progression', 1500);
+  await importJson(win, PLANT, 'progression.json');
+  await shot(win, 'graph-progression');
+}
+
+async function captureMindMap(win) {
+  await clickButton(win, 'Mind Map', 1500);
+  // Fold the Options tray so it doesn't cover the top-left of the map, then use a built-in layout
+  const options = win.getByRole('button', { name: /^Options/ }).first();
+  if ((await options.getAttribute('aria-expanded')) === 'true') await options.click();
+  await sleep(400);
+  await win.getByRole('button', { name: new RegExp(`${args.layout || 'Top to Bottom'}$`) }).first().click();
+  await settle(win, 2000);
+  await fitView(win);
+  await shot(win, 'graph-mind-map');
 }
 
 main().catch((err) => {

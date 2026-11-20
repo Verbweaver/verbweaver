@@ -11,7 +11,7 @@ The Graph view shows your whole project and how its pages connect. It has four v
 
 The Mind Map shows every page in your project as a card on a board, with lines for the links between them. Use it to see how characters, places, chapters, and ideas connect, and to arrange them in a way that makes sense to you.
 
-![The Mind Map: page cards linked together, with the Layout and view buttons on the right](images/graph-mind-map.png)
+![The Mind Map of a plant growth study, arranged with Top to Bottom: folders contain the weekly observation pages, and a dashed link joins Method to Week 1](images/graph-mind-map.png)
 
 ### Moving around
 
@@ -153,7 +153,7 @@ You can now see which resources belong to each environment, which databases are 
 
 The Progression view draws a line chart from details you've recorded on your pages. Use it to see how something changes across your work, for example a character's mood across chapters or the tension level from scene to scene.
 
-![The Progression chart: Mira's and Rowan's tension plotted across five chapters](images/graph-progression.png)
+![The Progression chart from the plant growth example: height and leaf count plotted by week](images/graph-progression.png)
 
 ### Before you start
 

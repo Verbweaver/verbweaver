@@ -6,7 +6,7 @@ tags: [chapter, draft]
 chapter: 1
 mira_tension: 3
 rowan_tension: 5
-links: [mira-vale, frostmere]
+links: [mira-vale]
 task:
   status: done
   priority: medium

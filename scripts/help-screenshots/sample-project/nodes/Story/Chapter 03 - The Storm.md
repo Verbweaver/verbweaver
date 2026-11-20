@@ -6,7 +6,7 @@ tags: [chapter, draft]
 chapter: 3
 mira_tension: 9
 rowan_tension: 8
-links: [mira-vale, rowan-ashby, saltmarsh-harbour]
+links: [mira-vale, rowan-ashby]
 task:
   status: in-progress
   priority: high

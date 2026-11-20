@@ -3,7 +3,7 @@ id: mira-vale
 title: Mira Vale
 description: A cartographer from Frostmere who can read the old ember maps.
 tags: [character, northern-reaches, protagonist]
-links: [frostmere, house-varn]
+links: [frostmere]
 task:
   status: done
   priority: high

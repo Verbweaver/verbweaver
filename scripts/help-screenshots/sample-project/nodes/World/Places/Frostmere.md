@@ -3,7 +3,6 @@ id: frostmere
 title: Frostmere
 description: A walled town on the frozen northern lakes.
 tags: [place, northern-reaches]
-links: [ember-gate]
 task:
   status: done
   priority: medium

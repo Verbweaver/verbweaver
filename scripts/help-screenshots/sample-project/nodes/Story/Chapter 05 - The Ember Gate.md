@@ -6,7 +6,7 @@ tags: [chapter, draft]
 chapter: 5
 mira_tension: 10
 rowan_tension: 7
-links: [mira-vale, isolde-varn, ember-gate]
+links: [ember-gate]
 task:
   status: todo
   priority: medium

@@ -3,7 +3,6 @@ id: lantern-guild
 title: The Lantern Guild
 description: Merchants who control light, oil, and information on the coast.
 tags: [faction, southern-coast]
-links: [saltmarsh-harbour]
 task:
   status: todo
   priority: medium

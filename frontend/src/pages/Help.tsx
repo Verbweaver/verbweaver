@@ -18,6 +18,7 @@ type DocFile = {
 import { getApiUrl } from '@verbweaver/shared';
 import axios from 'axios';
 import React from 'react';
+import ImageViewer from '../components/help/ImageViewer';
 
 const API_URL = (() => {
   try { return getApiUrl(); } catch { return ''; }
@@ -56,6 +57,7 @@ function DocImage({ src, alt, title }: { src?: string; alt?: string; title?: str
   const name = docImageName(src);
   const [dataUrl, setDataUrl] = useState<{ name: string; url: string } | null>(null);
   const [failedName, setFailedName] = useState<string | null>(null);
+  const [viewing, setViewing] = useState(false);
 
   useEffect(() => {
     if (!name || !isElectron || !window.electronAPI?.readDocImage) return;
@@ -77,13 +79,23 @@ function DocImage({ src, alt, title }: { src?: string; alt?: string; title?: str
   }
   if (!resolved) return null;
   return (
-    <img
-      src={resolved}
-      alt={alt || ''}
-      title={title}
-      onError={() => setFailedName(name)}
-      className="rounded-md border border-border shadow-sm max-w-full h-auto"
-    />
+    <>
+      <button
+        type="button"
+        onClick={() => setViewing(true)}
+        className="block p-0 border-0 bg-transparent cursor-zoom-in"
+        title={title || 'Click to enlarge'}
+        aria-label={`Enlarge image${alt ? `: ${alt}` : ''}`}
+      >
+        <img
+          src={resolved}
+          alt={alt || ''}
+          onError={() => setFailedName(name)}
+          className="rounded-md border border-border shadow-sm max-w-full h-auto hover:opacity-90 transition-opacity"
+        />
+      </button>
+      {viewing && <ImageViewer src={resolved} alt={alt || ''} onClose={() => setViewing(false)} />}
+    </>
   );
 }
 

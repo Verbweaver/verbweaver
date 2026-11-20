@@ -3,7 +3,7 @@ id: rowan-ashby
 title: Rowan Ashby
 description: A smuggler from Saltmarsh Harbour with debts to the Lantern Guild.
 tags: [character, southern-coast]
-links: [saltmarsh-harbour, lantern-guild, mira-vale]
+links: [saltmarsh-harbour]
 task:
   status: review
   priority: medium

@@ -1,19 +1,19 @@
 {
-  "xVar": "chapter",
+  "xVar": "week",
   "xType": "number",
   "colocateRepeats": false,
   "yVars": [
     {
-      "name": "mira_tension",
-      "color": "#e11d48"
+      "name": "height_cm",
+      "color": "#16a34a"
     },
     {
-      "name": "rowan_tension",
-      "color": "#2563eb"
+      "name": "leaf_count",
+      "color": "#d97706"
     }
   ],
   "labelAxes": true,
-  "showNodeTitles": true,
+  "showNodeTitles": false,
   "showXAxisNodeTitles": false,
   "background": "white",
   "maxNodes": 20,
@@ -21,7 +21,7 @@
   "orderedNodes": [],
   "filters": {
     "tags": [
-      "chapter"
+      "observation"
     ],
     "tagsLogic": "ANY",
     "nameKeyword": "",

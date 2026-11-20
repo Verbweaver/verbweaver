@@ -3,7 +3,7 @@ id: isolde-varn
 title: Captain Isolde Varn
 description: Commander of the Frostmere garrison and heir to House Varn.
 tags: [character, northern-reaches, faction-varn]
-links: [house-varn, ember-gate]
+links: [house-varn]
 task:
   status: in-progress
   priority: medium
