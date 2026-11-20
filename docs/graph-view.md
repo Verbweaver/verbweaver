@@ -151,6 +151,8 @@ The Progression view draws a line chart from details you've recorded on your pag
 
 Add the details to your pages first. For example, give each chapter page a `chapter` number and a `tension` score. These are the values the chart will plot.
 
+Details go in the block at the very top of a page, between the two `---` lines. Open the page in the Editor and add one detail per line, as `name: value`. Write numbers on their own, without quotes. The [Editor guide](editor.md) has more about this block.
+
 ### Making a chart
 
 1. In **X variable**, type the detail to run along the bottom, such as `chapter`.
@@ -180,3 +182,86 @@ You can show variable names on the axes, and page titles at each point or along 
 - Check that the page has a number for each detail you're plotting.
 - Check that the detail names match exactly, including spelling.
 - If titles overlap, turn off **Show node titles along X axis**, or plot fewer pages.
+
+### Example: a character's tension across chapters
+
+Say you want to see how tense things get for two characters, Mira and Rowan, as your story goes on.
+
+**1. Add the details to each chapter page.** Give every chapter its number and a tension score from 0 (calm) to 10 (unbearable) for each character:
+
+```yaml
+---
+title: Chapter 1 – The Letter
+tags: [chapter]
+chapter: 1
+mira_tension: 3
+rowan_tension: 5
+---
+```
+
+```yaml
+---
+title: Chapter 2 – The Crossing
+tags: [chapter]
+chapter: 2
+mira_tension: 6
+rowan_tension: 4
+---
+```
+
+```yaml
+---
+title: Chapter 3 – The Storm
+tags: [chapter]
+chapter: 3
+mira_tension: 9
+rowan_tension: 8
+---
+```
+
+**2. Set up the chart.**
+
+- **X variable:** `chapter`, with **Number** selected.
+- **Add Y variable:** `mira_tension`, and pick a colour.
+- **Add Y variable** again: `rowan_tension`, with a different colour.
+- **Filters:** show only pages tagged `chapter`.
+- Optionally tick **Show node titles at points** to see chapter names on the chart.
+
+**3. Read it.** Each line is one character's arc. Look for steady climbs, sudden drops, and chapters where the two lines cross, which are often turning points in the story. A long flat stretch may mean the pacing sags there.
+
+### Example: a plant growth experiment
+
+Say you're running a study and recording one observation page per week for a plant.
+
+**1. Add the details to each observation page:**
+
+```yaml
+---
+title: Week 1 observation
+tags: [observation, sunlight]
+week: 1
+height_cm: 4.2
+leaf_count: 3
+---
+```
+
+```yaml
+---
+title: Week 2 observation
+tags: [observation, sunlight]
+week: 2
+height_cm: 6.8
+leaf_count: 5
+---
+```
+
+**2. Set up the chart.**
+
+- **X variable:** `week`, with **Number** selected.
+- **Y variables:** `height_cm` and `leaf_count`, each with its own colour.
+- **Filters:** show only pages tagged `observation`.
+
+**3. Use it.** The lines show how fast the plant grows and when it puts out new leaves.
+
+- To compare conditions, tag pages `sunlight` or `shade`. Filter to one tag and click **Save Config**, then switch to the other.
+- Click **Save Image** to put the chart into your report.

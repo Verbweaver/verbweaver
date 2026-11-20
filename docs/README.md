@@ -11,6 +11,7 @@ How to use each page of Verbweaver. Each page also has a Help button that opens 
 - [Tasks](tasks.md)
 - [Version Control](version-control.md)
 - [Compiler](compiler.md)
+- [Settings](settings.md)
 
 ## Table of Contents
 
