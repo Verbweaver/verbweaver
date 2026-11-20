@@ -2,7 +2,7 @@
 
 ![Verbweaver logo](docs/images/logo.png)
 
-Verbweaver is a writing and design tool for people who think in connected ideas: writers, designers, researchers, engineers and analysts. Each note you write is at once a document, a card on a graph linked to related notes, and a task you can track. When it's time to share your work, the Compiler turns the notes you choose into one ordered document, such as a PDF, Word file or e-book.
+Verbweaver is a writing and design platform that thinks in relationships (graphs). It's designed for writers, artists, engineers, developers, analysts, and anyone who wants to design things while linking every idea together and turning those ideas into manageable tasks. Think and take notes in a way that is natural to you. Then, when it comes time to communicate your ideas or information to other people, use the Compiler and the powerful templating engine to generate a linear document in various common filetypes.
 
 The desktop app is in beta. A web server version for teams is in development and not ready for use yet.
 
@@ -12,10 +12,11 @@ The desktop app is in beta. A web server version for teams is in development and
 
 - **Graph:** see how your notes connect as a mind map, an outline, groups, or charts of the values in your notes.
 - **Editor:** write in Markdown ([Pandoc's flavour](https://pandoc.org/MANUAL.html#pandocs-markdown)), with preview, links between notes, images and maths.
-- **Tasks:** turn any note into a task, and track tasks on a board, a calendar, a to-do list, or Gantt and burndown charts.
+- **Tasks:** turn any note into a task, and track tasks on a Kanban board, a calendar, a to-do list, or Gantt and burndown charts.
+- **Unified Data Model**: Everything is a node; a node is everything. A single file can be a written document, tracked as a Task, and visualized as a node on a graph. 
 - **Compiler:** export your notes as PDF, Word, OpenDocument, EPUB, HTML or Markdown, with templates you can customise.
 - **Version control:** every project is a Git repository, so you can save versions, go back to earlier ones, and sync with GitHub or another Git host.
-- **Plain files:** your work is stored as Markdown files with a short details block at the top, in a folder you choose. Use any other editor alongside Verbweaver.
+- **Plain files:** your work is stored as Markdown files with a short details metadata block at the top, in a folder you choose. Use any other editor alongside Verbweaver.
 - **Works offline:** the desktop app runs on Windows, macOS and Linux and needs no account.
 
 ## Install
