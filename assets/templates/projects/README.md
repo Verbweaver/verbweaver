@@ -1,32 +1,31 @@
 # {{ PROJECT_NAME }}
 
-Welcome to your Verbweaver project.
+{{ PROJECT_DESCRIPTION }}
 
-## Getting Started
+This is a Verbweaver project. Open it in Verbweaver to write, link and plan your pages, then export them as one document.
 
-Project description: {{ PROJECT_DESCRIPTION }}
+## What's in this folder
 
-Verbweaver organizes ideas and tasks as Markdown files under the `nodes/` folder. Each node can be a task; task fields live in YAML frontmatter.
+- `nodes/`: your pages, as Markdown files. Each page can also be a task; its details are stored in the block between the `---` lines at the top.
+- `uploads/`: files you upload or attach to pages, such as images.
+- `templates/`: starting layouts for new pages (`templates/nodes/`) and for exported documents (`templates/compiler/`).
+- `.verbweaver/`: project settings. Leave this folder as it is.
 
-### Project Structure
+## Pages in Verbweaver
 
-- `nodes/` — all content nodes and tasks (Markdown)
-- `uploads/` — files you attach to nodes (keeps original filenames)
-- `templates/` — templates for new nodes and compiler
-- `.verbweaver/` — project settings and internal data
+- **Editor:** write and format your pages, with a preview.
+- **Graph:** see how pages connect, with the Mind Map, Outline, Group and Progression views.
+- **Tasks:** track work on a board, a calendar, a to-do list (overdue, today and unscheduled), or charts.
+- **Version Control:** save versions of the project and look back at earlier ones.
+- **Compiler:** export pages as PDF, Word, HTML, EPUB and more, using templates.
 
-### Views
+Each page has a **Help** button with a guide.
 
-- Graph: Visualize relationships between nodes with the Mind Map; order them with Outline; generate graphs from node variables with Progression
-- Tasks: Task and project management tools; Kanban Board, Calendar, To‑Do (Overdue, Today, Unscheduled), and Charts (Gantt and Burndown)
-- Editor: Markdown editing of nodes with preview mode
-- Version Control: View Git status, branches, commits; manage changes
-- Compiler: Export to PDF/DOCX/HTML/EPUB; use variables in templates to procedurally generate documents
+## Tips
 
-Tips: 
-* Go to Settings > Project Settings to manage default temp
-* Use Manage Statuses to configure task states (Kanban columns).
+- Choose the starting layout for new pages in **Settings → Project → Default Template**.
+- Set up your task columns with **Manage Statuses** in the same place.
 
-## Version Control
+## Version history
 
-This repository is a normal Git repo. Use the Version view to stage, commit, and review history.
+This folder is a Git repository, so every version you save in **Version Control** is kept here, and you can sync it with GitHub or another Git host.

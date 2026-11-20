@@ -1,13 +1,14 @@
 """
 API Endpoints for serving documentation files.
 """
+import json
 import os
 import re
 import aiofiles # For async file operations
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.responses import FileResponse, PlainTextResponse
 from starlette.status import HTTP_404_NOT_FOUND
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 import logging
 
 from app.core.config import settings
@@ -69,6 +70,20 @@ def _help_sort_key(doc: "DocFileSchema") -> Tuple[int, str]:
     """README first (the default page), then case-insensitive by title."""
     return (0 if doc.name.lower() == "readme.md" else 1, doc.title.casefold())
 
+def _docs_hidden_on_web() -> Set[str]:
+    """Docs that don't apply to the web version, from docs/help-docs.json ("hiddenOn": {"web": [...]}).
+
+    A missing or unreadable manifest hides nothing.
+    """
+    try:
+        with open(os.path.join(DOCS_DIR, "help-docs.json"), encoding="utf-8") as f:
+            hidden = json.load(f).get("hiddenOn", {}).get("web", [])
+    except (OSError, ValueError, AttributeError) as e:
+        logger.warning(f"Could not read docs/help-docs.json; showing all docs: {e}")
+        return set()
+    return {str(name).lower() for name in hidden} if isinstance(hidden, list) else set()
+
+
 @router.get("", response_model=List[DocFileSchema])
 async def list_documentation_files():
     """Lists all Markdown documentation files."""
@@ -78,8 +93,11 @@ async def list_documentation_files():
             logger.error(f"Documentation directory not found or is not a directory: {DOCS_DIR}")
             raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Documentation directory not found.")
 
+        hidden = _docs_hidden_on_web()
         for item in os.listdir(DOCS_DIR):
             item_path = os.path.join(DOCS_DIR, item)
+            if item.lower() in hidden:
+                continue
             if item.endswith('.md') and os.path.isfile(item_path):
                 title = item
                 try:
@@ -130,6 +148,8 @@ async def get_documentation_file(filename: str):
     """Retrieves the content of a specific Markdown documentation file."""
     if '..' in filename or not filename.endswith('.md'):
         raise HTTPException(status_code=400, detail="Invalid filename.")
+    if filename.lower() in _docs_hidden_on_web():
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=f"Documentation file '{filename}' not found.")
 
     file_path = os.path.join(DOCS_DIR, filename)
     # Security check: Ensure the resolved path is still within DOCS_DIR

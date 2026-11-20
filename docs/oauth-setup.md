@@ -1,118 +1,50 @@
-# OAuth Login Setup for Verbweaver
+# OAuth Login Setup
 
-This guide provides instructions for setting up Google and GitHub OAuth (Open Authorization) for your Verbweaver instance. This allows users to log in to the web version of Verbweaver using their existing Google or GitHub accounts.
+The web version of Verbweaver is in development. This guide sets up "Sign in with Google" and "Sign in with GitHub" for a server you run yourself (see [Install the Verbweaver Server](install-server.md)). The desktop app has no login and doesn't need this.
 
-## Prerequisites
+## Callback URLs
 
-*   A running Verbweaver backend instance.
-*   Administrative access to the server environment where Verbweaver is hosted (to set environment variables).
-*   A Google Cloud Platform account (for Google OAuth).
-*   A GitHub account (for GitHub OAuth).
+The backend sends the provider these callback URLs. Register them exactly:
 
-## Environment Variables
+| Provider | Callback URL |
+|---|---|
+| Google | `https://<your-domain>/api/v1/oauth/google/callback` |
+| GitHub | `https://<your-domain>/api/v1/oauth/github/callback` |
 
-The following environment variables must be set in your Verbweaver backend environment (e.g., in a `.env` file at the root of the `backend` directory or directly as system environment variables):
+- The backend builds the URL from the host the request arrived on, so `<your-domain>` is the public host behind Nginx, or `localhost:8000` when testing locally.
+- When `DEBUG=False`, the backend rewrites `http://` to `https://` in these URLs, including for `localhost`. To test over plain `http://localhost:8000`, set `DEBUG=True` and register `http://localhost:8000/api/v1/oauth/google/callback` (and the GitHub equivalent).
+- The same routes also answer under `/api/v1/auth/...`, but the backend always sends the `/api/v1/oauth/...` form (see issue #118).
 
-```env
-# Common Settings
-FRONTEND_URL=http://localhost:3000 # Or your production frontend URL
-BACKEND_CORS_ORIGINS=["http://localhost:3000"]
-SESSION_SECRET_KEY=change_me_to_a_long_random_value
+After a successful login the backend redirects to `FRONTEND_URL/login` with the tokens, so `FRONTEND_URL` must be the frontend's public URL.
 
-# Google OAuth Credentials
-GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID
-GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_CLIENT_SECRET
+## Google
 
-# GitHub OAuth Credentials
-GITHUB_CLIENT_ID=YOUR_GITHUB_CLIENT_ID
-GITHUB_CLIENT_SECRET=YOUR_GITHUB_CLIENT_SECRET
+1. In the [Google Cloud Console](https://console.cloud.google.com/), create or select a project.
+2. Under **APIs & Services → OAuth consent screen**, choose **External**, fill in the app name and contact emails, and add the scopes `openid`, `.../auth/userinfo.email` and `.../auth/userinfo.profile`. While the app is in testing, add your test users.
+3. Under **APIs & Services → Credentials**, choose **Create Credentials → OAuth client ID**, application type **Web application**.
+   - **Authorized JavaScript origins:** your frontend URL.
+   - **Authorized redirect URIs:** the Google callback URL above.
+4. Copy the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+## GitHub
+
+1. In GitHub, go to **Settings → Developer settings → OAuth Apps → New OAuth App**.
+2. Set **Homepage URL** to your frontend URL and **Authorization callback URL** to the GitHub callback URL above.
+3. Register the app, then **Generate a new client secret** and copy it straight away; GitHub shows it only once.
+4. Copy the client ID and secret into `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
+
+## Backend settings
+
+Set these in the backend's environment or `backend/.env`, then restart the backend:
+
+```bash
+FRONTEND_URL=https://your-domain
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
 ```
 
-Replace `YOUR_..._ID` and `YOUR_..._SECRET` with the actual credentials obtained from Google and GitHub, respectively. Ensure `FRONTEND_URL` accurately reflects the URL of your Verbweaver frontend application.
+A provider whose client ID isn't set returns an error when someone tries to use it.
 
-## Setting up Google OAuth
-
-1.  **Go to Google Cloud Console:**
-    *   Navigate to [https://console.cloud.google.com/](https://console.cloud.google.com/).
-
-2.  **Create or Select a Project:**
-    *   If you don't have one already, create a new project.
-
-3.  **Enable APIs and Services:**
-    *   Go to "APIs & Services" > "Library".
-    *   Search for and enable the **"Google People API"**. This API is used to fetch user profile information (name, email, avatar).
-
-4.  **Configure OAuth Consent Screen:**
-    *   Go to "APIs & Services" > "OAuth consent screen".
-    *   Choose "External" for User Type and click "Create".
-    *   **App information:**
-        *   App name: `Verbweaver` (or your preferred name)
-        *   User support email: Your support email address.
-        *   App logo: (Optional)
-    *   **Developer contact information:** Fill in your email address.
-    *   Click "Save and Continue".
-    *   **Scopes:** Click "Add or Remove Scopes". Select the following scopes:
-        *   `.../auth/userinfo.email` (to view user's email address)
-        *   `.../auth/userinfo.profile` (to see user's basic profile info)
-        *   `openid` (for OpenID Connect)
-        *   Click "Update", then "Save and Continue".
-    *   **Test users:** (Optional during development) Add email addresses of test users. For a published app, you'll eventually need to submit for verification.
-    *   Click "Save and Continue". Review the summary and go back to the dashboard.
-
-5.  **Create OAuth 2.0 Credentials:**
-    *   Go to "APIs & Services" > "Credentials".
-    *   Click "+ Create Credentials" > "OAuth client ID".
-    *   **Application type:** Select "Web application".
-    *   **Name:** `Verbweaver Web Client` (or a descriptive name).
-    *   **Authorized JavaScript origins:**
-        *   Add the URL of your frontend application (e.g., `http://localhost:3000` for local development).
-        *   Add your production frontend URL if applicable.
-    *   **Authorized redirect URIs:**
-        *   This is crucial. Add the backend callback URL that Verbweaver uses.
-        *   For local development: `http://localhost:8000/api/v1/auth/google/callback`
-        *   For production: `https://your-verbweaver-backend-domain.com/api/v1/auth/google/callback`
-        *   **Important:** This URI must exactly match what the Verbweaver backend expects and generates, including `http` vs `https`, the port, and any trailing slashes (though typically no trailing slash for these paths).
-    *   Click "Create".
-
-6.  **Copy Client ID and Client Secret:**
-    *   A dialog will show your "Client ID" and "Client Secret".
-    *   Copy these values and set them as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in your backend environment variables.
-
-7.  **Publishing (Optional but Recommended for Production):**
-    *   Back on the "OAuth consent screen" page, if your app is intended for public use, you may need to submit it for verification by Google, especially if using sensitive scopes.
-
-## Setting up GitHub OAuth
-
-1.  **Go to GitHub Developer Settings:**
-    *   Log in to GitHub.
-    *   Click on your profile picture in the top-right corner, then go to "Settings".
-    *   In the left sidebar, scroll down and click "Developer settings".
-
-2.  **Register a New OAuth Application:**
-    *   Click on "OAuth Apps" in the left sidebar.
-    *   Click the "New OAuth App" button (or "Register a new application").
-    *   **Application name:** `Verbweaver` (or your preferred name).
-    *   **Homepage URL:** The URL of your Verbweaver frontend application (e.g., `http://localhost:3000` for local development, or your production URL).
-    *   **Application description:** (Optional) A brief description.
-    *   **Authorization callback URL:** This is the most important part.
-        *   For local development: `http://localhost:8000/api/v1/auth/github/callback`
-        *   For production: `https://your-verbweaver-backend-domain.com/api/v1/auth/github/callback`
-        *   **Important:** This URL must exactly match what the Verbweaver backend expects. GitHub is very strict about this URL.
-    *   Click "Register application".
-
-3.  **Copy Client ID and Generate a Client Secret:**
-    *   After registering, you will be taken to the application's page.
-    *   You will see the **Client ID**. Copy this value.
-    *   Click the "Generate a new client secret" button. Confirm your password if prompted.
-    *   GitHub will display the **Client Secret**. **Copy this secret immediately.** You will not be able to see it again.
-    *   Set these values as `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in your backend environment variables.
-
-## Important Considerations
-
-*   **HTTPS for Production:** For production environments, both your frontend and backend should be served over HTTPS. OAuth providers often require or strongly recommend HTTPS for redirect URIs.
-*   **Redirect URI Matching:** The redirect URIs configured in the Google Cloud Console and GitHub OAuth App settings must *exactly* match the URIs your Verbweaver backend uses for the OAuth callbacks. Any mismatch (e.g., `http` vs `https`, trailing slashes, different ports) will cause the OAuth flow to fail.
-*   **Environment Variable Security:** Keep your Client Secrets confidential. Do not commit them to your version control system. Use environment variables or a secure secrets management system.
-*   **CSRF Protection (State Parameter):** Implemented. The backend generates, stores (via session middleware), and validates the `state` parameter during the OAuth handshake. Ensure `SESSION_SECRET_KEY` is set in your environment.
-*   **Error Handling:** Review and enhance error handling in the backend OAuth callback endpoints to provide clear feedback to users or logs for administrators in case of issues.
-
-After configuring the environment variables and setting up the OAuth applications with Google and GitHub, users should be able to use the "Sign in with Google" and "Sign in with GitHub" buttons on the Verbweaver login page. 
+The backend checks a `state` value during login to block forged callbacks, and keeps it in a session cookie. The secret for that cookie can't be configured yet and falls back to a built-in value (see issue #116). Keep client secrets out of version control.

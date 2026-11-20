@@ -1,166 +1,70 @@
 # Contributing to Verbweaver
 
-Thank you for your interest in contributing to Verbweaver! We welcome contributions from the community.
+Thanks for helping improve Verbweaver. This page covers how to set up, what to check before opening a pull request, and how we work.
 
-## 🤝 Code of Conduct
+## Code of conduct
 
-By participating in this project, you agree to abide by our Code of Conduct:
-- Be respectful and inclusive
-- Welcome newcomers and help them get started
-- Focus on constructive criticism
-- Accept feedback gracefully
+Be respectful and constructive, welcome newcomers, and accept feedback gracefully.
 
-## 🚀 Getting Started
+## Set up
 
-1. **Fork the repository**
-   ```bash
-   git clone https://github.com/Verbweaver/verbweaver.git
-   cd verbweaver
-   ```
-
-2. **Set up development environment**
-   - Follow the [Getting Started Guide](docs/getting-started.md)
-   - Install all dependencies
-   - Run tests to ensure everything works
-
-3. **Create a feature branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-## 📝 Development Process
-
-### 1. Before You Start
-
-- Check existing [issues](https://github.com/Verbweaver/verbweaver/issues) and [pull requests](https://github.com/verbweaver/Verbweaver/pulls)
-- For major changes, open an issue first to discuss
-- Ensure your idea aligns with the project's goals
-
-### 2. Development Guidelines
-
-#### Code Style
-
-**Python (Backend)**
-- Follow PEP 8
-- Use type hints
-- Maximum line length: 100 characters
-- Run `black` for formatting
-
-**TypeScript (Frontend)**
-- Use TypeScript strict mode
-- Follow ESLint rules
-- Use functional components with hooks
-- Proper type definitions, no `any`
-
-**General**
-- Write self-documenting code
-- Add comments for complex logic
-- Keep functions small and focused
-- Use meaningful variable names
-
-#### Documentation
-
-- Document new features
-- Add JSDoc/docstrings
-- Update API documentation
-
-### 4. Pull Request Process
-
-1. **Run quality checks**
-   ```bash
-   # Format code
-   npm run format
-   
-   # Lint
-   npm run lint
-   
-   # Test
-   npm test
-   ```
-
-2. **Create pull request**
-   - Use a descriptive title
-   - Reference related issues
-   - Include screenshots for UI changes
-   - List breaking changes
-
-3. **PR Review**
-   - Address reviewer feedback
-   - Keep discussions focused
-   - Update as needed
-
-## 🏗️ Architecture Decisions
-
-Major architectural changes should:
-1. Be discussed in an issue first
-2. Consider backward compatibility
-3. Update architecture documentation
-
-## 🐛 Reporting Issues
-
-### Bug Reports
-
-Include:
-- Clear description
-- Steps to reproduce
-- Expected vs actual behavior
-- Environment details
-- Screenshots/logs if applicable
-
-### Feature Requests
-
-Include:
-- Use case description
-- Proposed solution
-- Alternative solutions considered
-- Mockups/diagrams if applicable
-
-## 🔧 Development Setup Tips
-
-### Backend
+Follow [Build from source](README.md#build-from-source) in the README. In short, on macOS or Linux:
 
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-
-# Install in development mode
-pip install -e .
-pip install -r requirements-dev.txt
+git clone https://github.com/Verbweaver/verbweaver.git
+cd verbweaver
+./desktop/build-and-run.sh      # Windows: desktop\build-and-run.ps1
 ```
 
-### Frontend
+This installs the JavaScript workspaces (`shared`, `frontend`, `desktop`), creates a Python 3.11 to 3.13 virtual environment in `.venv` with the backend's requirements, and starts the desktop app in development mode.
+
+Useful background:
+
+- [CLAUDE.md](CLAUDE.md): a short tour of the code and the two runtime modes (desktop over IPC, web over HTTP).
+- [DESIGN.md](DESIGN.md): the original product design.
+- [dev-docs/](dev-docs/): architecture, API and release notes.
+
+## How we work
+
+1. **Start from an issue.** Check [existing issues](https://github.com/Verbweaver/verbweaver/issues) first, and open one for anything non-trivial so the approach can be agreed. Use the bug report or feature request template.
+2. **Branch from the release branch.** Work for an upcoming release goes on that version's branch (for example `0.9.1`), not `main`. Name your branch after the issue, such as `75-docs-editing-pass`.
+3. **Open a pull request into the release branch.** Reference the issue (`Closes #75`), describe what changed and how you tested it, and add screenshots for visible changes.
+
+## Before you open a pull request
 
 ```bash
-# Install dependencies
-npm install
+# Backend tests (install pytest into the venv once)
+.venv/bin/python -m pip install pytest
+cd backend && ../.venv/bin/python -m pytest
 
-# Run in development mode
-npm run dev
+# Frontend
+cd frontend && npm run lint && npm run type-check
 
-# Run Storybook (component development)
-npm run storybook
+# Desktop
+cd desktop && npm run typecheck
 ```
 
-### Database
+There are no automated frontend or desktop tests yet, so try your change in the app, in both the desktop app and, where it applies, the web version. CI builds `shared` and `frontend` and runs the backend tests on every pull request.
 
-```bash
-# Run migrations
-alembic upgrade head
+If you change a page's layout or labels, refresh the Help screenshots with `npm run docs:screenshots` (see [scripts/help-screenshots](scripts/help-screenshots/README.md)) and update the matching guide in `docs/`.
 
-# Create new migration
-alembic revision -m "description"
-```
+## Code style
 
-## 📞 Getting Help
+- **Python:** PEP 8, type hints, lines up to 100 characters. Formatting with `black` is encouraged.
+- **TypeScript:** strict mode, ESLint rules, functional React components with hooks. Avoid `any` in new code.
+- Put shared constants and types in `shared/src` rather than repeating them.
+- A feature that touches project files usually needs changes in both runtime paths: the desktop IPC handlers in `desktop/src/main.ts` and the backend endpoints in `backend/app/api/v1/endpoints/`.
 
-- **Discord**: [Join our community](https://discord.gg/aK3sBsBw)
+## Documentation
 
-## 🙏 Recognition
+- User guides live in `docs/` and are shown in the app's Help. Write them for non-technical readers: short sentences, the labels people see on screen, and no jargon.
+- `docs/help-docs.json` lists guides to hide in the desktop app or the web version.
+- Developer notes go in `dev-docs/`, which isn't shipped with the app.
 
-Contributors will be:
-- Listed in CONTRIBUTORS.md
-- Mentioned in release notes
-- Given credit in the changelog
+## Reporting bugs and ideas
 
-Thank you for contributing to Verbweaver! 
+Use the [issue templates](https://github.com/Verbweaver/verbweaver/issues/new/choose). For bugs, include the steps to reproduce, what you expected, what happened, your operating system and Verbweaver version (shown on the **Support** page), and screenshots if they help.
+
+## Getting help
+
+Ask in an issue, or join the [Discord](https://discord.gg/aK3sBsBw).

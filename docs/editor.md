@@ -1,211 +1,114 @@
-# Editor User Guide
+# Editor
 
-Welcome to the Verbweaver Editor. The Editor lets you write and organize content using Markdown with YAML front matter, link nodes together, attach files, and preview formatted output.
+The Editor is where you write. Each page is a Markdown file: plain text with a few symbols for formatting, such as `**bold**`. The list of files is on the left, and the page you're editing is on the right.
 
 ![The Editor: project files on the left and a chapter open for editing, with its links listed below](images/editor.png)
 
-## Markdown flavor
+## Files
 
-Verbweaver uses Pandoc's Markdown. It supports standard Markdown plus advanced features. See the Pandoc manual for full reference: https://pandoc.org/MANUAL.html#pandocs-markdown
+The **Files** list shows your project's folders and pages. Click a page to open it. Select a folder, then use the buttons at the top of the list to:
 
-### Headings
+- **Create node in** the folder: add a new page, starting from a template.
+- **Create folder in** the folder.
+- **Rename** the selected page or folder.
+- **Upload file(s)**, such as images or PDFs. They're stored in the project's `uploads` folder.
+- **Find in Files**: search the text of every page.
+- **Refresh files**: show changes made outside Verbweaver.
 
-```
-# Title
+## The toolbar
+
+Above the page:
+
+- **Create link** (**Ctrl+Shift+L**): connect this page to another one. Links show up in the [Graph](graph-view.md) and in the list below the page. **Remove link(s)** takes them away.
+- **See Task**: open this page's task details. **Task On / Task Off** chooses whether the page appears in [Tasks](tasks.md).
+- **Toggle preview** (the eye icon, or **Ctrl+P**): see the page formatted, as it will look when exported. **Hide Metadata** hides the details block at the top.
+- **Attach files**: add files, such as images, to this page.
+- **Save** (**Ctrl+S**).
+- Make the text smaller or larger, **Duplicate file**, **Close file**, or **Delete node**.
+
+On a Mac, use **⌘** instead of **Ctrl**.
+
+## Formatting your writing
+
+Verbweaver uses [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown). The basics:
+
+```markdown
+# Chapter title
 ## Section
 ### Subsection
-```
 
-### Emphasis
-
-```
 *italic*  **bold**  ~~strikethrough~~
-```
 
-### Lists
+- A list item
+- Another item
+  - An item inside it
 
-```
-- Item 1
-- Item 2
-  - Nested
-```
-
-### Tables (advanced)
-
-```
 | Column A | Column B |
 |----------|----------|
 | A1       | B1       |
-| A2       | B2       |
 ```
 
-### Code
+**Ctrl+B** makes the selected text bold, **Ctrl+I** makes it italic, and **Ctrl+K** inserts a link.
 
-Inline: `const x = 1`
+## Linking to other pages
 
-Block:
-
-```js
-function greet(name) {
-  console.log(`Hello, ${name}`)
-}
-```
-
-## Links between nodes
-
-Verbweaver supports several types of links for connecting nodes:
-
-### Relative links (recommended)
-
-Navigate to files relative to the current file's location:
+The easiest way to connect pages is **Create link**. You can also write a link in the text:
 
 ```markdown
 [Previous chapter](../chapter-1.md)
-[Character notes](./characters/protagonist.md)
-[Plot outline](../../planning/outline.md)
+[The hero](/nodes/characters/hero.md)
+[The final battle](chapter-10.md#the-final-battle)
 ```
 
-### Absolute repo-relative links
+- A path without a leading `/` starts from the current page's folder; `..` means "the folder above".
+- A path starting with `/` starts from the project's main folder.
+- `#` and a heading jumps to that heading. Write the heading in lower case with hyphens for spaces: `# The Final Battle` becomes `#the-final-battle`.
 
-Navigate from the project root using absolute paths:
+**Ctrl+Click** a link in the Editor to open the page it points to; if you have unsaved changes, Verbweaver asks first. In the preview, just click it.
+
+## Images
+
+Put the image in your project, for example with **Upload file(s)**, then link to it with an exclamation mark in front:
 
 ```markdown
-[Main character](/nodes/characters/hero.md)
-[World map](/uploads/assets/world-map.png)
-[Project notes](/nodes/planning/overview.md)
+![A map of the village](/uploads/village-map.png)
 ```
 
-### Anchors (jump to headings)
+## Maths
 
-Link to specific sections within files using heading anchors:
+Write formulas between dollar signs. They show in the preview and in exported documents.
 
 ```markdown
-[Story climax](chapter-10.md#the-final-battle)
-[Character backstory](characters/villain.md#origins)
-[Jump to overview](#overview)
+Inline: the mass-energy relation is $E = mc^2$.
+
+On its own line:
+$$
+\sum_{i=1}^n i = \frac{n(n+1)}{2}
+$$
 ```
 
-Headings automatically become anchors using lowercase, hyphenated versions:
-- `# The Final Battle` becomes `#the-final-battle`
-- `## Character Origins` becomes `#character-origins`
+Formulas inside code (between backticks) aren't formatted. Exporting to PDF works without installing anything else.
 
-### Complete examples
+## The details block
 
-```markdown
-See the [villain's motivation](../characters/antagonist.md#motivation) 
-for context on this [plot twist](./chapter-15.md#revelation).
-
-For background, check the [world building notes](nodes/worldbuilding/magic-system.md).
-```
-
-In the Editor, Ctrl/Cmd+Click a Markdown link to open the linked node. In Preview, click links as usual. If you have unsaved changes, you'll be prompted before navigating.
-
-## Embedding images
-
-Store images in your repository and link them relative to the current file, for example:
-
-```
-![Diagram of flow](../images/flow.png)
-```
-
-Absolute repo-relative also works:
-
-```
-![Logo](/uploads/assets/logo.png)
-```
-
-Images that aren't Markdown files should exist in the repo (e.g., `uploads/`), with optional `.metadata.md` for graph visibility.
-
-## Math and LaTeX
-
-Verbweaver supports LaTeX-style math in both Preview and compiled outputs via Pandoc.
-
-- Inline math: wrap with single dollar signs
-  
-  ```markdown
-  The mass–energy relation is $E = mc^2$.
-  ```
-
-- Display math: wrap with double dollar signs on their own lines
-  
-  ```markdown
-  $$
-  F(x) = \int_{-\infty}^{x} \frac{1}{\sqrt{2\pi\sigma^2}}\,\exp\!\left(-\frac{(t-\mu)^2}{2\sigma^2}\right) dt
-  $$
-  ```
-
-- More examples
-  
-  ```markdown
-  Inline: $\alpha^2 + \beta^2 = \gamma^2$, and $\sum_{i=1}^n i = \tfrac{n(n+1)}{2}$.
-
-  $$
-  A = \begin{bmatrix}
-    1 & 0 & a \\
-    0 & 1 & b \\
-    0 & 0 & 1
-  \end{bmatrix}
-  $$
-  ```
-
-Notes
-- Use `$...$` for inline and `$$...$$` for display math. Pandoc also understands `\(...\)` and `\[...\]` in most cases.
-- Do not put math inside code spans or code fences; it will not be typeset.
-- PDF exports require a LaTeX distribution (see Install guides). HTML preview/export renders math using browser-supported math (no extra setup needed on modern browsers).
-
-## YAML front matter
-
-Each Markdown node can start with YAML front matter between `---` lines. This stores metadata used by Verbweaver:
-
-```
----
-id: node-123
-title: Chapter 1
-links: [node-abc, node-def]
-task:
-  tracked: true
-
-## Linking to other nodes via path
-
-In addition to linking by node IDs, you can now link to other nodes by their repository-relative path. This is optional; the app still writes IDs when creating links.
-
-Examples (all valid):
+Every page can start with a block of details between two `---` lines. Verbweaver uses it to store the page's title, links, tags and task information, and you can add your own details, such as a chapter number. The [Graph](graph-view.md) uses them for groups and charts.
 
 ```yaml
 ---
 id: node-123
 title: Chapter 1
+tags: [draft]
 links:
-  # By ID (preferred by system)
   - node-abc
-  # By path (with extension)
   - nodes/Characters/Alice.md
-  # By path (extension optional; .md assumed)
-  - nodes/Places/Village
+chapter: 1
+task:
+  tracked: true
 ---
 ```
 
-Notes:
-- Path values are resolved project‑relative and normalized; `.md` is assumed if omitted.
-- At load time, Verbweaver resolves any path entries to their target node IDs. Your existing ID-based links continue to work.
----
-```
+- `title`: the name shown in the Graph and in lists.
+- `links`: other pages this one links to, by their ID or by their path in the project (`.md` can be left off). **Create link** fills this in for you.
+- `task.tracked`: whether the page appears in Tasks. **Task On / Task Off** changes it.
 
-- `title`: Display name in graph and lists.
-- `links`: Soft links to other nodes by ID (Editor shows them in the Links panel).
-- `task.tracked`: Whether this node appears as a Task in Threads.
-
-## Preview
-
-Click the Preview button to render the current Markdown using the server-side previewer (Pandoc). The preview hides YAML metadata if you enable "Hide Metadata".
-
-## Useful tips
-
-- Ctrl/Cmd+S saves the file.
-- Ctrl/Cmd+Click relative links to navigate.
-- Use the paperclip icon to attach files to the node (stored in `uploads/`).
-- Use the Task toggle to include/exclude the node from Threads.
-
-## Learn more
-
-See the full Pandoc Markdown manual: https://pandoc.org/MANUAL.html#pandocs-markdown
+Keep the `id` line as it is; Verbweaver uses it to keep links working when pages move.

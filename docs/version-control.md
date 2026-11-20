@@ -1,4 +1,4 @@
-# Version Control User Guide
+# Version Control
 
 The Version Control page saves snapshots of your project as you work. Use it to keep a history of your drafts, undo a change you regret, or try out a different direction without losing your current work.
 

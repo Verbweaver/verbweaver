@@ -1,339 +1,137 @@
 # Verbweaver
 
-*Verbweaver* is a writing and design platform that thinks in relationships (graphs). It's designed for writers, artists, engineers, developers, analysts, and anyone who wants to design things while linking every idea together and turning those ideas into manageable tasks. Think and take notes in a way that is natural to you. Then, when it comes time to communicate your ideas or information to other people, use the Compiler and the powerful templating engine to generate a linear document in various common filetypes.
+![Verbweaver logo](docs/images/logo.png)
 
-Currently, the desktop application is in Beta. The web server version with enhanced collaboration features is under development and is not yet ready for use.
+Verbweaver is a writing and design tool for people who think in connected ideas: writers, designers, researchers, engineers and analysts. Each note you write is at once a document, a card on a graph linked to related notes, and a task you can track. When it's time to share your work, the Compiler turns the notes you choose into one ordered document, such as a PDF, Word file or e-book.
 
-![Verbweaver Logo](docs/images/logo.png)
+The desktop app is in beta. A web server version for teams is in development and not ready for use yet.
 
-## 🌟 Features
+![The Graph view, showing linked notes as a mind map](.github/images/Graph.png)
 
-![Verbweaver Logo](.github/images/Graph.png)
+## Features
 
-- **Graph-based Design**: Visualize relationships between your ideas, documents, and tasks
-- **Task Management**: Turn any idea into a trackable task with Kanban boards
-- **Markdown-powered**: All content is stored as Markdown files with metadata headers. The [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown) format is used to enable exporting to many file formats using Pandoc with advanced formatting.
-- **Write to your heart's content**: Use the built-in Editor or your favorite Markdown editor application to write chapters, notes, data, findings, or anything else.
-- **Unified Data Model**: Everything is a node; a node is everything. A single file can be a written document, tracked as a Task, and visualized as a node on a graph. 
-- **Export Anywhere**: Compile your non-linear notes into linear documents (PDF, Word, ePub, etc.)
-- **Git Version Control**: Built-in version control for all your projects
-- **Multi-platform**: Available as a web app and desktop app (Windows, Mac, Linux)
+- **Graph:** see how your notes connect as a mind map, an outline, groups, or charts of the values in your notes.
+- **Editor:** write in Markdown ([Pandoc's flavour](https://pandoc.org/MANUAL.html#pandocs-markdown)), with preview, links between notes, images and maths.
+- **Tasks:** turn any note into a task, and track tasks on a board, a calendar, a to-do list, or Gantt and burndown charts.
+- **Compiler:** export your notes as PDF, Word, OpenDocument, EPUB, HTML or Markdown, with templates you can customise.
+- **Version control:** every project is a Git repository, so you can save versions, go back to earlier ones, and sync with GitHub or another Git host.
+- **Plain files:** your work is stored as Markdown files with a short details block at the top, in a folder you choose. Use any other editor alongside Verbweaver.
+- **Works offline:** the desktop app runs on Windows, macOS and Linux and needs no account.
 
-## 🚀 Getting Started
+## Install
 
-### 🖥️ Desktop Application (Recommended for Individual Writers)
+Download the latest installer from the [Releases page](https://github.com/Verbweaver/verbweaver/releases):
 
-The desktop application provides the best offline experience and bundles the frontend, a lightweight local backend, and default templates. It offers unique advantages compared to the web application:
+- **Windows:** `Verbweaver-Setup-<version>.exe`
+- **macOS:** `Verbweaver-v<version>-arm64.dmg` for Apple silicon, or `-x64.dmg` for Intel Macs
+- **Linux:** `.AppImage`, `.deb` or `.rpm`
 
-#### Features
-- **Offline Mode**: Work without internet connection
-- **Local Storage**: Your data stays on your machine
-- **Cross-platform**: Built with Electron, the desktop app works on Windows, MacOS, and Linux
-- **Native Performance**: Faster file operations and Git integration
-- **System Integration**: Native file dialogs, system tray, auto-updates
-- **No Authentication**: Start working immediately
+You'll also need [Git](https://git-scm.com/downloads). The tools for exporting documents (Pandoc and Tectonic) come with the app. The [Getting Started guide](docs/getting-started.md) walks through installing and creating your first project.
 
-#### Intalling the desktop app
+Builds downloaded from GitHub Actions runs are not signed. To open one on a Mac, clear the quarantine flag first: `xattr -dr com.apple.quarantine Verbweaver.app`
 
-Installers are available for each release:
-- Windows: `.exe` installer
-- macOS: `.dmg` installer
-  - If the MacOS `.app` that you have is unsigned (such as by downloading the version automatically compiled by GitHub Actions), you may need to removed the quarantined attribute in order to run it: `xattr -dr com.apple.quarantine Verbweaver.app`
-- Linux: `.AppImage` (or `.deb` / `.rpm` installers)
+## Documentation
 
-#### Building the Desktop mode manually
+The guides in [docs/](docs/README.md) are also built into the app under **Help**. Developer and maintainer notes are in [dev-docs/](dev-docs/).
 
-Build from source (one-time setup):
+## Build from source
+
+You need Node.js 22.13 or later, Python 3.11 to 3.13, and Git.
+
+On macOS or Linux, one script installs everything and starts the desktop app in development mode:
 
 ```bash
-# Clone
 git clone https://github.com/Verbweaver/verbweaver.git
 cd verbweaver
-
-# Install workspace dependencies (root installs shared + frontend + desktop)
-npm ci
-
-# Build shared types and frontend (required before desktop packaging)
-npm run build:shared
-npm run build:frontend
-```
-
-Run in development (per platform)
-
-##### Windows (PowerShell)
-```powershell
-# Terminal 1 — Backend
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-
-# Terminal 2 — Desktop
-cd desktop
-npm install
-npm run dev
-```
-
-For Windows, a convenient script to build and run the application in development mode is located at `desktop\build-and-run.ps1`.
-
-##### macOS and Linux (bash)
-
-One command (installs dependencies, creates `.venv` at the repo root, builds `shared`, starts the frontend dev server, and launches Electron in development mode):
-
-```bash
 ./desktop/build-and-run.sh
 ```
 
-Requires Node.js and Python 3.11–3.13 (the pinned backend dependencies do not build on Python 3.14+). The script prefers `python3.13`/`python3.12`/`python3.11` if present; set `PYTHON=/path/to/python` to override.
+On Windows, run `desktop\build-and-run.ps1` from PowerShell instead.
 
-Optional environment variables: `SKIP_INSTALL=true` (skip `npm ci`), `REINSTALL_BACKEND=true` (re-run `pip install`), `START_BACKEND=false` (don't let Electron spawn the backend), `KEEP_FRONTEND=true` (leave Vite running after Electron exits).
+The script runs `npm ci`, creates a Python virtual environment in `.venv`, builds the shared package, starts the frontend dev server on port 3000, and launches Electron, which starts the backend itself. It uses `python3.13`, `python3.12` or `python3.11` if found; set `PYTHON=/path/to/python` to choose another. Optional settings: `SKIP_INSTALL=true` skips `npm ci`, `REINSTALL_BACKEND=true` re-runs `pip install`, `START_BACKEND=false` stops Electron starting the backend, and `KEEP_FRONTEND=true` leaves the dev server running after Electron exits.
 
-Or manually, in three terminals:
+To run the pieces by hand:
 
 ```bash
-# One-time setup (from the repo root)
+# One-time setup, from the repo root
 npm ci
 npm run build:shared
-python3.13 -m venv .venv   # any Python 3.11–3.13
+python3.13 -m venv .venv
 .venv/bin/python -m pip install -r backend/requirements.txt
 
-# Terminal 1 — Backend
-cd backend
-../.venv/bin/python -m uvicorn app.main:app --reload --port 8000
+# Terminal 1: frontend dev server
+cd frontend && npm run dev
 
-# Terminal 2 — Frontend dev server (Electron loads http://localhost:3000 in dev mode)
-cd frontend
-npm run dev
-
-# Terminal 3 — Desktop
-cd desktop
-NODE_ENV=development SKIP_BACKEND=true npm run dev
+# Terminal 2: desktop app (starts the backend from .venv)
+cd desktop && NODE_ENV=development npm run dev
 ```
 
-If you omit `SKIP_BACKEND=true` (and Terminal 1), Electron starts the backend itself using `.venv` at the repo root (or `backend/.venv`).
+To run the backend separately, start it with `cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --port 8000` and launch the desktop app with `SKIP_BACKEND=true`.
 
-Notes:
-- Packaged installers bundle and auto-start a platform-specific backend binary (no separate step needed).
-- In development, Electron requires `NODE_ENV=development` and loads the renderer from the frontend dev server on port 3000; it spawns the backend from your Python venv unless `SKIP_BACKEND=true`.
-- Desktop packaging is handled by electron-builder. See scripts in `desktop/package.json` (`dist`, `dist:win`, `dist:mac`, `dist:linux`).
+Installers are built with electron-builder (`npm run dist:win`, `dist:mac` or `dist:linux` in `desktop/`). Release builds also bundle a PyInstaller build of the backend; see [the release checklist](dev-docs/RELEASE_CHECKLIST.md).
 
-### Web Application (For Teams) - WIP
+## Web server (in development)
 
-Note: The web server version is incomplete and still in active development.
-
-Perfect for collaboration and cloud access.
-
-Quick start with Docker:
+The web version shares the frontend with the desktop app and adds accounts, sign-in with Google or GitHub, and passkeys. It isn't ready for use yet. To try it:
 
 ```bash
-# From repo root
-docker-compose up -d
+# Terminal 1: backend on port 8000
+cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --port 8000
+
+# Terminal 2: frontend on port 3000
+cd frontend && npm run dev
 ```
 
-Manual setup (separate terminals):
+`./start-dev.sh` (or `start-dev.ps1`) starts both. Configuration is read from environment variables or `backend/.env`; see [Install the server](docs/install-server.md) and [Deploy with Docker](docs/docker-deploy.md).
+
+## Tests
+
+The automated tests cover the backend. Install pytest into the virtual environment once, then run them:
 
 ```bash
-# Backend (FastAPI)
-cd backend
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-
-# Frontend (Vite)
-cd ../frontend
-npm install
-npm run dev  # serves at http://localhost:3000
+.venv/bin/python -m pip install pytest
+cd backend && ../.venv/bin/python -m pytest
 ```
 
-#### 🔧 Web Server Configuration
+Also run `npm run lint` and `npm run type-check` in `frontend/`, and `npm run typecheck` in `desktop/`. CI builds the shared package and frontend and runs the backend tests.
 
-Key configuration options can be set via environment variables:
-
-Environment (backend):
-
-```env
-# .env
-SECRET_KEY=change-me
-DATABASE_URL=sqlite+aiosqlite:///./verbweaver.db
-BACKEND_CORS_ORIGINS=http://localhost:5173
-
-# OAuth (optional)
-GOOGLE_CLIENT_ID=your-google-client-id
-GITHUB_CLIENT_ID=your-github-client-id
-```
-
-Using PostgreSQL instead of SQLite:
-
-```env
-# .env (PostgreSQL)
-SECRET_KEY=change-me
-# Async SQLAlchemy driver string using asyncpg
-DATABASE_URL=postgresql+asyncpg://verbweaver:verbweaver@localhost:5432/verbweaver
-BACKEND_CORS_ORIGINS=http://localhost:5173
-
-# Optional Redis cache
-REDIS_URL=redis://localhost:6379/0
-```
-
-See [.env.example](backend/.env.example) for all available options.
-
-Notes:
-- Ensure PostgreSQL is running locally and a database/user are created. For local dev:
-  - user: `verbweaver`, password: `verbweaver`, db: `verbweaver`
-- If you use `docker-compose up -d`, the compose file already provisions Postgres and Redis and points the backend to them.
-
-### Development Setup
-
-For detailed setup instructions, see the [Getting Started Guide](docs/getting-started.md).
-
-
-If you are developing templates:
-- Global/default templates are bundled under `assets/templates` and copied into desktop builds.
-- The Compiler supports schema-driven variables and per-node variables; see `docs/compiler-template-system.md`.
-
-## 🐳 Docker Deployment (Work in Progress)
-
-Deploy Verbweaver using Docker:
-
-```bash
-docker-compose up -d
-```
-
-This will start:
-- Backend API on port 8000
-- Frontend on port 3000
-- PostgreSQL database (optional)
-- Redis for caching (optional)
-
-## 🏗️ Architecture
-
-Verbweaver uses a modern, scalable architecture:
-
-- **Backend**: Python with FastAPI, SQLAlchemy, and GitPython
-- **Frontend**: React with TypeScript, Vite, and Tailwind CSS
-- **Desktop**: Electron with secure IPC communication
-- **Database**: SQLite (default) or PostgreSQL
-- **Real-time**: WebSockets for collaboration
-
-## 📦 Project Structure
+## Project layout
 
 ```
 verbweaver/
-├── assets/                          # Static assets bundled with apps
-│   └── templates/
-│       ├── compiler/                # Default compiler templates by format
-│       └── nodes/                   # Default node templates
-├── backend/                         # FastAPI backend
-│   ├── app/
-│   │   ├── api/                     # API endpoints
-│   │   ├── core/                    # Config, security
-│   │   ├── db/                      # Sessions, redis client
-│   │   ├── models/                  # Database models
-│   │   ├── schemas/                 # Pydantic schemas
-│   │   └── services/                # Business logic (compiler, templates, git)
-│   └── tests/                       # Backend tests
-├── desktop/                         # Electron desktop app
-│   ├── src/
-│   │   ├── main/                    # Main process
-│   │   └── preload/                 # Preload scripts
-│   └── resources/                   # Icons, packaging resources, defaults
-├── docs/                            # Documentation site and guides
-├── frontend/                        # React + Vite frontend
-│   ├── src/
-│   │   ├── api/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── services/
-│   │   ├── store/
-│   │   └── views/
-│   └── package.json
-├── nginx/                           # Reverse proxy configs
-│   └── nginx.conf
-├── shared/                          # Workspace with shared TS types/constants
-│   ├── src/
-│   │   ├── config.ts
-│   │   ├── constants/
-│   │   └── types/
-│   └── package.json
-├── docker-compose.yml               # Full-stack dev/deploy (backend, frontend, db, redis)
-├── start-dev.ps1                    # Convenience dev script
-├── start-dev.sh
-└── README.md
+├── assets/templates/   default page, compiler and project templates, bundled into the app
+├── backend/            FastAPI backend (app/ is the application, tests/ the tests)
+├── desktop/            Electron app (src/main.ts, src/preload.ts) and packaging resources
+├── dev-docs/           developer and maintainer notes
+├── docs/               user guides, also shown in the app's Help
+├── frontend/           React + Vite frontend shared by desktop and web
+├── shared/             TypeScript types and constants used by frontend and desktop
+├── scripts/            maintenance scripts, such as Help screenshot capture
+├── nginx/              reverse proxy config for the web server
+└── docker-compose.yml  web server stack (in development)
 ```
 
-## 📖 Documentation
+## Contributing
 
-Comprehensive documentation is available in the [docs](docs/) directory:
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-- [Getting Started Guide](docs/getting-started.md) - Installation and setup
-- [Architecture Overview](docs/architecture.md) - System design
-- [API Reference](docs/api-reference.md) - REST API documentation
-- [User Guide](docs/user-guide.md) - How to use Verbweaver
-- [Developer Guide](docs/developer-guide.md) - Contributing and development
-- [Repository Paths](docs/repository-paths.md) - How project storage works
-- [Deployment Guide](docs/deployment.md) - Production deployment
+## License
 
-## 🧪 Testing
+Verbweaver is licensed under the MIT License with the Commons Clause; see [LICENSE](LICENSE).
 
-Run the test suites:
+The MIT License lets you use, modify and redistribute Verbweaver free of charge. The Commons Clause forbids selling Verbweaver, or providing a service (such as cloud hosting) "whose value derives, entirely or substantially" from Verbweaver. To ask about a license exception, please contact us with your offer.
 
-```bash
-# Backend tests
-cd backend
-pytest
+## Acknowledgments
 
-# Frontend tests
-cd frontend
-npm test
+- [Pandoc](https://pandoc.org/) converts documents between formats. It is a separate program that Verbweaver runs; it is not part of Verbweaver. The source code of the version Verbweaver uses is at https://github.com/jgm/pandoc/tree/3.8.1.
+- [Tectonic](https://tectonic-typesetting.github.io/en-US/) typesets PDFs from a single program.
+- [FastAPI](https://fastapi.tiangolo.com/), [React](https://react.dev/), [React Flow](https://reactflow.dev/), [Monaco Editor](https://microsoft.github.io/monaco-editor/), [Electron](https://www.electronjs.org/) and [GitPython](https://gitpython.readthedocs.io/).
+- [FullCalendar](https://fullcalendar.io/) (core, daygrid), © Adam Shaw, [MIT License](https://fullcalendar.io/license/mit). Its CSS is included so the calendar works offline.
+- Everyone who has contributed to or supported Verbweaver.
 
-# Desktop tests
-cd desktop
-npm test
+## Contact
 
-# E2E tests
-npm run test:e2e
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License + Commons Clause - see the [LICENSE](LICENSE) file for details.
-
-The MIT License ensures that you have unrestricted rights to use, modify, and redistribute Verbweaver free of charge. However, the Commons Clause rider prohibits you from selling Verbweaver or a providing a service (such as a cloud-hosting solution) "whose value derives, entirely or substantially" from Verbweaver. If you wish to purchase a license exception to this clause, then please contact us with your offer.
-
-## 🙏 Acknowledgments
-- [Pandoc](https://pandoc.org/) for the document file type conversion
-  - Pandoc is a separate program invoked by Verbweaver to generate documents in various formats. It is not "part of" Verbweaver in any way.
-  - The source code to the exact version of Pandoc that Verbweaver uses may be found at: https://github.com/jgm/pandoc/tree/3.8.1
-- [Tectonic](https://tectonic-typesetting.github.io/en-US/) for the LaTeX typesetting system that can be run all as one binary
-- [FastAPI](https://fastapi.tiangolo.com/) for the excellent Python web framework
-- [React](https://reactjs.org/) for the UI library
-- [React Flow](https://reactflow.dev/) for graph visualization
-- [Monaco Editor](https://microsoft.github.io/monaco-editor/) for the code editor
-- [Electron](https://www.electronjs.org/) for cross-platform desktop apps
-- [GitPython](https://gitpython.readthedocs.io/) for Git integration
-- [FullCalendar](https://fullcalendar.io/) (core, daygrid) © Adam Shaw — MIT License. We redistribute CSS assets for offline availability. See license: https://fullcalendar.io/license/mit
-- All our contributors and supporters!
-
-## 📞 Support & Communication
-
-- **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues)
-- **Discord**: [Join our community](https://discord.gg/aK3sBsBw)
-- **BlueSky**: [BlueSky](https://bsky.app/profile/verbweaver.bsky.social)
-- **Email**: https://verbweaver.design/contact
-
----
-
-Built with ❤️ by the Verbweaver team
+- **Issues:** [GitHub Issues](https://github.com/Verbweaver/verbweaver/issues)
+- **Discord:** [Join the community](https://discord.gg/aK3sBsBw)
+- **Bluesky:** [@verbweaver.bsky.social](https://bsky.app/profile/verbweaver.bsky.social)
+- **Email:** https://verbweaver.design/contact

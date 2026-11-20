@@ -194,6 +194,19 @@ function compareDocsForHelp(a: DocFile, b: DocFile): number {
   return (a.title ?? a.name).localeCompare(b.title ?? b.name, undefined, { sensitivity: 'base' });
 }
 
+// Docs that don't apply to the desktop app, from docs/help-docs.json ("hiddenOn": {"desktop": [...]}).
+// A missing or unreadable manifest hides nothing.
+async function loadDocsHiddenOnDesktop(docsPath: string): Promise<Set<string>> {
+  try {
+    const manifest = JSON.parse(await fs.readFile(path.join(docsPath, 'help-docs.json'), 'utf-8'));
+    const hidden = manifest?.hiddenOn?.desktop;
+    return new Set(Array.isArray(hidden) ? hidden.map((n: unknown) => String(n).toLowerCase()) : []);
+  } catch (error) {
+    console.warn('Could not read docs/help-docs.json; showing all docs:', error);
+    return new Set();
+  }
+}
+
 // Initialize electron store with encryption
 const store = new Store({
   encryptionKey: process.env.ELECTRON_STORE_ENCRYPTION_KEY || 'verbweaver-secret-key'
@@ -3065,9 +3078,11 @@ function setupIpcHandlers() {
         }
       };
       walk(all);
-      filesOnly.sort(compareDocsForHelp);
-      console.log(`Found ${filesOnly.length} docs`);
-      return filesOnly;
+      const hidden = await loadDocsHiddenOnDesktop(docsPath);
+      const visible = filesOnly.filter((f) => !hidden.has(f.path.replace(/\\/g, '/').toLowerCase()));
+      visible.sort(compareDocsForHelp);
+      console.log(`Found ${visible.length} docs`);
+      return visible;
     } catch (error) {
       console.error('Failed to list docs:', error);
       throw error;
@@ -3087,6 +3102,11 @@ function setupIpcHandlers() {
   ipc.handle('docs:read', async (_event, fileName: string) => {
     try {
       const filePath = resolveDocsPath(fileName);
+      const docsRoot = resolveDocsPath('.');
+      const hidden = await loadDocsHiddenOnDesktop(docsRoot);
+      if (hidden.has(path.relative(docsRoot, filePath).replace(/\\/g, '/').toLowerCase())) {
+        throw new Error('This document is not available in the desktop app.');
+      }
       console.log(`[main] Reading doc file: ${filePath}`);
       
       // Guard against directories

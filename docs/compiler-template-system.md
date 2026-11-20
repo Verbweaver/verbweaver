@@ -1,35 +1,14 @@
-# Compiler Template System Documentation
+# Compiler Template System
 
 ## Overview
 
-The Verbweaver template system allows users to customize how their exported documents appear. Templates are Markdown files that use Pandoc's template syntax for variable substitution, conditionals, and loops. The system supports multiple output formats including HTML, PDF, DOCX, EPUB, and ODT.
+Templates control how the [Compiler](compiler.md) lays out an exported document. A template is a Markdown file with placeholders, conditionals and loops written in a Pandoc-style syntax (`$title$`, `$if(...)$`, `$for(...)$`). Verbweaver fills these in itself, then hands the result to Pandoc to produce HTML, PDF, Word (DOCX), EPUB or ODT.
 
-## Installation Requirements
+This guide is more technical than the others. You only need it to write your own templates; the templates that come with Verbweaver work without any of this.
 
-### Pandoc
-Pandoc is required for document conversion. Installation methods:
+## Requirements
 
-**Windows:**
-```powershell
-winget install pandoc
-```
-
-**macOS:**
-```bash
-brew install pandoc
-```
-
-**Linux:**
-```bash
-sudo apt-get install pandoc
-```
-
-### LaTeX (for PDF)
-For PDF generation, a LaTeX distribution is required:
-
-**Windows:** Install MiKTeX or TeX Live
-**macOS:** Install MacTeX
-**Linux:** Install TeX Live
+The desktop app comes with Pandoc and Tectonic, the PDF engine, so exporting needs no extra software. If either is missing, see [Export Tools](dependency-checker.md).
 
 ## Architecture
 
@@ -47,7 +26,7 @@ For PDF generation, a LaTeX distribution is required:
 
 ## Writing Nodes for Templates (Practical Guide)
 
-This section shows how to write Markdown nodes so templates can read your data reliably. You do not need to be a developer—just follow the patterns.
+This section shows how to write Markdown nodes so templates can read your data reliably. You do not need to be a developer; just follow the patterns.
 
 ### Anatomy of a Node
 
@@ -412,7 +391,7 @@ Below are the supported compute functions with explanations and examples. In exa
 - **Purpose**: Compute CVSS v3.x base score from a vector string (approximate implementation).
 - **Args**:
   - `vector`: e.g., `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`
-- **Returns**: Base score (0.0 – 10.0) or `null` if invalid.
+- **Returns**: Base score (0.0 to 10.0) or `null` if invalid.
 - **Schema example**:
 ```yaml
 nodeVariables:
@@ -521,15 +500,15 @@ variables:
 
 Verbweaver performs a light validation on the schema declared in frontmatter:
 - `variables` and `nodeVariables` must be objects when present.
-- `type` must be one of: `string`, `number`, `boolean`, `array`.
+- `type` must be one of: `string`, `number`, `boolean`, `array`, `table`.
 - For `array` types:
   - `item` must be an object.
   - If `item.type: object`, then `item.fields` must be a non-empty object; each field must use a primitive `type` (string|number|boolean).
   - If `item.type` is a primitive, it must be string|number|boolean.
 - `nodeVariables.path` (if provided) must be a dotted string path (e.g., `metadata.cvss`).
-- `compute` must be an object with `fn` (string) and optional `args` (array). Unknown function names are warned but not fatal.
+- `compute` must be an object with `fn` (string) and optional `args` (array). `fn` must be one of the functions in the [Function Reference](#function-reference).
 
-Validation warnings appear in the template validation response and are non-fatal; invalid Pandoc syntax remains a hard error.
+Any problem found here is an error: the Compiler reports it and won't export with that template until it's fixed. Unbalanced `$` delimiters and broken `$for$`/`$if$` blocks are errors too.
 
 ## Using Node Variables in Templates
 
@@ -669,7 +648,7 @@ $endif$
 - **Use Case**: Web publishing, documentation
 
 ### PDF
-- **Engine**: Pandoc with `--pdf-engine=xelatex` (fallback to `pdflatex`)
+- **Engine**: Pandoc with Tectonic as the PDF engine, or xelatex if Tectonic isn't available
 - **Features**: Professional PDF output with proper typography
 - **Use Case**: Print-ready documents, academic papers
 
@@ -874,34 +853,10 @@ Notes:
 - The RACI table is fed by the `variables.raci` document variable (editable in the Compiler UI with CSV import/export).
 - The CVSS line appears when your schema computes or provides `nodes.vars.cvss`/`nodes.vars.severity` (see CVSS example earlier).
 
-## API Endpoints
-
-### Get Available Templates
-```
-GET /api/v1/compiler/{project_id}/templates?format_type={format}
-```
-Returns a list of available templates for the specified format.
-
-### Get Template Content
-```
-GET /api/v1/compiler/{project_id}/templates/{template_path}
-```
-Returns the template content, validation status, and detected custom variables.
-
-### Compile Document
-```
-POST /api/v1/compiler/{project_id}/compile
-```
-Compiles a document using the specified template and custom variables.
-
 ## Error Handling
 
 ### Pandoc Not Installed
-If Pandoc is not available, the system will return an error message with installation instructions:
-```
-Pandoc is not installed. Please install Pandoc to use this feature.
-Visit: https://pandoc.org/installing.html
-```
+If Pandoc can't be found, the Compiler says so. See [Export Tools](dependency-checker.md).
 
 ### Template Validation Errors
 Invalid templates will be flagged with specific error messages:
@@ -930,22 +885,12 @@ Format-specific conversion errors are handled gracefully:
 2. **Clear structure**: Organize content with clear headings and sections
 3. **Attachment management**: Keep attachments organized and referenced properly
 
-### Performance Considerations
-1. **Template caching**: Templates are cached for performance
-2. **Content validation**: Large documents are validated before processing
-3. **Error recovery**: Failed conversions are handled gracefully
-
 ## Troubleshooting
 
 ### Common Issues
 
-**Pandoc not found:**
-- Ensure Pandoc is installed and in PATH
-- Check installation with `pandoc --version`
-
-**PDF generation fails:**
-- Install LaTeX distribution (MiKTeX, TeX Live, MacTeX)
-- Check LaTeX installation with `xelatex --version`
+**Pandoc or the PDF engine not found:**
+- Open **Settings → Dependencies** and follow [Export Tools](dependency-checker.md).
 
 **Template validation errors:**
 - Check for balanced `$` delimiters

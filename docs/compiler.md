@@ -1,4 +1,4 @@
-# Compiler User Guide
+# Compiler
 
 The Compiler (the **Export Document** page) turns pages from your project into one finished document, such as a manuscript, a report, or an e-book. Pick the pages, put them in order, choose a format, and export.
 
@@ -30,7 +30,7 @@ On the right:
 
 ## 4. Export
 
-Click **Compile and Download**. When it finishes, your document is saved where your downloads usually go.
+Click **Compile and Download**. When it finishes, the desktop app asks where to save the document. In the web version, it goes wherever your browser saves downloads.
 
 ## Saving your setup
 
@@ -38,13 +38,8 @@ Click **Compile and Download**. When it finishes, your document is saved where y
 
 ## If something is missing
 
-Some formats, especially PDF, need extra free software on your computer. If you see a **Missing Dependencies** box:
-
-1. Click **Install** next to each missing item.
-2. Follow the installer.
-3. Reopen the Compiler.
+Exporting uses Pandoc and, for PDF, a PDF engine. Both come with the desktop app. If the Compiler shows a **Missing Dependencies** warning, see [Export Tools](dependency-checker.md).
 
 ## Learn more
 
-- Advanced: [Compiler Template System](compiler-template-system.md) explains how to build your own templates.
-- [Dependency Checker](dependency-checker.md) has detailed install steps for each operating system.
+Advanced: [Compiler Template System](compiler-template-system.md) explains how to build your own templates.

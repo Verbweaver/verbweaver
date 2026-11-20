@@ -1,4 +1,4 @@
-# Settings User Guide
+# Settings
 
 Settings is where you adjust how Verbweaver looks and behaves. Pick a section from the list on the left. Most changes take effect straight away.
 

@@ -1,17 +1,16 @@
-# Desktop Application Icons
+# Desktop resources
 
-This directory should contain the following icon files:
+Packaging resources for the Electron app (`build.directories.buildResources` in `desktop/package.json`).
 
-## Required Icons
-
-### Windows
-- `icon.ico` - Windows icon file (256x256 recommended)
-
-### macOS  
-- `icon.icns` - macOS icon file (512x512 recommended)
-
-### Linux
-- `icon.png` - PNG icon (512x512 recommended)
+| File or folder | Used for |
+|---|---|
+| `icon.png` | Linux icon and window icon (512x512). The source for the other icons. |
+| `icon.ico` | Windows icon. |
+| `icon.icns` | macOS icon. |
+| `icon.svg` | Vector version of the logo. |
+| `generate-icon.ps1` | Old script that draws a placeholder icon; not needed for the current icons. |
+| `entitlements.mac.plist` | macOS hardened-runtime entitlements used when signing. |
+| `tools/<os>/<arch>/` | Pandoc and Tectonic binaries bundled into the app (stored with Git LFS). |
 
 ## Icon Generation
 

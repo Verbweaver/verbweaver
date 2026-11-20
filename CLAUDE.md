@@ -26,7 +26,7 @@ pytest                         # config in backend/pytest.ini (testpaths: tests 
 pytest tests/test_compiler_multipass.py::test_unresolved_markers_option   # single test
 
 # Frontend (web mode), from frontend/
-npm run dev                    # Vite on :5173
+npm run dev                    # Vite on :3000
 npm run type-check
 
 # Desktop dev, one command (Linux/macOS; Windows: desktop/build-and-run.ps1)
@@ -40,7 +40,7 @@ npm run dist:linux             # electron-builder package (also dist:win / dist:
 ```
 
 Notes:
-- There is no frontend or desktop test script despite what README/CONTRIBUTING say; the only real tests are backend pytest (`backend/tests/`, `backend/test_backend.py`). CI (`.github/workflows/build.yml`) builds shared + frontend and runs `pytest -q`.
+- There is no frontend or desktop test script; the only real tests are backend pytest (`backend/tests/`, `backend/test_backend.py`). CI (`.github/workflows/build.yml`) builds shared + frontend and runs `pytest -q`.
 - Backend style per CONTRIBUTING: PEP 8, type hints, `black`, 100-char lines. TS: strict mode, functional components + hooks.
 - `docker-compose up -d` runs the web stack (backend, frontend, Postgres, Redis) — WIP.
 
@@ -70,8 +70,8 @@ Key backend pieces:
 
 ### Templates and bundled assets
 
-Default node and compiler templates live in `assets/templates/` (`nodes/`, `compiler/<format>/`). electron-builder copies them into the app as `templates-defaults`, along with `docs/` (served in the in-app Help view), `frontend/dist` (as `renderer`), and `desktop/resources/tools/<os>/<arch>` (bundled external tools such as Pandoc/Tectonic; the release workflow prunes other platforms). Projects on disk follow the structure described in `docs/repository-paths.md` (`nodes/`, `templates/`, `.verbweaver/`).
+Default node and compiler templates live in `assets/templates/` (`nodes/`, `compiler/<format>/`). electron-builder copies them into the app as `templates-defaults`, along with `docs/` (served in the in-app Help view; `docs/help-docs.json` hides guides per platform, and developer notes live in `dev-docs/`, which is not bundled), `frontend/dist` (as `renderer`), and `desktop/resources/tools/<os>/<arch>` (bundled external tools such as Pandoc/Tectonic; the release workflow prunes other platforms). Projects on disk follow the structure described in `docs/repository-paths.md` (`nodes/`, `templates/`, `.verbweaver/`).
 
 ### Releases
 
-`.github/workflows/release-desktop.yml` builds the PyInstaller backend + electron-builder installers per OS; other `publish-*.yml` workflows handle deb/rpm, Homebrew, winget, Docker. See `docs/RELEASE_CHECKLIST.md`. Version is kept in root `package.json` and `desktop/package.json`.
+`.github/workflows/release-desktop.yml` builds the PyInstaller backend + electron-builder installers per OS; other `publish-*.yml` workflows handle deb/rpm, Homebrew, winget, Docker. See `dev-docs/RELEASE_CHECKLIST.md`. Version is kept in root `package.json` and `desktop/package.json`.
