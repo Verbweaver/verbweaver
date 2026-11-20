@@ -3074,11 +3074,19 @@ function setupIpcHandlers() {
     }
   });
   
+  // Resolve a path inside the bundled docs folder, refusing anything that escapes it
+  const resolveDocsPath = (relativePath: string, subdir = ''): string => {
+    const root = path.resolve(app.getAppPath(), '..', 'docs', subdir);
+    const target = path.resolve(root, relativePath);
+    if (target !== root && !target.startsWith(root + path.sep)) {
+      throw new Error('Requested path is outside the documentation folder.');
+    }
+    return target;
+  };
+
   ipc.handle('docs:read', async (_event, fileName: string) => {
     try {
-      // Resolve the path relative to the app's location
-      const docsPath = path.join(app.getAppPath(), '..', 'docs');
-      const filePath = path.join(docsPath, fileName);
+      const filePath = resolveDocsPath(fileName);
       console.log(`[main] Reading doc file: ${filePath}`);
       
       // Guard against directories
@@ -3093,6 +3101,22 @@ function setupIpcHandlers() {
       console.error('Failed to read doc file:', error);
       throw error;
     }
+  });
+
+  // Images referenced by docs (docs/images/<name>), returned as a data URL for the Help view
+  const DOC_IMAGE_TYPES: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+  };
+  ipc.handle('docs:image', async (_event, imageName: string) => {
+    const mime = DOC_IMAGE_TYPES[path.extname(imageName).toLowerCase()];
+    if (!mime) throw new Error('Unsupported documentation image type.');
+    const data = await fs.readFile(resolveDocsPath(imageName, 'images'));
+    return `data:${mime};base64,${data.toString('base64')}`;
   });
 
   // Dependency checker handlers

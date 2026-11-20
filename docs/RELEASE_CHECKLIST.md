@@ -97,6 +97,8 @@ Use this as a step-by-step TODO to prepare, ship, and verify cross‑platform in
 - [ ] Build backend binary locally (section 3)
 - [ ] `cd desktop && npm ci && npm run build && npm run dist:<os>`
 - [ ] Install and launch on each OS; confirm backend spawns, Help docs visible offline
+- [ ] Refresh Help screenshots if the UI changed: `npm run docs:screenshots`, review `git diff --stat docs/images`, commit (see `scripts/help-screenshots/README.md`)
+- [ ] Help guides show their screenshots in the installed app (e.g. Help → Graph View User Guide)
 
 ## 9) Release pipeline dry‑run (tag)
 - [ ] Set `version` in `desktop/package.json` (and root `package.json`) to `X.Y.Z`

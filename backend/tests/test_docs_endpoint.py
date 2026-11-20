@@ -73,3 +73,50 @@ def test_bundled_docs_are_listed_by_their_h1():
         with open(os.path.join(docs.DOCS_DIR, d["name"]), encoding="utf-8") as f:
             first_h1 = next(line[2:].strip() for line in f if line.startswith("# "))
         assert d["title"] == first_h1
+
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+
+
+def _docs_with_image(tmp_path, monkeypatch):
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "graph.png").write_bytes(PNG_BYTES)
+    (tmp_path / "secret.png").write_bytes(PNG_BYTES)  # outside images/
+    (tmp_path / "images" / "notes.txt").write_text("not an image", encoding="utf-8")
+    monkeypatch.setattr(docs, "DOCS_DIR", str(tmp_path))
+
+
+def test_image_is_served_with_its_media_type(tmp_path, monkeypatch):
+    _docs_with_image(tmp_path, monkeypatch)
+
+    resp = _client().get(f"{DOCS_URL}/images/graph.png")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    assert resp.content == PNG_BYTES
+
+
+@pytest.mark.parametrize(
+    "name, status",
+    [
+        ("missing.png", 404),
+        ("notes.txt", 400),  # not an image type
+        ("..%5Csecret.png", 400),  # backslash traversal out of images/
+    ],
+)
+def test_image_route_rejects_missing_and_non_images(tmp_path, monkeypatch, name, status):
+    _docs_with_image(tmp_path, monkeypatch)
+
+    resp = _client().get(f"{DOCS_URL}/images/{name}")
+
+    assert resp.status_code == status
+
+
+@pytest.mark.parametrize("name", ["..%2Fsecret.png", "%2E%2E%2Fsecret.png", "../secret.png"])
+def test_image_route_never_serves_files_outside_images(tmp_path, monkeypatch, name):
+    _docs_with_image(tmp_path, monkeypatch)
+
+    resp = _client().get(f"{DOCS_URL}/images/{name}")
+
+    assert resp.status_code >= 400
+    assert resp.content != PNG_BYTES

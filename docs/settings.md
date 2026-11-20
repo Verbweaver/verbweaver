@@ -6,11 +6,15 @@ Settings is where you adjust how Verbweaver looks and behaves. Pick a section fr
 
 Shows who you're signed in as.
 
+![Settings, Profile: your details and, in the desktop app, Data Locations](images/settings-profile.png)
+
 In the desktop app, **Data Locations** lets you choose where Verbweaver keeps its information and your project folders. Click **Save**, then **restart the app** for the change to take effect. Most people never need to change these.
 
 ## Appearance
 
 Choose a **Theme**: Light, Dark, High Contrast, Colorblind Friendly, or Custom. The change applies immediately.
+
+![Settings, Appearance: the Theme choice and the list of theme colours](images/settings-appearance.png)
 
 To make your own colour scheme:
 
@@ -29,6 +33,8 @@ Web version only. Set up **passkeys**, which let you sign in with your fingerpri
 
 Settings for the project you have open.
 
+![Settings, Project: task statuses, default template and compiler templates](images/settings-project.png)
+
 - **Manage Statuses:** sets up the task columns, such as To Do and Done. This is the same as **Manage Columns** on the [Tasks](tasks.md) page.
 - **Automatically git commit when Task details change:** saves a version of your project every time you edit a task, so you never lose a change. See [Version Control](version-control.md).
 - **Default Template:** the starting layout used when you create a new page or task.
@@ -39,6 +45,8 @@ Settings for the project you have open.
 
 Keeps your project in sync with an online copy when you work with others or on several computers.
 
+![Settings, Collaboration: automatic pull and push options](images/settings-collaboration.png)
+
 - **Automatic Pull:** regularly brings in changes made elsewhere.
 - **Automatic Push:** regularly sends your saved versions to the online copy.
 
@@ -47,6 +55,8 @@ Tick either one, choose how often (in seconds, minutes, or hours), then click **
 ## Templates
 
 Templates are the starting layouts given to every **new** project. Existing projects keep their own copies.
+
+![Settings, Templates: the templates folder and the list of template files](images/settings-templates.png)
 
 - Click a file in the **Files** list to open it, make your changes, then click **Save**.
 - Desktop app only: the **Folder** bar shows where templates are kept. **Open** shows the folder, and **Choose Folder** picks a different one.
@@ -60,5 +70,7 @@ Desktop app only. Shows whether the extra software needed to export documents is
 
 - **Pandoc**, used for all export formats and previews;
 - a **PDF engine**, used for exporting to PDF.
+
+![Settings, Dependencies: Pandoc and the PDF engine, both installed](images/settings-dependencies.png)
 
 If something is missing, click its **Install** button and follow the installer. Then click **Check Again**. See the [Compiler](compiler.md) guide for more about exporting.

@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "id": "g-characters",
+      "name": "Characters",
+      "enabled": true,
+      "filters": {
+        "tags": [
+          "character"
+        ],
+        "tagsLogic": "ANY",
+        "nameKeyword": "",
+        "descriptionKeyword": "",
+        "startsWith": "",
+        "endsWith": "",
+        "startsEndsCaseSensitive": false,
+        "hasAttachments": false,
+        "linkedFromNodeTags": []
+      }
+    },
+    {
+      "id": "g-north",
+      "name": "Northern Reaches",
+      "enabled": true,
+      "filters": {
+        "tags": [
+          "northern-reaches"
+        ],
+        "tagsLogic": "ANY",
+        "nameKeyword": "",
+        "descriptionKeyword": "",
+        "startsWith": "",
+        "endsWith": "",
+        "startsEndsCaseSensitive": false,
+        "hasAttachments": false,
+        "linkedFromNodeTags": []
+      }
+    },
+    {
+      "id": "g-north-chars",
+      "name": "Northern characters",
+      "enabled": true,
+      "filters": {
+        "tags": [
+          "character",
+          "northern-reaches"
+        ],
+        "tagsLogic": "ALL",
+        "nameKeyword": "",
+        "descriptionKeyword": "",
+        "startsWith": "",
+        "endsWith": "",
+        "startsEndsCaseSensitive": false,
+        "hasAttachments": false,
+        "linkedFromNodeTags": []
+      }
+    },
+    {
+      "id": "g-south",
+      "name": "Southern Coast",
+      "enabled": true,
+      "filters": {
+        "tags": [
+          "southern-coast"
+        ],
+        "tagsLogic": "ANY",
+        "nameKeyword": "",
+        "descriptionKeyword": "",
+        "startsWith": "",
+        "endsWith": "",
+        "startsEndsCaseSensitive": false,
+        "hasAttachments": false,
+        "linkedFromNodeTags": []
+      }
+    }
+  ],
+  "options": {
+    "nestGroups": false,
+    "showNodeCards": false,
+    "maxCardsPerGroup": 40,
+    "showCapIndicator": true
+  },
+  "layout": {
+    "boxes": {
+      "isolde-varn\u001fmira-vale\u001fold-tamsin\u001frowan-ashby": {
+        "x": 0,
+        "y": 0
+      },
+      "ember-gate\u001ffrostmere\u001fhouse-varn\u001fisolde-varn\u001fmira-vale": {
+        "x": 340,
+        "y": 0
+      },
+      "isolde-varn\u001fmira-vale": {
+        "x": 170,
+        "y": 300
+      },
+      "lantern-guild\u001fold-tamsin\u001frowan-ashby\u001fsaltmarsh-harbour": {
+        "x": 560,
+        "y": 300
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "xVar": "week",
+  "xType": "number",
+  "colocateRepeats": false,
+  "yVars": [
+    {
+      "name": "height_cm",
+      "color": "#16a34a"
+    },
+    {
+      "name": "leaf_count",
+      "color": "#d97706"
+    }
+  ],
+  "labelAxes": true,
+  "showNodeTitles": false,
+  "showXAxisNodeTitles": false,
+  "background": "white",
+  "maxNodes": 20,
+  "manualOrdering": false,
+  "orderedNodes": [],
+  "filters": {
+    "tags": [
+      "observation"
+    ],
+    "tagsLogic": "ANY",
+    "nameKeyword": "",
+    "descriptionKeyword": "",
+    "startsWith": "",
+    "endsWith": "",
+    "startsEndsCaseSensitive": false,
+    "hasAttachments": false,
+    "linkedFromNodeTags": []
+  },
+  "selectedNodes": []
+}

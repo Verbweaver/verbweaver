@@ -2,6 +2,8 @@
 
 Welcome to the Verbweaver Editor. The Editor lets you write and organize content using Markdown with YAML front matter, link nodes together, attach files, and preview formatted output.
 
+![The Editor: project files on the left and a chapter open for editing, with its links listed below](images/editor.png)
+
 ## Markdown flavor
 
 Verbweaver uses Pandoc's Markdown. It supports standard Markdown plus advanced features. See the Pandoc manual for full reference: https://pandoc.org/MANUAL.html#pandocs-markdown

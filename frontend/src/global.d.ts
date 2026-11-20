@@ -101,6 +101,7 @@ declare global {
       // For Help View (ensure these match preload.ts ElectronAPI interface)
       listDocs?: () => Promise<DocFile[]>;
       readDocContent?: (fileName: string) => Promise<string>;
+      readDocImage?: (imageName: string) => Promise<string>; // docs/images/<name> as a data URL
       
       // File watching
       watchProject?: (callback: (event: any) => void) => void;

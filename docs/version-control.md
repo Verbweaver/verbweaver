@@ -2,6 +2,8 @@
 
 The Version Control page saves snapshots of your project as you work. Use it to keep a history of your drafts, undo a change you regret, or try out a different direction without losing your current work.
 
+![Version Control: changed pages on the left, branches and saved versions on the right](images/version-control.png)
+
 ## Getting started
 
 If you see **Git Not Initialized**, click **Initialize Git Repository** once. This turns on history for the project and saves your current work as the first version.
