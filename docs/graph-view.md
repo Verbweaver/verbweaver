@@ -122,6 +122,27 @@ Right-click empty space and choose **Save as PNG...**.
 
 Your groups are remembered on this computer for this tab.
 
+### Example: lore for a fictional world
+
+Say you're building a fantasy world and you've tagged each lore article. Tags might be "character", "place", or "faction", plus the region it belongs to, such as "northern-reaches".
+
+1. Make a group called **Characters**. Set its filter to the tag `character`.
+2. Make a group called **Northern Reaches**. Set its filter to the tag `northern-reaches`.
+3. Make a group called **Northern characters**. Set its filter to the tags `character, northern-reaches` and choose **Match: ALL**, so only articles with both tags are included.
+
+An arrow now points from **Characters** and from **Northern Reaches** to **Northern characters**, because it sits inside both. Turn on **Nest groups** to see it drawn inside them instead. At a glance you can see who lives where, and spot any character you forgot to place in a region.
+
+### Example: IT network documentation
+
+Say you document your organisation's network, with one page per server, database, or firewall. Each page is tagged with what it is and where it runs, such as "database" and "production".
+
+1. Make a group called **Production**. Set its filter to the tag `production`.
+2. Make a group called **Staging**. Set its filter to the tag `staging`.
+3. Make a group called **Production databases**. Set its filter to the tags `production, database` with **Match: ALL**.
+4. Make a group called **Firewalls**. Set its filter to the tag `firewall`.
+
+You can now see which resources belong to each environment, which databases are in production, and where your firewalls sit. If a page shows up in both **Production** and **Staging**, it may be tagged by mistake, or it may be shared between them, which is worth knowing either way.
+
 ## Progression
 
 The Progression view draws a line chart from details you've recorded on your pages. Use it to see how something changes across your work, for example a character's mood across chapters or the tension level from scene to scene.

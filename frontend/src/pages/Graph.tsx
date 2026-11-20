@@ -1928,6 +1928,7 @@ function GraphView() {
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('group')} title="Group"><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')} title="Outline"><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
             <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')} title="Progression"><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
+            <div className="pt-1 border-t border-border" />
             <button className={'px-2 py-1 text-sm'} onClick={()=>openHelp(HELP_DOCS.GRAPH, HELP_GRAPH_SECTIONS.MIND_MAP)} title="Open Mind Map User Guide"><span className="inline-flex items-center gap-1"><HelpCircle className="w-4 h-4"/>Help</span></button>
             <div className="pt-1 border-t border-border" />
             <div className="flex flex-col gap-2">
@@ -2084,6 +2085,7 @@ function GraphView() {
               <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('group')} disabled><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('outline')}><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')}><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
+              <div className="pt-1 border-t border-border" />
               <button className={'px-2 py-1 text-sm'} onClick={()=>openHelp(HELP_DOCS.GRAPH, HELP_GRAPH_SECTIONS.GROUP)} title="Open Group User Guide"><span className="inline-flex items-center gap-1"><HelpCircle className="w-4 h-4"/>Help</span></button>
               <div className="pt-1 border-t border-border" />
               <GroupManagerPanel />
@@ -2107,6 +2109,7 @@ function GraphView() {
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('group')}><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
               <button className={'px-2 py-1 bg-accent rounded text-sm'} onClick={()=>setSubView('outline')} disabled><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
               <button className={'px-2 py-1 text-sm'} onClick={()=>setSubView('progression')}><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
+              <div className="pt-1 border-t border-border" />
               <button className={'px-2 py-1 text-sm'} onClick={()=>openHelp(HELP_DOCS.GRAPH, HELP_GRAPH_SECTIONS.OUTLINE)} title="Open Outline User Guide"><span className="inline-flex items-center gap-1"><HelpCircle className="w-4 h-4"/>Help</span></button>
               <div className="pt-1 border-t border-border" />
               <label className="inline-flex items-center gap-2 text-xs" title="Hide files inside the uploads/ directory from the Outline.">
