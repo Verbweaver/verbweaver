@@ -16,6 +16,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
+          cache: npm
       # One install at the root covers every workspace; running `npm ci` again inside a
       # workspace reinstalls the whole tree.
       - name: Install deps (workspaces)
@@ -32,14 +33,28 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
       - name: Install backend deps
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
+      # Real export tools for the Compiler template tests: Pandoc and pdftotext from apt, and the
+      # Tectonic PDF engine that ships with the desktop app (committed directly, not in Git LFS).
+      # Tectonic downloads TeX packages on first use; the cache keeps that to one download.
+      - name: Install export tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q pandoc poppler-utils
+          echo "$GITHUB_WORKSPACE/desktop/resources/tools/linux/amd64" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/Tectonic
+          key: tectonic-${{ runner.os }}-v1
       - name: Run backend tests
         working-directory: backend
         env:
           PYTHONWARNINGS: ignore
-        run: pytest -q --tb=no
+        run: pytest -q --tb=short

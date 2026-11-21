@@ -80,6 +80,30 @@ def _write_temp_file(content: str, suffix: str) -> str:
         f.write(content)
         return os.path.abspath(f.name)
 
+# A control tag alone on its line ($if(x)$, $endfor$, ...) takes its line break with it, as in
+# Pandoc templates, so blocks don't leave blank lines (which would split Markdown tables).
+_CONTROL_LINE_RE = re.compile(
+    r'(?m)^[ \t]*(\$(?:if|ifnot|for)\([^)\n]*\)\$|\$(?:endif|endfor|else)\$)[ \t]*\n'
+)
+
+
+def _strip_control_lines(text: str) -> str:
+    return _CONTROL_LINE_RE.sub(r'\1', text)
+
+
+def _choose_branch(body: str, condition: bool) -> str:
+    """Body of an $if$ block: the part before $else$ when true, the part after it when false."""
+    then_part, sep, else_part = body.partition('$else$')
+    return then_part if condition else (else_part if sep else '')
+
+
+def _render_items(inner: str, render_item) -> str:
+    """Render a loop body once per item. Text after $sep$ goes between items, not after the last."""
+    body, sep_found, separator = inner.partition('$sep$')
+    parts = render_item(body)
+    return separator.join(parts) if sep_found else ''.join(parts)
+
+
 class TemplateService:
     """Service for managing and processing export templates"""
     
@@ -225,8 +249,15 @@ class TemplateService:
             
             logger.debug(f"Custom variables: {custom_variables}")
             
-            # Check for balanced delimiters
-            if template_content.count('$') % 2 != 0:
+            # Check for balanced delimiters in the template body. The front matter (schema) and
+            # ${...} compute selectors use single '$' characters legitimately, so skip them.
+            body = template_content
+            if body.startswith('---'):
+                fm_end = re.search(r'\n---[ \t]*\r?\n', body[3:])
+                if fm_end:
+                    body = body[3 + fm_end.end():]
+            body = re.sub(r'\$\{[^}\n]*\}', '', body)
+            if body.count('$') % 2 != 0:
                 errors.append("Unbalanced variable delimiters")
             
             # Check for basic loop syntax
@@ -468,10 +499,13 @@ class TemplateService:
                 return f"<!-- ERROR: Failed to process included template {include_path}: {e} -->"
         
         processed_content = include_pattern.sub(replace_include, processed_content)
+        processed_content = _strip_control_lines(processed_content)
 
         # Replace simple variables first, but only when they appear as standalone tokens.
         # This avoids replacing inside node-scoped placeholders like `$nodes.title$`.
         for key, value in data.items():
+            if key == 'toc':
+                continue  # $toc$ is the table of contents, not the include-TOC flag
             if isinstance(value, (str, bool, int, float)):
                 try:
                     # Match `$key$` not immediately preceded by an identifier character or dot.
@@ -510,14 +544,14 @@ class TemplateService:
                     if expr.startswith('nodes.'):
                         return m.group(0)
                     val = resolve_path(expr, data)
-                    return m.group(2) if compute_truthy(val) else ''
+                    return _choose_branch(m.group(2), compute_truthy(val))
 
                 def ifnot_repl(m):
                     expr = (m.group(1) or '').strip()
                     if expr.startswith('nodes.'):
                         return m.group(0)
                     val = resolve_path(expr, data)
-                    return m.group(2) if not compute_truthy(val) else ''
+                    return _choose_branch(m.group(2), not compute_truthy(val))
 
                 text = if_pat.sub(if_repl, text)
                 text = ifnot_pat.sub(ifnot_repl, text)
@@ -549,24 +583,22 @@ class TemplateService:
             value = resolve_path(expr, data)
             rendered = ''
             if isinstance(value, list):
-                items_out: List[str] = []
-                for it in value:
-                    chunk = inner
-                    if isinstance(it, dict):
-                        for k, v in it.items():
-                            chunk = chunk.replace(f'$it.{k}$', str(v))
-                    else:
-                        chunk = chunk.replace('$it$', str(it))
-                    items_out.append(chunk)
-                rendered = '\n'.join(items_out)
+                def list_items(body: str, value=value) -> List[str]:
+                    out: List[str] = []
+                    for it in value:
+                        chunk = body
+                        if isinstance(it, dict):
+                            for k, v in it.items():
+                                chunk = chunk.replace(f'$it.{k}$', str(v))
+                        else:
+                            chunk = chunk.replace('$it$', str(it))
+                        out.append(chunk)
+                    return out
+                rendered = _render_items(inner, list_items)
             elif isinstance(value, dict):
-                items_out = []
-                for k, v in value.items():
-                    chunk = inner
-                    chunk = chunk.replace('$it.key$', str(k))
-                    chunk = chunk.replace('$it.value$', str(v))
-                    items_out.append(chunk)
-                rendered = '\n'.join(items_out)
+                def dict_items(body: str, value=value) -> List[str]:
+                    return [body.replace('$it.key$', str(k)).replace('$it.value$', str(v)) for k, v in value.items()]
+                rendered = _render_items(inner, dict_items)
             else:
                 rendered = ''
             rebuilt.append(processed_content[pos:m.start()])
@@ -575,8 +607,8 @@ class TemplateService:
         processed_content = ''.join(rebuilt)
 
         # Generate a basic Table of Contents if requested and placeholder is present
-        if data.get('toc') and '$toc$' in processed_content:
-            toc_md = self._generate_basic_toc(data.get('nodes', []))
+        if '$toc$' in processed_content:
+            toc_md = self._generate_basic_toc(data.get('nodes', [])) if data.get('toc') else ''
             processed_content = processed_content.replace('$toc$', toc_md)
 
         # Handle nodes array and node-scoped controls
@@ -609,6 +641,8 @@ class TemplateService:
 
         # Replace simple top-level variables first (standalone tokens only)
         for key, value in data.items():
+            if key == 'toc':
+                continue
             if isinstance(value, (str, bool, int, float)):
                 try:
                     pattern = re.compile(rf"(?<![A-Za-z0-9_\.])\${re.escape(str(key))}\$")
@@ -653,14 +687,14 @@ class TemplateService:
                     if expr.startswith('nodes.'):
                         return m.group(0)
                     val = resolve_any_path(expr, data)
-                    return m.group(2) if compute_truthy(val) else ''
+                    return _choose_branch(m.group(2), compute_truthy(val))
 
                 def ifnot_repl(m):
                     expr = (m.group(1) or '').strip()
                     if expr.startswith('nodes.'):
                         return m.group(0)
                     val = resolve_any_path(expr, data)
-                    return m.group(2) if not compute_truthy(val) else ''
+                    return _choose_branch(m.group(2), not compute_truthy(val))
 
                 out = if_pat.sub(if_repl, text_in)
                 out = ifnot_pat.sub(ifnot_repl, out)
@@ -690,24 +724,22 @@ class TemplateService:
             value = resolve_any_path(expr, data)
             rendered = ''
             if isinstance(value, list):
-                items_out: List[str] = []
-                for it in value:
-                    chunk = inner
-                    if isinstance(it, dict):
-                        for k, v in it.items():
-                            chunk = chunk.replace(f'$it.{k}$', str(v))
-                    else:
-                        chunk = chunk.replace('$it$', str(it))
-                    items_out.append(chunk)
-                rendered = '\n'.join(items_out)
+                def list_items(body: str, value=value) -> List[str]:
+                    out: List[str] = []
+                    for it in value:
+                        chunk = body
+                        if isinstance(it, dict):
+                            for k, v in it.items():
+                                chunk = chunk.replace(f'$it.{k}$', str(v))
+                        else:
+                            chunk = chunk.replace('$it$', str(it))
+                        out.append(chunk)
+                    return out
+                rendered = _render_items(inner, list_items)
             elif isinstance(value, dict):
-                items_out = []
-                for k, v in value.items():
-                    chunk = inner
-                    chunk = chunk.replace('$it.key$', str(k))
-                    chunk = chunk.replace('$it.value$', str(v))
-                    items_out.append(chunk)
-                rendered = '\n'.join(items_out)
+                def dict_items(body: str, value=value) -> List[str]:
+                    return [body.replace('$it.key$', str(k)).replace('$it.value$', str(v)) for k, v in value.items()]
+                rendered = _render_items(inner, dict_items)
             else:
                 # Optionally show unresolved marker for non-iterables
                 if options and options.get('showUnresolvedMarkers'):
@@ -738,6 +770,14 @@ class TemplateService:
             val = resolve_any_path(expr, data)
             if isinstance(val, (str, int, float, bool)):
                 return str(val)
+            # Not a variable: leave TeX maths ($x$, $a_1$) and prices ($5-$10) in node text alone.
+            # Names used in the template, paths and node references are still treated as
+            # unresolved variables.
+            known = (options or {}).get('knownNames') or set()
+            first = expr.split('.', 1)[0]
+            looks_like_reference = '.' in expr or first.startswith('node-') or first in data or first in known
+            if not looks_like_reference or not (expr[0].isalpha() or expr[0] == '_'):
+                return m.group(0)
             return f"<!-- unresolved: {expr} -->" if options and options.get('showUnresolvedMarkers') else ''
         processed_content = token_pat.sub(replace_token, processed_content)
 
@@ -850,14 +890,14 @@ class TemplateService:
                         expr = m.group(1).strip()
                         if expr.startswith('nodes.'):
                             val = resolve_node_expr(expr, node)
-                            return m.group(2) if bool(val) else ''
+                            return _choose_branch(m.group(2), bool(val))
                         return m.group(0)
 
                     def ifnot_repl(m):
                         expr = m.group(1).strip()
                         if expr.startswith('nodes.'):
                             val = resolve_node_expr(expr, node)
-                            return m.group(2) if (not bool(val)) else ''
+                            return _choose_branch(m.group(2), not bool(val))
                         return m.group(0)
 
                     text = if_pat.sub(if_repl, text)
@@ -866,28 +906,18 @@ class TemplateService:
 
                 # Also support legacy convenience checks for metadata/vars/attachments presence
                 has_meta = isinstance(node.get('metadata'), dict) and len(node.get('metadata')) > 0
-                if has_meta:
-                    node_block = re.sub(r"\$if\(nodes\.metadata\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
-                else:
-                    node_block = re.sub(r"\$if\(nodes\.metadata\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
+                node_block = re.sub(r"\$if\(nodes\.metadata\)\$(.*?)\$endif\$", lambda m: _choose_branch(m.group(1), has_meta), node_block, flags=re.DOTALL)
 
                 has_vars = isinstance(node.get('vars'), dict) and len(node.get('vars')) > 0
-                if has_vars:
-                    # Keep inner content when vars exist
-                    node_block = re.sub(r"\$if\(\s*nodes\.vars\s*\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
-                else:
-                    # Remove guarded block when no vars
-                    node_block = re.sub(r"\$if\(\s*nodes\.vars\s*\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
+                node_block = re.sub(r"\$if\(\s*nodes\.vars\s*\)\$(.*?)\$endif\$", lambda m: _choose_branch(m.group(1), has_vars), node_block, flags=re.DOTALL)
+                if not has_vars:
                     # Also remove any standalone vars loop blocks as a safety net
                     node_block = re.sub(r"\$for\(nodes\.vars\)\$(.*?)\$endfor\$", '', node_block, flags=re.DOTALL)
                     # Remove the exact heading used by default templates if left dangling
                     node_block = re.sub(r"^###\s+Variables\s*$\n?", '', node_block, flags=re.MULTILINE)
 
                 has_atts = isinstance(node.get('attachments'), list) and len(node.get('attachments')) > 0
-                if has_atts:
-                    node_block = re.sub(r"\$if\(nodes\.attachments\)\$(.*?)\$endif\$", lambda m: m.group(1), node_block, flags=re.DOTALL)
-                else:
-                    node_block = re.sub(r"\$if\(nodes\.attachments\)\$(.*?)\$endif\$", '', node_block, flags=re.DOTALL)
+                node_block = re.sub(r"\$if\(nodes\.attachments\)\$(.*?)\$endif\$", lambda m: _choose_branch(m.group(1), has_atts), node_block, flags=re.DOTALL)
 
                 # Apply generic node conditionals ($if(nodes.path)$ and $ifnot(nodes.path)$)
                 node_block = apply_node_conditionals(node_block)
@@ -897,46 +927,39 @@ class TemplateService:
                     meta_loop = re.search(r'\$for\(nodes\.metadata\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
                     if not meta_loop:
                         break
-                    inner = meta_loop.group(1)
-                    items: List[str] = []
-                    if has_meta:
-                        for mk, mv in node.get('metadata', {}).items():
-                            item = inner
-                            item = item.replace('$it.key$', str(mk))
-                            item = item.replace('$it.value$', str(mv))
-                            items.append(item)
-                    node_block = node_block.replace(meta_loop.group(0), '\n'.join(items))
+                    meta = node.get('metadata', {}) if has_meta else {}
+                    rendered_meta = _render_items(meta_loop.group(1), lambda body, meta=meta: [
+                        body.replace('$it.key$', str(mk)).replace('$it.value$', str(mv)) for mk, mv in meta.items()
+                    ])
+                    node_block = node_block.replace(meta_loop.group(0), rendered_meta)
 
                 # Expand vars loop $for(nodes.vars)$ ... $endfor$ (all occurrences)
                 while True:
                     vars_loop = re.search(r'\$for\(nodes\.vars\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
                     if not vars_loop:
                         break
-                    inner = vars_loop.group(1)
-                    items: List[str] = []
-                    if has_vars:
-                        for mk, mv in node.get('vars', {}).items():
-                            item = inner
-                            item = item.replace('$it.key$', str(mk))
-                            item = item.replace('$it.value$', str(mv))
-                            items.append(item)
-                    node_block = node_block.replace(vars_loop.group(0), '\n'.join(items))
+                    nvars = node.get('vars', {}) if has_vars else {}
+                    rendered_vars = _render_items(vars_loop.group(1), lambda body, nvars=nvars: [
+                        body.replace('$it.key$', str(mk)).replace('$it.value$', str(mv)) for mk, mv in nvars.items()
+                    ])
+                    node_block = node_block.replace(vars_loop.group(0), rendered_vars)
 
                 # Expand attachments loop $for(nodes.attachments)$ ... $endfor$ (all occurrences)
                 while True:
                     att_loop = re.search(r'\$for\(nodes\.attachments\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
                     if not att_loop:
                         break
-                    inner = att_loop.group(1)
-                    items: List[str] = []
-                    if has_atts:
-                        for att in node.get('attachments', []):
-                            if isinstance(att, dict):
-                                item = inner
-                                for k, v in att.items():
-                                    item = item.replace(f'$it.{k}$', str(v))
-                                items.append(item)
-                    node_block = node_block.replace(att_loop.group(0), '\n'.join(items))
+                    atts = [a for a in node.get('attachments', []) if isinstance(a, dict)] if has_atts else []
+
+                    def att_items(body: str, atts=atts) -> List[str]:
+                        out: List[str] = []
+                        for att in atts:
+                            item = body
+                            for k, v in att.items():
+                                item = item.replace(f'$it.{k}$', str(v))
+                            out.append(item)
+                        return out
+                    node_block = node_block.replace(att_loop.group(0), _render_items(att_loop.group(1), att_items))
 
                 # Basic $nodes.attachments$ single placeholder support
                 if '$nodes.attachments$' in node_block and has_atts:

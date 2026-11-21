@@ -21,9 +21,12 @@
     "build:desktop": "cd desktop && npm run build",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",
-    "docs:screenshots": "node scripts/help-screenshots/capture.mjs"
+    "docs:screenshots": "node scripts/help-screenshots/capture.mjs",
+    "test:e2e": "playwright test -c tests/e2e/playwright.config.mjs",
+    "test:compiler-stress": "node scripts/compiler-stress/stress.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/path-browserify": "^1.0.3",
     "concurrently": "^7.6.0",
     "electron": "^45.3.4",
