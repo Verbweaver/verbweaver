@@ -11,18 +11,16 @@
  *
  * See ./README.md for prerequisites.
  */
-import { spawn, execFileSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  REPO, buildDesktop as buildDesktopApp, ensureFrontend as ensureFrontendServer, launchApp, closeApp,
+  createProject as createAppProject, stopProcessTree, git as gitIn, sleep,
+} from '../lib/electron-app.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO = path.resolve(HERE, '..', '..');
-const require = createRequire(path.join(REPO, 'package.json'));
-const { _electron } = require('playwright-core');
-const electronPath = require('electron');
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
@@ -32,78 +30,21 @@ const args = Object.fromEntries(
 );
 const OUT_DIR = path.resolve(REPO, typeof args.out === 'string' ? args.out : 'docs/images');
 const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',')) : null;
-const FRONTEND_URL = 'http://localhost:3000';
 const WINDOW = { width: 1440, height: 900 };
 // Sample projects (folders next to this script): a fantasy novel for most views, and a small
 // plant growth study for the Mind Map (a simpler map) and the Progression chart
 const NOVEL = { name: 'The Emberfall Chronicles', folder: 'Emberfall Chronicles', fixture: 'sample-project', description: 'A fantasy novel and its world.' };
 const PLANT = { name: 'Plant Growth Study', folder: 'Plant Growth Study', fixture: 'sample-plant-study', description: 'A weekly plant growth experiment.' };
 
-// Commits in the sample project use a made-up author, and no personal git config is read,
-// so nothing from the machine running the script ends up in the screenshots
-const GIT_ENV = {
-  GIT_AUTHOR_NAME: 'Sam Writer',
-  GIT_AUTHOR_EMAIL: 'sam@example.com',
-  GIT_COMMITTER_NAME: 'Sam Writer',
-  GIT_COMMITTER_EMAIL: 'sam@example.com',
-  GIT_CONFIG_GLOBAL: os.devNull,
-  GIT_CONFIG_NOSYSTEM: '1',
-};
-
-const IS_WINDOWS = process.platform === 'win32';
-// Off-screen rendering is only available on Linux; elsewhere the window shows while capturing
-const HEADLESS = !args.headed && process.platform === 'linux';
 
 const log = (...m) => console.log('[help-screenshots]', ...m);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------------------------
 // Environment: desktop build + frontend dev server
 // ---------------------------------------------------------------------------------------------
 
-async function isUp(url) {
-  try {
-    const res = await fetch(url);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function ensureFrontend() {
-  if (await isUp(FRONTEND_URL)) {
-    log(`Reusing frontend dev server at ${FRONTEND_URL}`);
-    return null;
-  }
-  log('Starting frontend dev server...');
-  const child = spawn('npm', ['run', 'dev', '--', '--strictPort'], {
-    cwd: path.join(REPO, 'frontend'),
-    stdio: 'ignore',
-    detached: !IS_WINDOWS,
-    shell: IS_WINDOWS,
-  });
-  for (let i = 0; i < 60; i++) {
-    if (await isUp(FRONTEND_URL)) return child;
-    await sleep(1000);
-  }
-  throw new Error(`Frontend dev server did not start on ${FRONTEND_URL}`);
-}
-
-function buildDesktop() {
-  log('Building desktop main/preload...');
-  execFileSync('npx', ['--no-install', 'electron-vite', 'build'], {
-    cwd: path.join(REPO, 'desktop'),
-    stdio: 'inherit',
-    shell: IS_WINDOWS,
-  });
-}
-
-function stopProcessTree(pid) {
-  try {
-    if (IS_WINDOWS) execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
-    else process.kill(-pid);
-  } catch {}
-}
+const buildDesktop = () => buildDesktopApp({ log });
+const ensureFrontend = () => ensureFrontendServer({ log });
 
 // ---------------------------------------------------------------------------------------------
 // Sample project
@@ -130,21 +71,11 @@ async function copyNodes(src, dest) {
   }
 }
 
-function git(cwd, ...gitArgs) {
-  execFileSync('git', gitArgs, { cwd, stdio: 'ignore', env: { ...process.env, ...GIT_ENV } });
-}
+const git = gitIn;
 
 async function createProject(win, project, projectPath) {
   log(`Creating sample project "${project.name}"...`);
-  await win.evaluate(
-    ([name, p, description]) => window.electronAPI.createProject(name, p, description),
-    [project.name, projectPath, project.description]
-  );
-  try {
-    await fs.access(path.join(projectPath, '.git'));
-  } catch {
-    git(projectPath, 'init', '-q', '-b', 'main');
-  }
+  await createAppProject(win, project, projectPath);
 }
 
 /** The novel is added in two commits, so Version Control has some history to show. */
@@ -213,36 +144,10 @@ async function main() {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'vw-help-shots-'));
   await fs.mkdir(OUT_DIR, { recursive: true });
 
-  const app = await _electron.launch({
-    executablePath: electronPath,
-    args: [
-      ...(HEADLESS ? ['--ozone-platform=headless'] : []),
-      // A throwaway profile: your real settings and recent projects are never touched
-      `--user-data-dir=${path.join(tmp, 'profile')}`,
-      // The desktop folder, as in `electron-vite dev`: its package.json points at dist/main/main.js,
-      // and the app finds docs/ and templates relative to it
-      path.join(REPO, 'desktop'),
-    ],
-    cwd: path.join(REPO, 'desktop'),
-    env: { ...process.env, ...GIT_ENV, NODE_ENV: 'development' },
-    timeout: 90_000,
-  });
+  // A throwaway profile: your real settings and recent projects are never touched
+  const { app, win } = await launchApp({ profileDir: path.join(tmp, 'profile'), headed: Boolean(args.headed), size: WINDOW });
 
   try {
-    // Pick the app window, not DevTools (which dev mode opens alongside it)
-    let win = null;
-    for (let i = 0; i < 120 && !win; i++) {
-      win = app.windows().find((w) => w.url().startsWith(FRONTEND_URL)) || null;
-      if (!win) await sleep(500);
-    }
-    if (!win) throw new Error('The app window did not open');
-    await app.evaluate(({ BrowserWindow }, size) => {
-      const w = BrowserWindow.getAllWindows()[0];
-      w.webContents.closeDevTools();
-      w.setContentSize(size.width, size.height);
-    }, WINDOW);
-    await settle(win, 3000);
-
     try {
       await captureAll(win, tmp);
     } catch (err) {
@@ -253,11 +158,7 @@ async function main() {
     }
   } finally {
     // Closing normally also stops the backend the app started; force it if that hangs
-    const closed = await Promise.race([app.close().then(() => true, () => true), sleep(15_000).then(() => false)]);
-    if (!closed) {
-      log('App did not close in time; stopping it.');
-      try { app.process().kill('SIGKILL'); } catch {}
-    }
+    await closeApp(app, { log });
     if (frontend) stopProcessTree(frontend.pid);
     if (!args.keep) await fs.rm(tmp, { recursive: true, force: true });
     else log(`Kept temp folder: ${tmp}`);

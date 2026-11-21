@@ -737,6 +737,8 @@ function CompilerView() {
       // 1) Schema variables: normalize by type
       if (templateSchema && templateSchema.variables) {
         Object.entries<any>(templateSchema.variables).forEach(([key, def]) => {
+          // Computed variables are calculated by the compiler; sending the form's value would override them
+          if (def?.compute) return
           let v = docVars[key]
           if (def?.type === 'number' && v !== '' && v !== undefined) {
             const n = Number(v); if (!Number.isNaN(n)) v = n
@@ -1017,7 +1019,9 @@ function CompilerView() {
                         <div className="text-xs font-medium flex items-center">
                           <span>{def?.label || key}</span><Badges def={def} />
                         </div>
-                        {def?.type === 'number' ? (
+                        {def?.compute ? (
+                          <div className="text-xs text-muted-foreground">Calculated when you export</div>
+                        ) : def?.type === 'number' ? (
                           <div>
                             <input type="number" className={`w-full px-2 py-1 border rounded bg-background text-sm ${docVarErrors[key] ? 'border-destructive' : 'border-input'}`} value={docVars[key] ?? ''} onChange={(e)=>setDocVars(prev=>({ ...prev, [key]: e.target.value }))} />
                             {docVarErrors[key] && <div className="text-[10px] text-destructive mt-1">{docVarErrors[key]}</div>}

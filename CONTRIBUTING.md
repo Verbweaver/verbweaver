@@ -42,9 +42,12 @@ cd frontend && npm run lint && npm run type-check
 
 # Desktop
 cd desktop && npm run typecheck
+
+# Desktop app end-to-end tests (Playwright), if you changed the Compiler page
+npm run test:e2e
 ```
 
-There are no automated frontend or desktop tests yet, so try your change in the app, in both the desktop app and, where it applies, the web version. CI builds `shared` and `frontend` and runs the backend tests on every pull request.
+Also try your change in the app: in the desktop app and, where it applies, the web version. CI builds `shared` and `frontend` and runs the backend tests, including the Compiler template tests, on every pull request. The end-to-end tests run when changes reach `release-testing`. See [dev-docs/testing.md](dev-docs/testing.md).
 
 If you change a page's layout or labels, refresh the Help screenshots with `npm run docs:screenshots` (see [scripts/help-screenshots](scripts/help-screenshots/README.md)) and update the matching guide in `docs/`.
 

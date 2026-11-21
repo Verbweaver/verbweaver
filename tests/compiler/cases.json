@@ -1,0 +1,489 @@
+{
+  "_comment": "Compiler template stress cases (issue #123). Shared by backend/tests/test_compiler_templates.py and the Playwright stress script/specs. Templates live in fixture/templates/compiler/markdown and are copied into every format folder. 'vars' are document variables entered in the UI (merged over the template's schema defaults, as the Compiler page does). Checks run on the plain text of each output: 'expect' substrings must appear, 'absent' must not, 'regex' must match, 'count' gives exact occurrences. 'mdOnly' checks run only on Markdown output (raw text). 'known' maps a check that fails because of an open bug to its issue; tests skip it, and a separate backend test fails once it starts passing.",
+  "defaultNodes": [
+    "nodes/Findings/SQL Injection.md",
+    "nodes/Findings/XSS.md"
+  ],
+  "cases": [
+    {
+      "id": "basics",
+      "template": "basics.md",
+      "nodes": [
+        "nodes/Findings/SQL Injection.md",
+        "nodes/Findings/XSS.md",
+        "nodes/Edge.md"
+      ],
+      "options": {
+        "title": "Stress Basics",
+        "author": "Sam Writer",
+        "includeToc": true
+      },
+      "vars": {
+        "platform": "Linux"
+      },
+      "expect": [
+        "Stress Basics",
+        "BY-Sam Writer",
+        "CLIENT-ACME",
+        "PLATFORM-Linux",
+        "SQLI-BODY",
+        "XSS-BODY",
+        "EDGE-BODY",
+        "[ACME]",
+        "SQLI-SECTION",
+        "AFTER-RULE-TEXT",
+        "AFTER-SECOND-RULE"
+      ],
+      "regex": [
+        "DATE-\\[\\d{4}-\\d{2}-\\d{2}",
+        "TOC-START\\W*SQL Injection"
+      ],
+      "absent": [
+        "$title$",
+        "$toc$",
+        "$client$",
+        "$platform$",
+        "TOC-START True"
+      ],
+      "mdOnly": {
+        "expect": [
+          "$x$",
+          "$a_1$",
+          "$E = mc^2$",
+          "$5-$10"
+        ]
+      }
+    },
+    {
+      "id": "conditionals",
+      "template": "conditionals.md",
+      "options": {
+        "title": "Stress Conditionals",
+        "author": "Sam Writer"
+      },
+      "expect": [
+        "IF-TRUE-SHOWN",
+        "IFNOT-SHOWN",
+        "ELSE-BRANCH-SHOWN",
+        "OUTER-START",
+        "OUTER-END"
+      ],
+      "absent": [
+        "IF-FALSE-SHOWN",
+        "ELSE-IF-BRANCH",
+        "INNER-SHOWN",
+        "MISSING-SHOWN",
+        "$else$",
+        "$endif$"
+      ],
+      "known": {
+        "absent:INNER-SHOWN": "#135"
+      }
+    },
+    {
+      "id": "loops",
+      "template": "loops.md",
+      "options": {
+        "title": "Stress Loops",
+        "author": "Sam Writer"
+      },
+      "vars": {
+        "people": [
+          {
+            "name": "Ann",
+            "role": "Lead"
+          },
+          {
+            "name": "Ben",
+            "role": "Dev"
+          }
+        ]
+      },
+      "expect": [
+        "PRIMS: [red][green][blue]",
+        "SEP: red, green, blue",
+        "PERSON Ann is Lead",
+        "PERSON Ben is Dev",
+        "NESTED: [Ann:redgreenblue][Ben:redgreenblue]"
+      ],
+      "absent": [
+        "$sep$",
+        "$it",
+        "$endfor$"
+      ],
+      "known": {
+        "expect:NESTED: [Ann:redgreenblue][Ben:redgreenblue]": "#135"
+      }
+    },
+    {
+      "id": "nodes",
+      "template": "nodes.md",
+      "options": {
+        "title": "Stress Nodes",
+        "author": "Sam Writer",
+        "includeMetadata": false
+      },
+      "expect": [
+        "NODE SQL Injection",
+        "NODE Cross-Site Scripting",
+        "CONTENT[SQLI-BODY",
+        "OWNER-META Alice",
+        "OWNER-META Bob",
+        "IS-VERIFIED SQL Injection",
+        "NOT-VERIFIED Cross-Site Scripting",
+        "META owner = Alice",
+        "ATT-LIST",
+        "diagram.png (70.0 B)",
+        "ATT diagram.png SIZE 70.0 B",
+        "VAR owner = Alice",
+        "VAR owner = Bob"
+      ],
+      "absent": [
+        "IS-VERIFIED Cross-Site Scripting",
+        "NOT-VERIFIED SQL Injection",
+        "$nodes.",
+        "$it."
+      ],
+      "mdOnly": {
+        "expect": [
+          "![diagram.png](uploads/diagram.png)"
+        ]
+      }
+    },
+    {
+      "id": "schema",
+      "template": "schema.md",
+      "options": {
+        "title": "Stress Schema",
+        "author": "Sam Writer"
+      },
+      "vars": {
+        "raci": {
+          "columns": [
+            "Task",
+            "Responsible",
+            "Accountable"
+          ],
+          "types": {},
+          "rows": [
+            {
+              "Task": "Design",
+              "Responsible": "Alice",
+              "Accountable": "Bob"
+            }
+          ]
+        }
+      },
+      "expect": [
+        "VERSION-1.0 PAGES-12 STATUS-Final",
+        "DRAFT-ON",
+        "OWNER Dana (dana@example.com)",
+        "TABLE-NESTED",
+        "TABLE-TOP",
+        "HEADERLINE: | Task | Responsible | Accountable |",
+        "ROW | Design | Alice | Bob |"
+      ],
+      "count": {
+        "Design": 3
+      },
+      "absent": [
+        "$raci",
+        "$it."
+      ]
+    },
+    {
+      "id": "table-doc-syntax",
+      "template": "table-doc-syntax.md",
+      "options": {
+        "title": "Stress Table Syntax",
+        "author": "Sam Writer"
+      },
+      "mdOnly": {
+        "expect": [
+          "NESTED-SEPARATOR: |---|---|",
+          "TOP-SEPARATOR: |---|---|"
+        ]
+      },
+      "expect": [
+        "NESTED-SEPARATOR",
+        "TOP-SEPARATOR"
+      ],
+      "absent": [
+        "$raci"
+      ]
+    },
+    {
+      "id": "compute",
+      "template": "compute.md",
+      "options": {
+        "title": "Internal Stress Compute",
+        "author": "Sam Writer"
+      },
+      "expect": [
+        "AVG-7.95",
+        "EFFORT-8",
+        "MAX-9.8",
+        "MIN-6.1",
+        "COUNT-2",
+        "UPPER-SAM WRITER",
+        "LOWER-sam writer",
+        "INTERNAL-True",
+        "DIRECT-9.8 SEVDIRECT-Critical",
+        "DIRECT-6.1 SEVDIRECT-Medium",
+        "CHAINED-[9.8] SEVCHAINED-[Critical]",
+        "CHAINED-[6.1] SEVCHAINED-[Medium]"
+      ],
+      "regex": [
+        "ROUNDED-(7\\.9|8\\.0)\\b",
+        "TODAY-\\d{4}-\\d{2}-\\d{2}"
+      ],
+      "absent": [
+        "$avg",
+        "$nodes."
+      ]
+    },
+    {
+      "id": "nodevars",
+      "template": "nodevars.md",
+      "options": {
+        "title": "Stress Node Variables",
+        "author": "Sam Writer"
+      },
+      "nodeVars": {
+        "nodes/Findings/XSS.md": {
+          "reviewer": "Carol",
+          "approved": "true"
+        },
+        "nodes/Findings/SQL Injection.md": {
+          "approved": "false"
+        }
+      },
+      "expect": [
+        "OWNER-Alice REVIEWER-NOBODY APPROVED-False",
+        "OWNER-Bob REVIEWER-Carol APPROVED-True"
+      ]
+    },
+    {
+      "id": "multipass",
+      "template": "multipass.md",
+      "nodes": [
+        "nodes/Intro.md"
+      ],
+      "options": {
+        "title": "Stress Multipass",
+        "author": "Sam Writer",
+        "showUnresolvedMarkers": true,
+        "includeMetadata": false
+      },
+      "expect": [
+        "INTRO-BODY for Stress Multipass",
+        "Glossary follows: GLOSSARY-BODY",
+        "Owner of the SQL finding: Alice",
+        "DIRECT-REF: Glossary"
+      ],
+      "absent": [
+        "$node-"
+      ],
+      "mdOnly": {
+        "expect": [
+          "<!-- unresolved: node-doesnotexist.content -->"
+        ]
+      }
+    },
+    {
+      "id": "includes",
+      "template": "includes.md",
+      "options": {
+        "title": "Stress Includes",
+        "author": "Sam Writer"
+      },
+      "expect": [
+        "INCLUDED-PART for Stress Includes"
+      ],
+      "absent": [
+        "include_relative"
+      ],
+      "mdOnly": {
+        "expect": [
+          "ERROR: Included template not found: no-such-file.md"
+        ]
+      }
+    },
+    {
+      "id": "no-template",
+      "template": null,
+      "options": {
+        "title": "No Template",
+        "author": "Sam Writer",
+        "includeMetadata": false
+      },
+      "expect": [
+        "No Template",
+        "SQL Injection",
+        "SQLI-BODY",
+        "XSS-BODY"
+      ],
+      "count": {
+        "SQLI-BODY": 1
+      },
+      "absent": [
+        "$nodes.",
+        "$for("
+      ]
+    },
+    {
+      "id": "project-default",
+      "template": null,
+      "projectDefault": "nodevars.md",
+      "options": {
+        "title": "Project Default",
+        "author": "Sam Writer"
+      },
+      "expect": [
+        "OWNER-Alice REVIEWER-NOBODY"
+      ]
+    },
+    {
+      "id": "options-off",
+      "template": "basics.md",
+      "options": {
+        "title": "Options Off",
+        "author": "Sam Writer",
+        "includeMetadata": false,
+        "embedUploadedFiles": false
+      },
+      "expect": [
+        "SQLI-BODY",
+        "XSS-BODY",
+        "EDGE-BODY",
+        "AFTER-RULE-TEXT",
+        "AFTER-SECOND-RULE"
+      ],
+      "absent": [
+        "cvss_vector",
+        "Attachments",
+        "diagram.png"
+      ],
+      "nodes": [
+        "nodes/Findings/SQL Injection.md",
+        "nodes/Findings/XSS.md",
+        "nodes/Edge.md"
+      ],
+      "uiOptions": true
+    },
+    {
+      "id": "invalid-template",
+      "template": "bad-compute.md",
+      "options": {
+        "title": "Invalid",
+        "author": "Sam Writer"
+      },
+      "expectStatus": 400,
+      "expectError": "Unknown compute.fn 'no.such.function'"
+    },
+    {
+      "id": "shipped-simple",
+      "template": "simple.md",
+      "shipped": true,
+      "options": {
+        "title": "Shipped Simple",
+        "author": "Sam Writer"
+      },
+      "expect": [
+        "Shipped Simple",
+        "SQL Injection",
+        "SQLI-BODY",
+        "XSS-BODY"
+      ],
+      "count": {
+        "SQLI-BODY": 1
+      },
+      "absent": [
+        "$nodes.",
+        "$for(",
+        "$if("
+      ]
+    },
+    {
+      "id": "shipped-academic",
+      "template": "academic.md",
+      "shipped": true,
+      "options": {
+        "title": "Shipped Academic",
+        "author": "Sam Writer",
+        "includeMetadata": false
+      },
+      "vars": {
+        "includeMetadata": true
+      },
+      "expect": [
+        "Shipped Academic",
+        "SQLI-BODY",
+        "XSS-BODY",
+        "Attachments",
+        "diagram.png"
+      ],
+      "regex": [
+        "owner:\\W*Alice"
+      ],
+      "count": {
+        "SQLI-BODY": 1
+      },
+      "absent": [
+        "$nodes.",
+        "$for(",
+        "$if("
+      ]
+    },
+    {
+      "id": "shipped-technical-report",
+      "template": "technical-report.md",
+      "shipped": true,
+      "options": {
+        "title": "Shipped Technical Report",
+        "author": "Sam Writer"
+      },
+      "vars": {
+        "summary": "SUMMARY-TEXT",
+        "changelog": [
+          {
+            "date": "2026-01-01",
+            "version": "1.0",
+            "author": "Sam",
+            "note": "CHANGELOG-NOTE"
+          }
+        ],
+        "stakeholders": [
+          {
+            "name": "Dana",
+            "role": "Sponsor",
+            "contact": "dana@example.com"
+          }
+        ]
+      },
+      "expect": [
+        "Shipped Technical Report",
+        "SUMMARY-TEXT",
+        "CHANGELOG-NOTE",
+        "Sponsor",
+        "SQLI-BODY",
+        "XSS-BODY"
+      ],
+      "count": {
+        "SQLI-BODY": 1,
+        "XSS-BODY": 1
+      },
+      "absent": [
+        "$nodes.",
+        "$for(",
+        "$if(",
+        "$endif$",
+        "$endfor$"
+      ],
+      "known": {
+        "count:SQLI-BODY": "#135",
+        "count:XSS-BODY": "#135"
+      }
+    }
+  ]
+}

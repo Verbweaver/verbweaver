@@ -213,14 +213,14 @@ Target audience: $audience$
 ### Document-Level Variables
 - `$title$`: Document title
 - `$author$`: Document author
-- `$date$`: Document date
-- `$toc$`: Table of contents (if enabled)
+- `$date$`: Today's date (YYYY-MM-DD)
+- `$toc$`: A list of the selected pages and their `##` sections, when **Include table of contents** is ticked; empty otherwise
 
 ### Node-Level Variables
 - `$nodes.title$`: Node title
 - `$nodes.content$`: Node content (Markdown)
-- `$nodes.metadata$`: Node metadata (YAML front matter)
-- `$nodes.attachments$`: Node attachments
+- `$nodes.metadata.<field>$`: One field from the page's details block, such as `$nodes.metadata.owner$`. To list every field, loop with `$for(nodes.metadata)$ $it.key$: $it.value$ $endfor$`.
+- `$nodes.attachments$`: A bullet list of the page's attachments (name and size)
 
 ### Custom Variables
 Custom variables are dynamically detected from the template and can be set by users through the UI.
@@ -316,7 +316,7 @@ Rendering options provided by the compiler:
 
 - B) Structured pieces for custom layouts:
   - Headers: `$for(myTable.columns)$ ... $endfor$` or `$for(myTable_columns)$ ... $endfor$`
-  - Separator: `${myTable.headerSeparator}` or `$myTable_headerSeparator$`
+  - Separator: `$myTable.headerSeparator$` or `$myTable_headerSeparator$`
   - Rows: `$for(myTable.rows)$ $it.line$ $endfor$` or `$for(myTable_rows)$ $it.line$ $endfor$`
   - Each row has `cells` (aligned to current columns) and a prebuilt `line` string.
 
@@ -580,8 +580,8 @@ $for(nodes)$
 
 $nodes.content$
 
-$if(nodes.metadata)$
-**Metadata:** $nodes.metadata$
+$if(nodes.metadata.owner)$
+**Owner:** $nodes.metadata.owner$
 $endif$
 
 $if(nodes.attachments)$
@@ -600,6 +600,8 @@ Scope rules:
 - Selected nodes are rendered via `$for(nodes)$` and `$nodes.*$` during the first pass.
 - Any node referenced by ID (e.g., `$node-<ID>...$`) is added to scope for later passes, but is not added to the `$nodes$` array.
 - All passes have access to the same document variables and options you set in the Compiler.
+
+Use the referenced page's `id` exactly as it appears in its details block. Pages created in Verbweaver get IDs like `node-1712345678901-abc1234`, so a reference looks like `$node-1712345678901-abc1234.content$`. References only work for IDs that start with `node-`.
 
 Basics:
 - Another node’s content: `$node-<ID>.content$`
@@ -635,10 +637,60 @@ $if(title)$
 # $title$
 $endif$
 
-$if(author)$
-By $author$
+$if(draft)$
+**Draft:** not for distribution.
+$else$
+Final version.
+$endif$
+
+$ifnot(nodes.metadata.verified)$
+(unverified)
 $endif$
 ```
+
+`$if(x)$` is true when `x` is set and not empty, false or an empty list. `$ifnot(x)$` is the opposite. Both can have an `$else$` part.
+
+### Separators in loops
+
+Text after `$sep$` goes between items but not after the last one:
+
+```markdown
+Tags: $for(tags)$$it$$sep$, $endfor$
+```
+
+gives `Tags: red, green, blue`.
+
+### Line breaks around tags
+
+As in Pandoc templates, a line that holds only a tag (`$if(...)$`, `$else$`, `$endif$`, `$for(...)$`, `$endfor$`) disappears completely, including its line break. That lets a loop build the rows of a Markdown table:
+
+```markdown
+| Name | Role |
+|------|------|
+$for(stakeholders)$
+| $it.name$ | $it.role$ |
+$endfor$
+```
+
+Because those lines vanish, leave a blank line before a list that a loop produces, or Markdown joins the list to the paragraph above it.
+
+### Nesting
+
+An `$if$` block can't yet contain another `$if$` block, and a `$for$` loop can't contain another loop, except that `$for(nodes)$` may contain loops such as `$for(nodes.metadata)$`. For example, `$if(a)$ ... $if(b)$ ... $endif$ ... $endif$` ends the outer block at the first `$endif$`. Use separate blocks instead. This is tracked as a bug (see issue #135).
+
+### Including other templates
+
+A template can include another template file, relative to its own folder:
+
+```markdown
+{% include_relative ../markdown/simple.md %}
+```
+
+The templates that come with Verbweaver use this: each format's template includes the Markdown version, so a change to `markdown/simple.md` applies to every format. If the file isn't found, the output contains `<!-- ERROR: Included template not found: ... -->`.
+
+### Text that looks like a variable
+
+In page text, `$...$` that isn't a variable the template uses, a node reference or a dotted path is left alone, so TeX maths such as `$x^2$` and prices such as `$5-$10` come through unchanged. In the template itself, every `$` must be part of a placeholder (`$name$`); a single `$` makes the template invalid.
 
 ## Supported Formats
 
@@ -669,189 +721,27 @@ $endif$
 
 ## Default Templates
 
-### Simple Template (all formats)
-Purpose: minimal, readable exports. Now includes a “Variables” section per node when node vars are present.
+Every new project gets three templates for each format, in `templates/compiler/<format>/`. The Markdown files hold the layout; the other formats include them with `{% include_relative ../markdown/<name>.md %}`. Open them in the Editor to see the full text or to use them as a starting point.
 
-Markdown version:
-```markdown
----
-title: $title$
-author: $author$
-date: $date$
----
+### Simple (`simple.md`)
 
-# $title$
+The title, then each selected page as a `##` section with its text. If the template defines node variables, each page also gets a "Variables" list. This is the default when no template is chosen and the project has no default set.
 
-By $author$ on $date$
+### Academic (`academic.md`)
 
-$for(nodes)$
-## $nodes.title$
+Like Simple, plus an **includeMetadata** variable (a checkbox in the Compiler). When ticked, each page's details are listed under a "Metadata" heading. Attachments are listed by name and size.
 
-$nodes.content$
+### Technical Report (`technical-report.md`)
 
-$if(nodes.vars)$
-### Variables
-$for(nodes.vars)$
-- $it.key$: $it.value$
-$endfor$
-$endif$
+For reports with a fixed structure. Document variables:
 
-$if(nodes.metadata)$
-### Metadata
-$for(nodes.metadata)$
-- $it.key$: $it.value$
-$endfor$
-$endif$
+- **summary**: an "Executive Summary" paragraph.
+- **changelog** and **stakeholders**: lists edited as grids in the Compiler (or imported from CSV), shown as tables.
+- **raci**: a table variable, shown with `$raci_markdown$`.
 
-$if(nodes.attachments)$
-### Attachments
-$for(nodes.attachments)$
-- $it.name$ ($it.size$)
-$endfor$
-$endif$
+Each page is a section, except pages whose **appendix** node variable is true (from `appendix: true` in their details block), which are meant to appear under "Appendices". Node variables **cvss_vector** and **cvss** are read from the page details for security findings.
 
----
-$endfor$
-```
-
-HTML version shows the same sections with semantic headings and lists.
-
-### Academic Template (all formats)
-Purpose: add ToC and clearly separated node sections. Also surfaces node vars.
-
-Markdown version:
-```markdown
----
-title: $title$
-author: $author$
-date: $date$
-documentclass: article
-geometry: margin=1in
----
-
-\maketitle
-
-\tableofcontents
-
-$for(nodes)$
-\section{$nodes.title$}
-
-$nodes.content$
-
-$if(nodes.vars)$
-\subsection*{Variables}
-$for(nodes.vars)$
-\textbf{$it.key$}: $it.value$\\
-$endfor$
-$endif$
-
-$if(nodes.metadata)$
-\subsection*{Metadata}
-$for(nodes.metadata)$
-\textbf{$it.key$}: $it.value$\\
-$endfor$
-$endif$
-
-$if(nodes.attachments)$
-\subsection*{Attachments}
-$for(nodes.attachments)$
-\textbf{$it.name$} ($it.size$)\\
-$endfor$
-$endif$
-
-$endfor$
-
-\section{References}
-
-[References would be automatically generated here]
-```
-
-HTML version uses `<h3>` subsections and paragraphs for Variables, Metadata, and Attachments.
-
-### Technical Report Template (all formats)
-Purpose: opinionated report with executive summary, changelog, stakeholders, RACI table, and per‑node content.
-
-Markdown version (excerpt):
-```markdown
----
-title: $title$
-author: $author$
-date: $date$
-summary: $summary$
-changelog:
-  - { date: 2025-01-01, version: 0.1, author: $author$, note: Initial draft }
-stakeholders:
-  - { name: Alice, role: Sponsor, contact: alice@example.com }
-raci:
-  - { task: Kickoff, r: Bob, a: Alice, c: Team, i: Execs }
----
-
-# $title$
-
-$if(toc)$
-## Table of Contents
-$toc$
-$endif$
-
-## Executive Summary
-
-$summary$
-
-## Document Changelog
-
-| Date | Version | Author | Change |
-|------|---------|--------|--------|
-$for(changelog)$
-| $it.date$ | $it.version$ | $it.author$ | $it.note$ |
-$endfor$
-
-## Stakeholder Registry
-
-| Name | Role | Contact |
-|------|------|---------|
-$for(stakeholders)$
-| $it.name$ | $it.role$ | $it.contact$ |
-$endfor$
-
-## RACI Matrix (table variables)
-
-| $for(raci_columns)$ $it$ |$endfor$
-$raci_headerSeparator$
-$for(raci_rows)$
-$it.line$
-$endfor$
-
-$for(nodes)$
-## $nodes.title$
-
-$nodes.content$
-
-$if(nodes.vars.cvss)$
-> CVSS: $nodes.vars.cvss$ ($nodes.vars.severity$)
-$endif$
-
-$if(nodes.vars)$
-### Variables
-$for(nodes.vars)$
-- $it.key$: $it.value$
-$endfor$
-$endif$
-
-$endfor$
-
-$if(appendices)$
-## Appendices
-$for(appendices)$
-### $it.title$
-
-$it.content$
-$endfor$
-$endif$
-```
-
-Notes:
-- The RACI table is fed by the `variables.raci` document variable (editable in the Compiler UI with CSV import/export).
-- The CVSS line appears when your schema computes or provides `nodes.vars.cvss`/`nodes.vars.severity` (see CVSS example earlier).
+Known issue: because of the nesting limitation above, the "Appendices" section currently repeats every page (see issue #135).
 
 ## Error Handling
 

@@ -36,6 +36,26 @@ class CompileResponse(BaseModel):
     message: str
     filename: str
 
+def _coerce_to_type(value: Any, var_def: Any) -> Any:
+    """Convert a text value to the type a schema variable declares (boolean or number)."""
+    t = var_def.get('type') if isinstance(var_def, dict) else None
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if t == 'boolean':
+        if text.lower() in ('true', 'yes', '1', 'on'):
+            return True
+        if text.lower() in ('false', 'no', '0', 'off', ''):
+            return False
+    if t == 'number' and text:
+        try:
+            num = float(text)
+            return int(num) if num.is_integer() and '.' not in text else num
+        except ValueError:
+            return value
+    return value
+
+
 class ContentAggregator:
     """Reusable content aggregation logic"""
     
@@ -79,7 +99,7 @@ class ContentAggregator:
         # Validate template and get schema (variables + nodeVariables) from the final template
         is_valid, custom_vars, schema, validation_messages = self.template_service.validate_template(final_template_content)
         if not is_valid:
-            raise ValueError(f"Invalid template: {custom_vars}")
+            raise ValueError(f"Invalid template {template_path}: " + "; ".join(validation_messages))
 
         # --- Compute helpers (safe, minimal) ---
         def resolve_path(root: Dict[str, Any], path: str):
@@ -140,11 +160,11 @@ class ContentAggregator:
                     base = min(impact_score + exploitability, 10.0)
                     if scope == 'C':
                         base = min(1.08 * (impact_score + exploitability), 10.0)
-                # round up to one decimal as per CVSS (round up, not half-even)
-                def round_up(x: float) -> float:
-                    return float(f"{((int(x*10 + (0 if x*10 == int(x*10) else 1))) / 10):.1f}") if x>0 else 0.0
-                # Simpler: use conventional rounding to one decimal
-                return round(base + 1e-7, 1)
+                # CVSS v3.1 Roundup: the smallest one-decimal number >= base (spec Appendix A)
+                int_input = int(round(base * 100000))
+                if int_input % 10000 == 0:
+                    return int_input / 100000.0
+                return (int_input // 10000 + 1) / 10.0
             except Exception:
                 return None
 
@@ -208,8 +228,8 @@ class ContentAggregator:
                 except Exception:
                     return None
             if fn == 'date.now':
-                from datetime import datetime
-                return datetime.utcnow().isoformat()
+                from datetime import datetime, timezone
+                return datetime.now(timezone.utc).isoformat()
             if fn == 'date.today':
                 from datetime import date
                 return date.today().isoformat()
@@ -230,7 +250,7 @@ class ContentAggregator:
         data = {
             'title': options.get('title', 'Document'),
             'author': options.get('author', 'Unknown'),
-            'date': options.get('date', ''),
+            'date': options.get('date') or __import__('datetime').date.today().isoformat(),
             # Support both includeTOC and includeToc from clients
             'toc': bool(options.get('includeTOC') or options.get('includeToc')),
             'includeMetadata': bool(options.get('includeMetadata', True)),
@@ -298,9 +318,9 @@ class ContentAggregator:
                         node_schema = (schema or {}).get('nodeVariables', {})
                         if isinstance(node_schema, dict):
                             for var_name, var_def in node_schema.items():
-                                # override from request
+                                # override from request (the Compiler page's grid sends text; use the declared type)
                                 if node_variables and path in node_variables and var_name in (node_variables[path] or {}):
-                                    resolved_vars[var_name] = node_variables[path][var_name]
+                                    resolved_vars[var_name] = _coerce_to_type(node_variables[path][var_name], var_def)
                                     continue
                                 # fallback from metadata via dotted path
                                 path_expr = (var_def or {}).get('path')
@@ -326,7 +346,8 @@ class ContentAggregator:
                     if isinstance(node_schema, dict):
                         for var_name, var_def in node_schema.items():
                             if (resolved_vars.get(var_name) in (None, '')) and var_def and isinstance(var_def, dict) and var_def.get('compute'):
-                                val = compute_value(var_def, { 'nodes': [], **node_data })
+                                # Earlier variables are visible as ${vars.x}, so computed values can chain
+                                val = compute_value(var_def, { 'nodes': [], **node_data, 'vars': resolved_vars })
                                 if val is not None:
                                     resolved_vars[var_name] = val
 
@@ -381,6 +402,7 @@ class ContentAggregator:
                         val = compute_value(var_def, data)
                         if val is not None:
                             doc_vars[var_name] = val
+                            data[var_name] = val  # later computes can use it (e.g. round(${avgCvss}))
             if doc_vars:
                 data.update(doc_vars)
         except Exception:
@@ -492,6 +514,9 @@ class ContentAggregator:
         # First-pass full template processing (includes + all normal rules)
         rendered = self.template_service.process_template(template_content, data, template_path)
 
+        # Names the template itself uses as $name$; in node text, other $...$ (maths, prices) is left alone
+        template_names = set(re.findall(r"\$([A-Za-z_][A-Za-z0-9_]*)\$", final_template_content))
+
         # Multi-pass inline evaluation to support variables/logic inside node bodies and referenced nodes
         max_passes = int(options.get('maxVariablePasses', 5) or 5)
         reprocess_nodes = bool(options.get('reprocessNodesInPasses', True))
@@ -582,7 +607,7 @@ class ContentAggregator:
                                         if isinstance(node_schema, dict):
                                             for var_name, var_def in node_schema.items():
                                                 if (resolved_vars.get(var_name) in (None, '')) and var_def and isinstance(var_def, dict) and var_def.get('compute'):
-                                                    val = compute_value(var_def, { 'nodes': [], **node_obj })
+                                                    val = compute_value(var_def, { 'nodes': [], **node_obj, 'vars': resolved_vars })
                                                     if val is not None:
                                                         resolved_vars[var_name] = val
                                         if resolved_vars:
@@ -624,7 +649,8 @@ class ContentAggregator:
                 data,
                 {
                     'reprocessNodesInPasses': reprocess_nodes,
-                    'showUnresolvedMarkers': show_markers
+                    'showUnresolvedMarkers': show_markers,
+                    'knownNames': template_names,
                 }
             )
 
@@ -636,7 +662,7 @@ class ContentAggregator:
             import re as _re
             rendered = _re.sub(r"\$if\([^)]+\)\$", '', rendered)
             rendered = _re.sub(r"\$ifnot\([^)]+\)\$", '', rendered)
-            rendered = rendered.replace('$endif$', '')
+            rendered = rendered.replace('$endif$', '').replace('$else$', '')
         except Exception:
             pass
 
@@ -716,12 +742,14 @@ class ContentAggregator:
         in_front_matter = False
         front_matter_lines = []
         
-        for line in lines:
-            # Handle front matter
-            if line.strip() == '---':
+        for index, line in enumerate(lines):
+            # Front matter is only the block opened by '---' on the first line; later '---' lines
+            # are horizontal rules in the page body
+            if line.strip() == '---' and (index == 0 or in_front_matter):
                 if not in_front_matter:
                     in_front_matter = True
                     front_matter_lines = []
+                    continue
                 else:
                     # End of front matter
                     in_front_matter = False
@@ -799,7 +827,7 @@ class ContentAggregator:
                 if uploaded_at:
                     # Format the date nicely
                     try:
-                        from datetime import datetime
+                        from datetime import datetime, timezone
                         dt = datetime.fromisoformat(uploaded_at.replace('Z', '+00:00'))
                         formatted_date = dt.strftime('%Y-%m-%d %H:%M')
                         attachment_line += f" - Uploaded: {formatted_date}"
@@ -924,9 +952,10 @@ class ContentAggregator:
                 file_name = attachment.get('name', 'Unknown')
                 file_path = attachment.get('path', '')
                 
-                if file_path and os.path.exists(file_path):
+                abs_path = os.path.normpath(os.path.join(self.project_path, file_path)) if file_path else ''
+                if file_path and os.path.exists(abs_path):
                     # Make path relative to project root
-                    rel_path = os.path.relpath(file_path, self.project_path)
+                    rel_path = os.path.relpath(abs_path, self.project_path).replace('\\', '/')
                     # Add image reference
                     content += f"\n![{file_name}]({rel_path})\n"
         

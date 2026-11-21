@@ -92,6 +92,8 @@ Signing steps are skipped when a secret is missing, so an unsigned build still s
 - [ ] Help lists no server docs in the desktop app (`docs/help-docs.json`)
 - [ ] Refresh Help screenshots if the UI changed: `npm run docs:screenshots`, review `git diff --stat docs/images`, commit (see `scripts/help-screenshots/README.md`)
 - [ ] Help guides show their screenshots in the installed app
+- [ ] The **E2E (desktop app)** workflow passed for the `release-testing` push (Actions tab)
+- [ ] If the template engine or Compiler page changed: `node scripts/compiler-stress/stress.mjs` reports no unexpected failures (see `dev-docs/testing.md`)
 
 ## 9) Release (tag)
 - [ ] Set `version` in `desktop/package.json` and root `package.json` to `X.Y.Z`
