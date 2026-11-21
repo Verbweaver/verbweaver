@@ -91,17 +91,181 @@ def _strip_control_lines(text: str) -> str:
     return _CONTROL_LINE_RE.sub(r'\1', text)
 
 
-def _choose_branch(body: str, condition: bool) -> str:
-    """Body of an $if$ block: the part before $else$ when true, the part after it when false."""
-    then_part, sep, else_part = body.partition('$else$')
-    return then_part if condition else (else_part if sep else '')
+# --- Nested $if$ / $for$ blocks (#135) ---------------------------------------------------------
+#
+# Templates are parsed into a tree so blocks can nest: an $if$ inside an $if$, a $for$ inside a
+# $for$, and $else$ / $sep$ belonging to the innermost open block. Rendering walks the tree with
+# a `resolve(expr, item)` callback; blocks a pass can't evaluate yet (for example node-scoped ones
+# while rendering the document) are written back out unchanged, with their contents rendered.
+
+_BLOCK_TOKEN_RE = re.compile(r'\$(if|ifnot|for)\(([^)\n]*)\)\$|\$(else|endif|endfor|sep)\$')
 
 
-def _render_items(inner: str, render_item) -> str:
-    """Render a loop body once per item. Text after $sep$ goes between items, not after the last."""
-    body, sep_found, separator = inner.partition('$sep$')
-    parts = render_item(body)
-    return separator.join(parts) if sep_found else ''.join(parts)
+class _Block:
+    __slots__ = ('kind', 'expr', 'open_tag', 'first', 'second', 'has_second')
+
+    def __init__(self, kind: str, expr: str, open_tag: str):
+        self.kind = kind          # 'if', 'ifnot' or 'for'
+        self.expr = expr.strip()
+        self.open_tag = open_tag  # original text, for writing deferred blocks back out
+        self.first: List[Any] = []   # if: true branch; for: loop body
+        self.second: List[Any] = []  # if: $else$ branch; for: $sep$ separator
+        self.has_second = False
+
+    def separator_tag(self) -> str:
+        return '$sep$' if self.kind == 'for' else '$else$'
+
+    def close_tag(self) -> str:
+        return '$endfor$' if self.kind == 'for' else '$endif$'
+
+
+def _parse_blocks(text: str) -> List[Any]:
+    """Parse text into strings and _Blocks. Tags that don't match up are kept as plain text, and
+    blocks left open at the end are written out as they were."""
+    root: List[Any] = []
+    stack: List[_Block] = []
+
+    def current() -> List[Any]:
+        if not stack:
+            return root
+        b = stack[-1]
+        return b.second if b.has_second else b.first
+
+    pos = 0
+    for m in _BLOCK_TOKEN_RE.finditer(text):
+        if m.start() > pos:
+            current().append(text[pos:m.start()])
+        pos = m.end()
+        opener, expr, word = m.group(1), m.group(2), m.group(3)
+        if opener:
+            block = _Block(opener, expr or '', m.group(0))
+            current().append(block)
+            stack.append(block)
+        elif word in ('endif', 'endfor'):
+            want = 'for' if word == 'endfor' else ('if', 'ifnot')
+            if stack and stack[-1].kind in want:
+                stack.pop()
+            else:
+                current().append(m.group(0))
+        else:  # else / sep
+            want = 'for' if word == 'sep' else ('if', 'ifnot')
+            if stack and stack[-1].kind in want and not stack[-1].has_second:
+                stack[-1].has_second = True
+            else:
+                current().append(m.group(0))
+    if pos < len(text):
+        current().append(text[pos:])
+    # Unclosed blocks: write them back as text so nothing is lost
+    while stack:
+        block = stack.pop()
+        parent = current()
+        idx = next(i for i in range(len(parent) - 1, -1, -1) if parent[i] is block)
+        parent[idx] = _serialize_block(block, _serialize_nodes, closed=False)
+    return root
+
+
+def _serialize_nodes(nodes: List[Any]) -> str:
+    return ''.join(n if isinstance(n, str) else _serialize_block(n, _serialize_nodes) for n in nodes)
+
+
+def _serialize_block(block: _Block, render_children, closed: bool = True) -> str:
+    out = block.open_tag + render_children(block.first)
+    if block.has_second:
+        out += block.separator_tag() + render_children(block.second)
+    return out + (block.close_tag() if closed else '')
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, (list, dict, str)):
+        return len(value) > 0
+    return bool(value)
+
+
+def _substitute_item(text: str, item: Any) -> str:
+    """Replace $it$ / $it.field$ (and nested $it.a.b$) with the current loop item."""
+    if isinstance(item, dict):
+        def flatten(prefix: str, obj: Any, out: Dict[str, Any]):
+            for k, v in obj.items():
+                key = f'{prefix}.{k}'
+                if isinstance(v, dict):
+                    flatten(key, v, out)
+                out[key] = v
+        values: Dict[str, Any] = {}
+        flatten('it', item, values)
+        # Longest keys first, so $it.a.b$ is replaced before $it.a$
+        for key in sorted(values, key=len, reverse=True):
+            text = text.replace(f'${key}$', str(values[key]))
+        return text
+    return text.replace('$it$', str(item))
+
+
+def _render_blocks(text: str, resolve, defer, unresolved_loop=None, item: Any = None) -> str:
+    """Render $if$/$ifnot$/$for$ blocks in `text`, nested to any depth.
+
+    resolve(expr, item) -> value of an expression (`item` is the current loop item, or None)
+    defer(kind, expr)   -> True to leave this block for a later stage (its contents are still rendered)
+    unresolved_loop(expr) -> text for a $for$ over something that isn't a list or dict
+    """
+    def render(nodes: List[Any], item: Any) -> str:
+        out: List[str] = []
+        for node in nodes:
+            if isinstance(node, str):
+                out.append(node)
+                continue
+            # $it$ inside a block that a later stage will expand has no item yet: leave it too
+            uses_item = node.expr == 'it' or node.expr.startswith('it.')
+            if defer(node.kind, node.expr) or (uses_item and item is None):
+                out.append(_serialize_block(node, lambda children: render(children, item)))
+                continue
+            if node.kind in ('if', 'ifnot'):
+                value = _truthy(resolve(node.expr, item))
+                if node.kind == 'ifnot':
+                    value = not value
+                out.append(render(node.first if value else node.second, item))
+                continue
+            value = resolve(node.expr, item)
+            if isinstance(value, dict):
+                items = [{'key': k, 'value': v} for k, v in value.items()]
+            elif isinstance(value, list):
+                items = value
+            else:
+                out.append(unresolved_loop(node.expr) if unresolved_loop else '')
+                continue
+            # Inner blocks first (they bind their own $it$), then this loop's item
+            parts = [_substitute_item(render(node.first, element), element) for element in items]
+            if node.has_second:
+                separator = render(node.second, item)
+                out.append(separator.join(parts))
+            else:
+                out.append(''.join(parts))
+        return ''.join(out)
+
+    try:
+        return render(_parse_blocks(text), item)
+    except Exception as e:  # pragma: no cover - fail safe: never lose the user's text
+        logger.error(f"Template block rendering failed: {e}")
+        return text
+
+
+def _resolve_dotted(expr: str, root: Any) -> Any:
+    cur: Any = root
+    for part in expr.split('.') if expr else []:
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        else:
+            return None
+    return cur
+
+
+def _item_or(resolver):
+    """Wrap a resolver so 'it' and 'it.x' refer to the current loop item."""
+    def resolve(expr: str, item: Any) -> Any:
+        if expr == 'it':
+            return item
+        if expr.startswith('it.'):
+            return _resolve_dotted(expr[3:], item) if isinstance(item, dict) else None
+        return resolver(expr)
+    return resolve
 
 
 class TemplateService:
@@ -526,85 +690,13 @@ class TemplateService:
                     return None
             return cur
 
-        # Top-level conditionals: handle ANY $if(expr)$/$ifnot(expr)$ that does NOT start with 'nodes.'
-        # Supports dotted paths into data (e.g., 'raci.rows', 'summary')
-        def compute_truthy(value: Any) -> bool:
-            if isinstance(value, list):
-                return len(value) > 0
-            return bool(value)
-
-        def apply_generic_conditionals(text: str) -> str:
-            try:
-                if_pat = re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
-                ifnot_pat = re.compile(r"\$ifnot\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
-
-                def if_repl(m):
-                    expr = (m.group(1) or '').strip()
-                    # Leave node-scoped expressions for node processing
-                    if expr.startswith('nodes.'):
-                        return m.group(0)
-                    val = resolve_path(expr, data)
-                    return _choose_branch(m.group(2), compute_truthy(val))
-
-                def ifnot_repl(m):
-                    expr = (m.group(1) or '').strip()
-                    if expr.startswith('nodes.'):
-                        return m.group(0)
-                    val = resolve_path(expr, data)
-                    return _choose_branch(m.group(2), not compute_truthy(val))
-
-                text = if_pat.sub(if_repl, text)
-                text = ifnot_pat.sub(ifnot_repl, text)
-                return text
-            except Exception:
-                # Fail-safe: return text unchanged on any error
-                return text
-
-        processed_content = apply_generic_conditionals(processed_content)
-
-        # Generic top-level loops for document variables: $for(var)$...$endfor$
-        # Supports arrays of primitives/objects and dicts.
-        # IMPORTANT: Do NOT consume $for(nodes)$ here; nodes require special processing later.
-        loop_pat = re.compile(r"\$for\(([a-zA-Z_][a-zA-Z0-9_\.]*)\)\$(.*?)\$endfor\$", re.DOTALL)
-        pos = 0
-        rebuilt: List[str] = []
-        while True:
-            m = loop_pat.search(processed_content, pos)
-            if not m:
-                rebuilt.append(processed_content[pos:])
-                break
-            expr = m.group(1)
-            inner = m.group(2)
-            # Leave $for(nodes)$ blocks untouched for node-specific processing
-            if expr.startswith('nodes'):
-                rebuilt.append(processed_content[pos:m.end()])
-                pos = m.end()
-                continue
-            value = resolve_path(expr, data)
-            rendered = ''
-            if isinstance(value, list):
-                def list_items(body: str, value=value) -> List[str]:
-                    out: List[str] = []
-                    for it in value:
-                        chunk = body
-                        if isinstance(it, dict):
-                            for k, v in it.items():
-                                chunk = chunk.replace(f'$it.{k}$', str(v))
-                        else:
-                            chunk = chunk.replace('$it$', str(it))
-                        out.append(chunk)
-                    return out
-                rendered = _render_items(inner, list_items)
-            elif isinstance(value, dict):
-                def dict_items(body: str, value=value) -> List[str]:
-                    return [body.replace('$it.key$', str(k)).replace('$it.value$', str(v)) for k, v in value.items()]
-                rendered = _render_items(inner, dict_items)
-            else:
-                rendered = ''
-            rebuilt.append(processed_content[pos:m.start()])
-            rebuilt.append(rendered)
-            pos = m.end()
-        processed_content = ''.join(rebuilt)
+        # $if$/$ifnot$/$for$ blocks over document data, nested to any depth (#135). Node-scoped
+        # blocks ($if(nodes.x)$ and loops over nodes) are left for the per-node step below.
+        processed_content = _render_blocks(
+            processed_content,
+            _item_or(lambda expr: resolve_path(expr, data)),
+            lambda kind, expr: expr.startswith('nodes.') or (kind == 'for' and expr == 'nodes'),
+        )
 
         # Generate a basic Table of Contents if requested and placeholder is present
         if '$toc$' in processed_content:
@@ -670,86 +762,15 @@ class TemplateService:
             except Exception:
                 return None
 
-        # Conditionals for non-nodes expressions
-        def compute_truthy(value: Any) -> bool:
-            if isinstance(value, list):
-                return len(value) > 0
-            return bool(value)
-
-        def apply_generic_conditionals(text_in: str) -> str:
-            try:
-                if_pat = re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
-                ifnot_pat = re.compile(r"\$ifnot\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
-
-                def if_repl(m):
-                    expr = (m.group(1) or '').strip()
-                    # Leave node-scoped expressions for node processing only (nodes.*)
-                    if expr.startswith('nodes.'):
-                        return m.group(0)
-                    val = resolve_any_path(expr, data)
-                    return _choose_branch(m.group(2), compute_truthy(val))
-
-                def ifnot_repl(m):
-                    expr = (m.group(1) or '').strip()
-                    if expr.startswith('nodes.'):
-                        return m.group(0)
-                    val = resolve_any_path(expr, data)
-                    return _choose_branch(m.group(2), not compute_truthy(val))
-
-                out = if_pat.sub(if_repl, text_in)
-                out = ifnot_pat.sub(ifnot_repl, out)
-                return out
-            except Exception:
-                return text_in
-
-        processed_content = apply_generic_conditionals(processed_content)
-
-        # Generic loops for non-nodes expressions, including node-id based paths like node-<ID>.attachments
-        # Allow first token to contain hyphens
-        loop_pat = re.compile(r"\$for\(([A-Za-z0-9_\-][A-Za-z0-9_\-\.]*?)\)\$(.*?)\$endfor\$", re.DOTALL)
-        pos = 0
-        rebuilt: List[str] = []
-        while True:
-            m = loop_pat.search(processed_content, pos)
-            if not m:
-                rebuilt.append(processed_content[pos:])
-                break
-            expr = m.group(1)
-            inner = m.group(2)
-            # Skip nodes.* here; handle in nodes re-processing below
-            if expr.startswith('nodes'):
-                rebuilt.append(processed_content[pos:m.end()])
-                pos = m.end()
-                continue
-            value = resolve_any_path(expr, data)
-            rendered = ''
-            if isinstance(value, list):
-                def list_items(body: str, value=value) -> List[str]:
-                    out: List[str] = []
-                    for it in value:
-                        chunk = body
-                        if isinstance(it, dict):
-                            for k, v in it.items():
-                                chunk = chunk.replace(f'$it.{k}$', str(v))
-                        else:
-                            chunk = chunk.replace('$it$', str(it))
-                        out.append(chunk)
-                    return out
-                rendered = _render_items(inner, list_items)
-            elif isinstance(value, dict):
-                def dict_items(body: str, value=value) -> List[str]:
-                    return [body.replace('$it.key$', str(k)).replace('$it.value$', str(v)) for k, v in value.items()]
-                rendered = _render_items(inner, dict_items)
-            else:
-                # Optionally show unresolved marker for non-iterables
-                if options and options.get('showUnresolvedMarkers'):
-                    rendered = f"<!-- unresolved: {expr} -->"
-                else:
-                    rendered = ''
-            rebuilt.append(processed_content[pos:m.start()])
-            rebuilt.append(rendered)
-            pos = m.end()
-        processed_content = ''.join(rebuilt)
+        # Blocks over document data and other nodes (node-<ID>.x), nested to any depth (#135);
+        # node-scoped blocks are left for the nodes re-processing below
+        show_markers = bool(options and options.get('showUnresolvedMarkers'))
+        processed_content = _render_blocks(
+            processed_content,
+            _item_or(lambda expr: resolve_any_path(expr, data)),
+            lambda kind, expr: expr.startswith('nodes.') or (kind == 'for' and expr == 'nodes'),
+            unresolved_loop=(lambda expr: f"<!-- unresolved: {expr} -->") if show_markers else None,
+        )
 
         # Replace scalar dotted placeholders that are not node-scoped (skip nodes.*)
         # IMPORTANT: Do not consume TeX inline math like $x^2$ or $\alpha+\beta$.
@@ -878,88 +899,21 @@ class TemplateService:
                     elif isinstance(value, dict):
                         node_block = replace_nested(key, value, node_block)
 
-                # Node-scoped conditionals: support $if(nodes.<path>)$ ... $endif$ and $ifnot(nodes.<path>)$ ... $endif$
-                def apply_node_conditionals(text: str) -> str:
-                    # $if(expr)$ ... $endif$
-                    if_pat = re.compile(r"\$if\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
-                    # $ifnot(expr)$ ... $endif$
-                    ifnot_pat = re.compile(r"\$ifnot\(([^)]+)\)\$(.*?)\$endif\$", re.DOTALL)
-
-                    # Single-pass evaluation to avoid nesting issues
-                    def if_repl(m):
-                        expr = m.group(1).strip()
-                        if expr.startswith('nodes.'):
-                            val = resolve_node_expr(expr, node)
-                            return _choose_branch(m.group(2), bool(val))
-                        return m.group(0)
-
-                    def ifnot_repl(m):
-                        expr = m.group(1).strip()
-                        if expr.startswith('nodes.'):
-                            val = resolve_node_expr(expr, node)
-                            return _choose_branch(m.group(2), not bool(val))
-                        return m.group(0)
-
-                    text = if_pat.sub(if_repl, text)
-                    text = ifnot_pat.sub(ifnot_repl, text)
-                    return text
-
-                # Also support legacy convenience checks for metadata/vars/attachments presence
-                has_meta = isinstance(node.get('metadata'), dict) and len(node.get('metadata')) > 0
-                node_block = re.sub(r"\$if\(nodes\.metadata\)\$(.*?)\$endif\$", lambda m: _choose_branch(m.group(1), has_meta), node_block, flags=re.DOTALL)
-
                 has_vars = isinstance(node.get('vars'), dict) and len(node.get('vars')) > 0
-                node_block = re.sub(r"\$if\(\s*nodes\.vars\s*\)\$(.*?)\$endif\$", lambda m: _choose_branch(m.group(1), has_vars), node_block, flags=re.DOTALL)
+                has_atts = isinstance(node.get('attachments'), list) and len(node.get('attachments')) > 0
+
+                # Node-scoped blocks, nested to any depth (#135): $if(nodes.<path>)$, $ifnot(...)$,
+                # $for(nodes.metadata)$, $for(nodes.vars)$, $for(nodes.attachments)$ and loops over
+                # any other list or dict on the node. Blocks over document data, and $for(nodes)$
+                # (which node content may contain), are left for later passes.
+                node_block = _render_blocks(
+                    node_block,
+                    _item_or(lambda expr, node=node: resolve_node_expr(expr, node)),
+                    lambda kind, expr: not expr.startswith('nodes.'),
+                )
                 if not has_vars:
-                    # Also remove any standalone vars loop blocks as a safety net
-                    node_block = re.sub(r"\$for\(nodes\.vars\)\$(.*?)\$endfor\$", '', node_block, flags=re.DOTALL)
                     # Remove the exact heading used by default templates if left dangling
                     node_block = re.sub(r"^###\s+Variables\s*$\n?", '', node_block, flags=re.MULTILINE)
-
-                has_atts = isinstance(node.get('attachments'), list) and len(node.get('attachments')) > 0
-                node_block = re.sub(r"\$if\(nodes\.attachments\)\$(.*?)\$endif\$", lambda m: _choose_branch(m.group(1), has_atts), node_block, flags=re.DOTALL)
-
-                # Apply generic node conditionals ($if(nodes.path)$ and $ifnot(nodes.path)$)
-                node_block = apply_node_conditionals(node_block)
-
-                # Expand metadata loop $for(nodes.metadata)$ ... $endfor$ (all occurrences)
-                while True:
-                    meta_loop = re.search(r'\$for\(nodes\.metadata\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
-                    if not meta_loop:
-                        break
-                    meta = node.get('metadata', {}) if has_meta else {}
-                    rendered_meta = _render_items(meta_loop.group(1), lambda body, meta=meta: [
-                        body.replace('$it.key$', str(mk)).replace('$it.value$', str(mv)) for mk, mv in meta.items()
-                    ])
-                    node_block = node_block.replace(meta_loop.group(0), rendered_meta)
-
-                # Expand vars loop $for(nodes.vars)$ ... $endfor$ (all occurrences)
-                while True:
-                    vars_loop = re.search(r'\$for\(nodes\.vars\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
-                    if not vars_loop:
-                        break
-                    nvars = node.get('vars', {}) if has_vars else {}
-                    rendered_vars = _render_items(vars_loop.group(1), lambda body, nvars=nvars: [
-                        body.replace('$it.key$', str(mk)).replace('$it.value$', str(mv)) for mk, mv in nvars.items()
-                    ])
-                    node_block = node_block.replace(vars_loop.group(0), rendered_vars)
-
-                # Expand attachments loop $for(nodes.attachments)$ ... $endfor$ (all occurrences)
-                while True:
-                    att_loop = re.search(r'\$for\(nodes\.attachments\)\$(.*?)\$endfor\$', node_block, re.DOTALL)
-                    if not att_loop:
-                        break
-                    atts = [a for a in node.get('attachments', []) if isinstance(a, dict)] if has_atts else []
-
-                    def att_items(body: str, atts=atts) -> List[str]:
-                        out: List[str] = []
-                        for att in atts:
-                            item = body
-                            for k, v in att.items():
-                                item = item.replace(f'$it.{k}$', str(v))
-                            out.append(item)
-                        return out
-                    node_block = node_block.replace(att_loop.group(0), _render_items(att_loop.group(1), att_items))
 
                 # Basic $nodes.attachments$ single placeholder support
                 if '$nodes.attachments$' in node_block and has_atts:

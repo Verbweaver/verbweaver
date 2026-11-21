@@ -676,7 +676,19 @@ Because those lines vanish, leave a blank line before a list that a loop produce
 
 ### Nesting
 
-An `$if$` block can't yet contain another `$if$` block, and a `$for$` loop can't contain another loop, except that `$for(nodes)$` may contain loops such as `$for(nodes.metadata)$`. For example, `$if(a)$ ... $if(b)$ ... $endif$ ... $endif$` ends the outer block at the first `$endif$`. Use separate blocks instead. This is tracked as a bug (see issue #135).
+Blocks can be placed inside each other to any depth. Each `$else$`, `$sep$`, `$endif$` and `$endfor$` belongs to the innermost block that is still open.
+
+Inside a loop, `$it$` is the current item, and `$it.<field>$` one of its fields. A condition or loop can use the item too:
+
+```markdown
+$for(team)$
+- $it.name$$if(it.lead)$ (lead)$endif$: $for(it.skills)$$it$$sep$, $endfor$
+$endfor$
+```
+
+In an inner loop, `$it$` means the inner loop's item. Fields that the inner item doesn't have still come from the outer one, so `$it.name$` above works inside `$for(it.skills)$` too.
+
+Values typed into the Compiler's grids, or imported from CSV, are converted to the type the template declares, so a `boolean` field of `false` counts as false.
 
 ### Including other templates
 
@@ -740,8 +752,6 @@ For reports with a fixed structure. Document variables:
 - **raci**: a table variable, shown with `$raci_markdown$`.
 
 Each page is a section, except pages whose **appendix** node variable is true (from `appendix: true` in their details block), which are meant to appear under "Appendices". Node variables **cvss_vector** and **cvss** are read from the page details for security findings.
-
-Known issue: because of the nesting limitation above, the "Appendices" section currently repeats every page (see issue #135).
 
 ## Error Handling
 

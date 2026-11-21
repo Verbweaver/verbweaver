@@ -47,8 +47,8 @@ test.describe('Compiler', () => {
     expectCase(c, text);
   });
 
-  test('list grids and tables filled with Import CSV', async ({ stress }) => {
-    for (const id of ['loops', 'schema']) {
+  test('list grids and tables filled with Import CSV, and nested blocks', async ({ stress }) => {
+    for (const id of ['loops', 'schema', 'nesting']) {
       const { c, status, text } = await runMarkdown(stress, id);
       expect(status, id).toBe(200);
       expectCase(c, text);
