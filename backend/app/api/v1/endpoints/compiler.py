@@ -260,6 +260,15 @@ class ContentAggregator:
         # Add custom variables
         if custom_variables:
             data.update(custom_variables)
+            # Lists edited as grids or imported from CSV hold text; use the field types the schema declares
+            for var_name, var_def in ((schema or {}).get('variables') or {}).items():
+                fields = ((var_def or {}).get('item') or {}).get('fields') if isinstance(var_def, dict) else None
+                rows = data.get(var_name)
+                if isinstance(fields, dict) and isinstance(rows, list):
+                    data[var_name] = [
+                        {k: _coerce_to_type(v, fields.get(k)) for k, v in row.items()} if isinstance(row, dict) else row
+                        for row in rows
+                    ]
         
         # Process each selected node
         id_to_node: Dict[str, Dict[str, Any]] = {}

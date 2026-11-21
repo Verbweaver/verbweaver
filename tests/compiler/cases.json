@@ -75,10 +75,7 @@
         "MISSING-SHOWN",
         "$else$",
         "$endif$"
-      ],
-      "known": {
-        "absent:INNER-SHOWN": "#135"
-      }
+      ]
     },
     {
       "id": "loops",
@@ -110,10 +107,7 @@
         "$sep$",
         "$it",
         "$endfor$"
-      ],
-      "known": {
-        "expect:NESTED: [Ann:redgreenblue][Ben:redgreenblue]": "#135"
-      }
+      ]
     },
     {
       "id": "nodes",
@@ -289,6 +283,49 @@
           "<!-- unresolved: node-doesnotexist.content -->"
         ]
       }
+    },
+    {
+      "id": "nesting",
+      "template": "nesting.md",
+      "options": {
+        "title": "Stress Nesting",
+        "author": "Sam Writer",
+        "includeMetadata": false
+      },
+      "vars": {
+        "teams": [
+          {
+            "name": "Ann",
+            "lead": "true"
+          },
+          {
+            "name": "Ben",
+            "lead": "false"
+          }
+        ]
+      },
+      "nodeVars": {
+        "nodes/Findings/SQL Injection.md": {
+          "owner": "Alice"
+        }
+      },
+      "expect": [
+        "L1: A[NOT-B[C]]",
+        "L2: XYZ",
+        "IT-IF: LEAD-Ann, MEMBER-Ben",
+        "VERIFIED[OWNED-BY-Alice]",
+        "UNVERIFIED[#finding #web]",
+        "DOC-IN-NODE-SQL Injection",
+        "DOC-IN-NODE-Cross-Site Scripting"
+      ],
+      "absent": [
+        "WRONG",
+        "$if(",
+        "$else$",
+        "$endif$",
+        "$for(",
+        "$sep$"
+      ]
     },
     {
       "id": "includes",
@@ -471,7 +508,8 @@
       ],
       "count": {
         "SQLI-BODY": 1,
-        "XSS-BODY": 1
+        "XSS-BODY": 1,
+        "APPENDIX-BODY": 1
       },
       "absent": [
         "$nodes.",
@@ -480,10 +518,14 @@
         "$endif$",
         "$endfor$"
       ],
-      "known": {
-        "count:SQLI-BODY": "#135",
-        "count:XSS-BODY": "#135"
-      }
+      "nodes": [
+        "nodes/Findings/SQL Injection.md",
+        "nodes/Findings/XSS.md",
+        "nodes/Appendix A.md"
+      ],
+      "regex": [
+        "SQLI-BODY.*XSS-BODY.*Appendices.*Appendix A.*APPENDIX-BODY"
+      ]
     }
   ]
 }
