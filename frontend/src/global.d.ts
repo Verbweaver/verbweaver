@@ -72,6 +72,8 @@ declare global {
       // Preferences
       getPreferences: () => Promise<any>;
       setPreferences: (prefs: any) => Promise<void>;
+      getDataLocations: () => Promise<{ defaults: { databaseUrl: string; gitProjectsRoot: string }; active: { databaseUrl: string; gitProjectsRoot: string } | null }>;
+      relaunchApp: () => Promise<void>;
       
       // Export operations
       exportToPDF: (html: string, options?: any) => Promise<void>;

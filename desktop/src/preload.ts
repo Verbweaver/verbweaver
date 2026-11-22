@@ -66,6 +66,8 @@ export interface ElectronAPI {
   // Preferences
   getPreferences: () => Promise<any>;
   setPreferences: (prefs: any) => Promise<void>;
+  getDataLocations: () => Promise<{ defaults: { databaseUrl: string; gitProjectsRoot: string }; active: { databaseUrl: string; gitProjectsRoot: string } | null }>;
+  relaunchApp: () => Promise<void>;
   
   // Export operations
   exportToPDF: (html: string, options?: any) => Promise<void>;
@@ -168,6 +170,8 @@ const electronAPI = {
   // Preferences
   getPreferences: () => ipcRenderer.invoke('preferences:get'),
   setPreferences: (prefs: any) => ipcRenderer.invoke('preferences:set', prefs),
+  getDataLocations: () => ipcRenderer.invoke('preferences:dataLocations'),
+  relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   
   // Export operations
   exportToPDF: (html: string, options?: any) => ipcRenderer.invoke('export:pdf', html, options),

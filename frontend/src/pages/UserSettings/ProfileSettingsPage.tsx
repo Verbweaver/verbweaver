@@ -4,17 +4,41 @@ import { useAuthStore } from '../../services/auth'; // Adjusted path
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
+type DataLocations = { databaseUrl: string; gitProjectsRoot: string };
+type DataLocationInfo = { defaults: DataLocations; active: DataLocations | null };
+
+// Data Locations are only read when the backend starts: a restart is needed when the saved
+// values (empty = default) differ from the ones the running backend was started with.
+const needsRestart = (info: DataLocationInfo | null, dbUrl: string, gitRoot: string) => {
+  if (!info?.active) return false
+  return (dbUrl || info.defaults.databaseUrl) !== info.active.databaseUrl
+    || (gitRoot || info.defaults.gitProjectsRoot) !== info.active.gitProjectsRoot
+}
+
 const ProfileSettingsPage: React.FC = () => {
   const { user } = useAuthStore();
-  
+  const [dbUrl, setDbUrl] = useState<string>('')
+  const [gitRoot, setGitRoot] = useState<string>('')
+  const [locations, setLocations] = useState<DataLocationInfo | null>(null)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [restartNeeded, setRestartNeeded] = useState(false)
+
   useEffect(() => {
     const load = async () => {
+      if (!isElectron) return
       try {
-        if (!isElectron) return
-        const prefs = await (window as any).electronAPI.getPreferences()
-        setDbUrl(prefs?.databaseUrl || '')
-        setGitRoot(prefs?.gitProjectsRoot || '')
-      } catch {}
+        const prefs = await window.electronAPI!.getPreferences()
+        const savedDb = prefs?.databaseUrl || ''
+        const savedGit = prefs?.gitProjectsRoot || ''
+        setDbUrl(savedDb)
+        setGitRoot(savedGit)
+        const info = await window.electronAPI!.getDataLocations()
+        setLocations(info)
+        // Still show the notice if the user saved, left Settings, and came back without restarting
+        setRestartNeeded(needsRestart(info, savedDb, savedGit))
+      } catch {
+        // Older desktop builds or web mode: leave the fields empty
+      }
     }
     load()
   }, [])
@@ -23,22 +47,28 @@ const ProfileSettingsPage: React.FC = () => {
     if (!isElectron) return
     setSaveStatus('saving')
     try {
-      const prefs = await (window as any).electronAPI.getPreferences()
-      await (window as any).electronAPI.setPreferences({
+      const prefs = await window.electronAPI!.getPreferences()
+      await window.electronAPI!.setPreferences({
         ...prefs,
         databaseUrl: dbUrl || undefined,
         gitProjectsRoot: gitRoot || undefined,
       })
+      setRestartNeeded(needsRestart(locations, dbUrl, gitRoot))
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 1500)
-    } catch (e) {
+    } catch {
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 2000)
     }
   }
-  const [dbUrl, setDbUrl] = useState<string>('')
-  const [gitRoot, setGitRoot] = useState<string>('')
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  const handleRestart = async () => {
+    try {
+      await window.electronAPI!.relaunchApp()
+    } catch {
+      // The app is quitting; nothing to do
+    }
+  }
 
   return (
     <div className="bg-card p-6 rounded-lg shadow-sm border">
@@ -62,18 +92,21 @@ const ProfileSettingsPage: React.FC = () => {
       {isElectron && (
         <div className="space-y-3 mt-6">
           <h3 className="text-md font-medium text-foreground">Data Locations (Desktop)</h3>
-          <p className="text-sm text-muted-foreground">Override default per-user storage locations.</p>
+          <p className="text-sm text-muted-foreground">
+            Override default per-user storage locations. Leave a field empty to use the default.
+            Changes take effect after Verbweaver restarts.
+          </p>
           <div className="space-y-2">
-            <label className="block text-sm">Database URL</label>
-            <input className="w-full px-3 py-2 border border-border rounded bg-background"
-                   placeholder="sqlite+aiosqlite:///C:/Users/You/AppData/Roaming/Verbweaver/verbweaver.db"
+            <label htmlFor="data-db-url" className="block text-sm">Database URL</label>
+            <input id="data-db-url" className="w-full px-3 py-2 border border-border rounded bg-background"
+                   placeholder={locations ? `Default: ${locations.defaults.databaseUrl}` : ''}
                    value={dbUrl}
                    onChange={(e)=>setDbUrl(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <label className="block text-sm">Git Projects Root</label>
-            <input className="w-full px-3 py-2 border border-border rounded bg-background"
-                   placeholder="C:/Users/You/AppData/Roaming/Verbweaver/git-repos"
+            <label htmlFor="data-git-root" className="block text-sm">Git Projects Root</label>
+            <input id="data-git-root" className="w-full px-3 py-2 border border-border rounded bg-background"
+                   placeholder={locations ? `Default: ${locations.defaults.gitProjectsRoot}` : ''}
                    value={gitRoot}
                    onChange={(e)=>setGitRoot(e.target.value)} />
           </div>
@@ -84,10 +117,18 @@ const ProfileSettingsPage: React.FC = () => {
             {saveStatus === 'saved' && <span className="ml-2 text-green-600 text-sm">Saved</span>}
             {saveStatus === 'error' && <span className="ml-2 text-red-600 text-sm">Error</span>}
           </div>
+          {restartNeeded && (
+            <div role="status" className="flex items-center gap-3 flex-wrap p-3 rounded border border-border bg-muted text-sm text-foreground">
+              <span>Restart Verbweaver to use the new locations.</span>
+              <button onClick={handleRestart} className="px-3 py-1.5 rounded bg-primary text-primary-foreground">
+                Restart now
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 };
 
-export default ProfileSettingsPage; 
+export default ProfileSettingsPage;
