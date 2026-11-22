@@ -44,9 +44,9 @@ These work while the Graph is open and you're not typing.
 
 | Keys | Action |
 |---|---|
-| Delete or Backspace | Delete the selected cards (you'll be asked to confirm) |
+| Delete or Backspace | Delete the selected cards in the Mind Map (you'll be asked to confirm) |
 | Esc | Clear the selection or close a menu |
-| A | Turn Rigid mode on or off |
+| A | Turn Rigid mode on or off (Mind Map only) |
 | U | Show or hide uploaded files |
 
 Right-click a card, a link or the background for more actions.

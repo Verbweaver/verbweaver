@@ -350,17 +350,22 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
     if (removed.length) onRemoveNodes?.(removed)
   }, [orderedNodes, selectedNodeIndices, onOrderChange, clearSelection])
 
-  // Handle Delete key to remove selected
+  // Handle Delete key to remove selected rows, only while focus is in this panel and not in a
+  // text field (the panel takes focus when clicked: tabIndex -1 on its container)
+  const panelRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        // Remove only if focus is within this panel (heuristic: body as fallback)
-        removeSelectedNodes()
-      }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      if (!selectedNodeIndices || selectedNodeIndices.size === 0) return
+      const active = document.activeElement as HTMLElement | null
+      if (!active || !panelRef.current?.contains(active)) return
+      if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable) return
+      e.preventDefault()
+      removeSelectedNodes()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [removeSelectedNodes])
+  }, [removeSelectedNodes, selectedNodeIndices])
 
   const selectedCount = selectedNodeIndices?.size || 0
   const hasSelection = selectedCount > 0
@@ -379,7 +384,7 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
   }
 
   return (
-    <div className="h-full bg-background flex flex-col">
+    <div ref={panelRef} tabIndex={-1} className="h-full bg-background flex flex-col outline-none">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div>

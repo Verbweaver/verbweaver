@@ -1,6 +1,6 @@
 # Desktop app tests (Playwright)
 
-End-to-end tests that drive the Verbweaver desktop app with [Playwright](https://playwright.dev/docs/api/class-electron). They currently cover the Compiler page: every export format, the variable forms (text, checkboxes, menus, Import CSV, tables, per-node values), the options, default templates, error messages, and Save/Load Configuration.
+End-to-end tests that drive the Verbweaver desktop app with [Playwright](https://playwright.dev/docs/api/class-electron). They cover the Compiler page (`compiler.spec.mjs`): every export format, the variable forms (text, checkboxes, menus, Import CSV, tables, per-node values), the options, default templates, error messages, and Save/Load Configuration. `graph.spec.mjs` covers the Graph view: saved folder positions, sub-view switching, shortcuts, right-click menus, delete confirmations, and the Group layout.
 
 ```bash
 npm run test:e2e                          # from the repo root
@@ -12,7 +12,7 @@ Prerequisites:
 - a backend venv in `.venv` or `backend/.venv`;
 - `pandoc`, and for PDF a PDF engine and `pdftotext`, on your PATH.
 
-The tests build the desktop main process, start the frontend dev server unless one is already on port 3000, and launch the app with a throwaway profile and a project made from `tests/compiler/fixture`. On Linux the window is hidden.
+The tests build the desktop main process, start the frontend dev server unless one is already on port 3000, and launch the app with a throwaway profile and project. The Compiler tests build theirs from `tests/compiler/fixture`, and the Graph tests make a fresh one for each test. On Linux the window is hidden.
 
 Environment variables:
 - `E2E_PREVIEW=1` serves the built frontend instead of the dev server. Run `npm run build:frontend` first.

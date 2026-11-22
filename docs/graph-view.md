@@ -3,8 +3,8 @@
 The Graph view shows your whole project and how its pages connect. It has four views. Switch between them with the buttons at the top right, and click **Help** there to jump to the section for the view you're in.
 
 - [Mind Map](#mind-map): a board of cards you can arrange freely and link together. Good for brainstorming and seeing relationships.
-- [Outline](#outline): an indented list, like a table of contents. Good for planning structure and running order.
 - [Group](#group): named collections of pages shown as boxes. Good for comparing sets, such as acts, characters, or drafts.
+- [Outline](#outline): an indented list, like a table of contents. Good for planning structure and running order.
 - [Progression](#progression): a line chart built from details on your pages. Good for tracking things like pacing or a character's arc.
 
 ## Mind Map
@@ -20,7 +20,7 @@ The Mind Map shows every page in your project as a card on a board, with lines f
 
 ### Arranging cards
 
-- Drag a card to move it. While **Rigid mode** is on, cards stay where you put them.
+- Drag a card to move it. While **Rigid mode** is on, cards stay where you put them. Rigid mode only affects the Mind Map.
 - To tidy up automatically, pick a direction under **Layout** on the right, such as **Top to Bottom**.
 - To pin a card in place, right-click it and choose **Lock position**.
 - To fold a folder's contents away, right-click the folder and choose **Collapse**.
@@ -34,13 +34,14 @@ The Mind Map shows every page in your project as a card on a board, with lines f
 
 Drag from one of the small dots on a card's edge to another card. This connects the two pages, for example a character to a scene they appear in.
 
-To remove a link, right-click the line and choose **Unlink**.
+To remove a link, right-click the line and choose **Unlink**. Lines from a folder to the pages inside it can't be unlinked. To change one, move the page to another folder.
 
 ### Right-click menus
 
 - **On empty space:** create a folder, upload a file, create a new page from a template, or save the map as a picture.
 - **On a page:** edit it, link it to other pages, attach files, track it as a task, or delete it.
 - **On a folder:** create pages or folders inside it, collapse it, or delete it.
+- **On a link:** unlink it.
 
 ### Options (top left)
 
@@ -50,6 +51,8 @@ To remove a link, right-click the line and choose **Unlink**.
 - **Filters:** shows only the pages you want, for example those with a certain tag.
 
 ### Shortcuts
+
+**Delete** and **A** only work in the Mind Map.
 
 - **Delete:** delete the selected cards. You'll be asked to confirm.
 - **Esc:** clear the selection.
@@ -72,9 +75,8 @@ Changes here only affect how the list is arranged. Your actual files are never m
 
 ### Rearranging
 
-1. Untick **Rigid mode**. Rearranging is switched off while it's on.
-2. Drag a page above or below another. A line shows where it will land.
-3. Drop a page onto an open folder to move it into that folder.
+1. Drag a page above or below another. A line shows where it will land.
+2. Drop a page onto an open folder to move it into that folder.
 
 ### Sorting
 
@@ -100,7 +102,7 @@ The Group view sorts your pages into named collections and shows them as boxes, 
 2. Click the funnel icon to choose which pages belong in it, for example everything tagged "villain".
 3. Click the pencil icon to give it a name.
 
-Use the checkbox next to a group to show or hide it. The bin icon deletes the group, but your pages are not affected.
+Use the checkbox next to a group to show or hide it. The bin icon deletes the group after you confirm. Your pages are not affected.
 
 ### Reading the boxes
 
@@ -119,7 +121,7 @@ Use the checkbox next to a group to show or hide it. The bin icon deletes the gr
 ### Working with pages
 
 - With **Show node cards** on, drag from the dot on one card to another to link those pages.
-- Right-click a card to edit it, link it, attach files, or delete it. Deleting here happens straight away, without asking to confirm.
+- Right-click a card to edit it, link it, attach files, or delete it. You'll be asked to confirm before a page is deleted.
 - Right-click a link line to **Unlink** it.
 
 ### Saving a picture
