@@ -13,13 +13,16 @@ interface TemplateSelectionDialogProps {
   onClose: () => void
   onSelectTemplate: (templatePath: string, nodeName: string, parentPath: string) => void
   parentPath?: string
+  /** Template to preselect (e.g. picked from the Graph's "From Template" menu) */
+  initialTemplatePath?: string
 }
 
 export function TemplateSelectionDialog({
   isOpen,
   onClose,
   onSelectTemplate,
-  parentPath = ''
+  parentPath = '',
+  initialTemplatePath
 }: TemplateSelectionDialogProps) {
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -33,7 +36,7 @@ export function TemplateSelectionDialog({
     if (isOpen && (currentProject || currentProjectPath)) {
       loadTemplates()
     }
-  }, [isOpen, currentProject, currentProjectPath])
+  }, [isOpen, currentProject, currentProjectPath, initialTemplatePath])
 
   useEffect(() => {
     if (selectedTemplate) {
@@ -93,6 +96,14 @@ export function TemplateSelectionDialog({
       } catch {}
 
       // Determine initial selection:
+      // 0) A template the caller asked for
+      if (initialTemplatePath) {
+        const requested = combined.find(t => t.path === initialTemplatePath)
+        if (requested) {
+          setSelectedTemplate(requested)
+          return
+        }
+      }
       // 1) Prefer configured default if present in list
       if (defaultTemplatePath) {
         const found = combined.find(t => t.path === defaultTemplatePath)

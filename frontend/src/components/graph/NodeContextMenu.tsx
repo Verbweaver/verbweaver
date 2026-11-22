@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { desktopTemplatesApi } from '../../api/desktop-templates'
 import { templatesApi, Template } from '../../api/templates'
 import { useProjectStore } from '../../store/projectStore'
@@ -11,7 +11,8 @@ interface NodeContextMenuProps {
   edgeId?: string
   isFolder?: boolean
   hasTask?: boolean
-  onCreateNode: (type: string, position?: { x: number; y: number }) => void
+  /** templatePath: the template picked under "From Template", preselected in the create dialog */
+  onCreateNode: (type: string, position?: { x: number; y: number }, templatePath?: string) => void
   onDeleteNode: (nodeId: string) => void
   onDeleteMultiple?: () => void
   onCreateChildNode?: (parentPath: string) => void
@@ -19,6 +20,8 @@ interface NodeContextMenuProps {
   onEditNode?: (nodeId: string) => void
   onSeeTask?: (nodeId: string) => void
   onUnlinkEdge?: (edgeId: string) => void
+  /** When set, Unlink is shown disabled with this explanation (e.g. folder links) */
+  unlinkDisabledReason?: string
   onAttachFiles?: (nodeId: string) => void
   onUploadFiles?: () => void
   multiCount?: number
@@ -34,11 +37,24 @@ interface NodeContextMenuProps {
   variant?: 'group-pane'
 }
 
-function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed, onCreateLink, onRemoveLinks, onExportMapAsPng, variant }: NodeContextMenuProps) {
+function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode, onDeleteNode, onCreateChildNode, onCreateChildFolder, onEditNode, onSeeTask, onUnlinkEdge, unlinkDisabledReason, onAttachFiles, onUploadFiles, onDeleteMultiple, multiCount = 0, onClose, onToggleTrackTask, onToggleLock, isLocked, onToggleCollapse, isCollapsed, onCreateLink, onRemoveLinks, onExportMapAsPng, variant }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const [templates, setTemplates] = useState<Template[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  // Keep the menu inside the window: near the right or bottom edge it opens left of or above the cursor
+  const [pos, setPos] = useState({ left: x, top: y })
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    if (!el) return
+    const margin = 8
+    const { width, height } = el.getBoundingClientRect()
+    let left = x
+    let top = y
+    if (left + width > window.innerWidth - margin) left = Math.max(margin, x - width)
+    if (top + height > window.innerHeight - margin) top = Math.max(margin, window.innerHeight - margin - height)
+    setPos(prev => (prev.left === left && prev.top === top ? prev : { left, top }))
+  }, [x, y, isLoading, templates.length, nodeId, edgeId, multiCount])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -56,7 +72,7 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
     if (variant === 'group-pane') return
     // Only attempt to load templates if we are creating a new node (no nodeId)
     // And if we have the necessary project information for the current environment.
-    if (!nodeId) {
+    if (!nodeId && !edgeId) {
       if (window.electronAPI && currentProjectPath) {
         // Desktop: requires currentProjectPath
         loadTemplates();
@@ -65,7 +81,7 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
         loadTemplates();
       }
     }
-  }, [nodeId, currentProject, currentProjectPath, variant]);
+  }, [nodeId, edgeId, currentProject, currentProjectPath, variant]);
 
   const loadTemplates = async () => {
     if (variant === 'group-pane') return
@@ -112,7 +128,7 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
       <div
         ref={menuRef}
         className="fixed bg-popover border border-border rounded-md shadow-lg py-1 z-50 min-w-[150px] vw-node-context-menu"
-        style={{ left: x, top: y }}
+        style={{ left: pos.left, top: pos.top, maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' }}
       >
         <button
           onClick={() => { onExportMapAsPng?.(); onClose(); }}
@@ -129,9 +145,10 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
     <div
       ref={menuRef}
       className="fixed bg-popover border border-border rounded-md shadow-lg py-1 z-50 min-w-[150px] vw-node-context-menu"
-      style={{ left: x, top: y }}
+      style={{ left: pos.left, top: pos.top, maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' }}
     >
-      {!nodeId && (
+      {/* Empty-canvas actions: not for links, which get only link actions (#101) */}
+      {!nodeId && !edgeId && (
         <>
           <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Create</div>
           <button
@@ -171,7 +188,7 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
             templates.map((template) => (
               <button
                 key={template.path}
-                onClick={() => onCreateNode('node')}
+                onClick={() => onCreateNode('node', undefined, template.path)}
                 className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
               >
                 <Plus className="w-3 h-3" />
@@ -183,15 +200,23 @@ function NodeContextMenu({ x, y, nodeId, edgeId, isFolder, hasTask, onCreateNode
       )}
       
       {edgeId && onUnlinkEdge && (
-        <>
+        unlinkDisabledReason ? (
+          <div className="px-3 py-1.5 text-sm text-muted-foreground max-w-[240px]" aria-disabled="true">
+            <div className="flex items-center gap-2 opacity-60">
+              <Trash2 className="w-3 h-3" />
+              Unlink
+            </div>
+            <div className="text-xs mt-0.5 whitespace-normal">{unlinkDisabledReason}</div>
+          </div>
+        ) : (
           <button
-            onClick={() => onUnlinkEdge(edgeId)}
+            onClick={() => { onUnlinkEdge(edgeId); onClose() }}
             className="w-full px-3 py-1.5 text-sm text-left hover:bg-destructive hover:text-destructive-foreground flex items-center gap-2"
           >
             <Trash2 className="w-3 h-3" />
             Unlink
           </button>
-        </>
+        )
       )}
       
       {/* If multiple are selected, show a simplified multi-select menu */}

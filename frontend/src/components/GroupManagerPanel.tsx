@@ -3,6 +3,7 @@ import { Plus, Trash2, Edit, Filter as FilterIcon, ToggleLeft } from 'lucide-rea
 import NodeFiltersDialog, { DEFAULT_FILTERS, NodeFilterState } from './NodeFiltersDialog'
 import { useGroupViewStore, type GroupDefinition } from '../store/groupViewState'
 import toast from 'react-hot-toast'
+import ConfirmDialog from './ConfirmDialog'
 
 const genId = () => (typeof crypto !== 'undefined' && (crypto as any).randomUUID ? (crypto as any).randomUUID() : `g-${Date.now()}-${Math.floor(Math.random()*1e6)}`)
 
@@ -20,6 +21,8 @@ export default function GroupManagerPanel({ className }: Props) {
   const [filtersOpenFor, setFiltersOpenFor] = useState<string | null>(null)
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState<string>('')
+  // Group being deleted, waiting for confirmation (#99)
+  const [confirmRemove, setConfirmRemove] = useState<GroupDefinition | null>(null)
 
   const handleAdd = () => {
     if (groups.length >= 50) {
@@ -128,7 +131,7 @@ export default function GroupManagerPanel({ className }: Props) {
                 <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent inline-flex items-center gap-1" onClick={()=> handleEditFilters(g.id)} title="Edit filters">
                   <FilterIcon className="w-3 h-3" />
                 </button>
-                <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-destructive hover:text-destructive-foreground" onClick={()=> removeGroup(g.id)} title="Delete">
+                <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-destructive hover:text-destructive-foreground" onClick={()=> setConfirmRemove(g)} title="Delete">
                   <Trash2 className="w-3 h-3" />
                 </button>
               </div>
@@ -145,6 +148,13 @@ export default function GroupManagerPanel({ className }: Props) {
           onFiltersChange={handleFiltersChange}
         />
       )}
+      <ConfirmDialog
+        isOpen={!!confirmRemove}
+        title="Delete group"
+        message={`Delete the group "${confirmRemove?.name || ''}"? Your pages are not affected.`}
+        onConfirm={() => { if (confirmRemove) removeGroup(confirmRemove.id); setConfirmRemove(null) }}
+        onCancel={() => setConfirmRemove(null)}
+      />
     </div>
   )
 }

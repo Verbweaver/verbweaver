@@ -8,6 +8,7 @@ import { buildEquivalenceBoxes, computeCoverRelations, computeRemainder } from '
 import NodeContextMenu from '../components/graph/NodeContextMenu'
 import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import RemoveLinksModal from '../components/common/RemoveLinksModal'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
 import { chooseHandleIds, type XY } from '../utils/edgeHandles'
@@ -18,6 +19,21 @@ import GroupBoxNode from '../components/graph/GroupBoxNode'
 import CustomNode from '../components/graph/CustomNode'
 
 const groupNodeTypes: NodeTypes = { groupBox: GroupBoxNode, custom: CustomNode }
+
+// Node card sizes inside group boxes
+const CARD_W = 180
+const CARD_H = 80
+const CARD_GAP = 12
+const CARD_PAD_X = 12
+// Wide enough for three columns of cards plus padding
+const CARD_BOX_W = 2 * CARD_PAD_X + 3 * CARD_W + 2 * CARD_GAP
+// Space between top-level boxes placed on the default grid
+const BOX_GAP = 40
+const cardColumnsFor = (boxWidth: number) =>
+  Math.max(1, Math.floor((boxWidth - 2 * CARD_PAD_X + CARD_GAP) / (CARD_W + CARD_GAP)))
+type Rect = { x: number; y: number; w: number; h: number }
+const rectsOverlap = (a: Rect, b: Rect, margin = 0) =>
+  a.x < b.x + b.w + margin && b.x < a.x + a.w + margin && a.y < b.y + b.h + margin && b.y < a.y + a.h + margin
 
 // Placeholder Group view. Will be replaced with React Flow Sub Flows implementation in subsequent tasks.
 function GroupViewInner() {
@@ -168,8 +184,28 @@ function GroupViewInner() {
     })
     
 
-    // Simple grid for initial positions if not saved
-    const gridW = 260, gridH = 140, perRow = 3
+    // Default positions for boxes without a saved one: a grid spaced from each box's real size,
+    // skipping saved boxes, so boxes never overlap (#114)
+    const perRow = 3
+    const placeOnGrid = (items: Array<{ id: string; w: number; h: number }>, obstacles: Rect[]) => {
+      const placed = new Map<string, XY>()
+      const colW = Math.max(0, ...items.map(i => i.w)) + BOX_GAP
+      let col = 0, rowY = 0, rowH = 0
+      for (const item of items) {
+        for (let guard = 0; guard < 10_000; guard++) {
+          const rect = { x: col * colW, y: rowY, w: item.w, h: item.h }
+          const free = !obstacles.some(o => rectsOverlap(o, rect, BOX_GAP))
+          if (free) {
+            placed.set(item.id, { x: rect.x, y: rect.y })
+            rowH = Math.max(rowH, item.h)
+          }
+          col++
+          if (col >= perRow) { col = 0; rowY += (rowH || item.h) + BOX_GAP; rowH = 0 }
+          if (free) break
+        }
+      }
+      return placed
+    }
     const covers = computeCoverRelations(equivalence.boxes)
     const parentsOf = new Map<string, Set<string>>()
     const childrenOf = new Map<string, Set<string>>()
@@ -195,25 +231,41 @@ function GroupViewInner() {
     const maxCards = Math.max(5, Math.min(200, Number(options.maxCardsPerGroup || 40)))
     const showCap = options.showCapIndicator !== false
     if (!options.nestGroups) {
-      equivalence.boxes.forEach((b, idx) => {
-        const saved = layout.boxes[b.boxId]
-        const x = saved?.x ?? (idx % perRow) * gridW
-        const y = saved?.y ?? Math.floor(idx / perRow) * gridH
+      // Sizes first, so default positions can be spaced from them
+      const boxWidth = options.showNodeCards ? CARD_BOX_W : 260
+      const columns = options.showNodeCards ? cardColumnsFor(boxWidth) : 0
+      const sizeOf = (b: typeof equivalence.boxes[number]) => {
+        if (!options.showNodeCards) return { w: boxWidth, h: 160 }
+        const rows = Math.ceil(Math.min(b.nodeIds.length, maxCards) / columns)
+        return { w: boxWidth, h: 28 + rows * (CARD_H + CARD_GAP) + 24 }
+      }
+      // Drags are saved under the box's node id, which differs from boxId for the empty set
+      const savedFor = (b: typeof equivalence.boxes[number]) => {
+        const sid = safeIdByBoxId.get(b.boxId)!
+        return layout.boxes[sid] || layout.boxes[b.boxId]
+      }
+      const savedRects: Rect[] = []
+      const unsaved: Array<{ id: string; w: number; h: number }> = []
+      equivalence.boxes.forEach(b => {
+        const saved = savedFor(b)
+        const size = sizeOf(b)
+        if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') savedRects.push({ x: saved.x, y: saved.y, ...size })
+        else unsaved.push({ id: b.boxId, ...size })
+      })
+      const defaults = placeOnGrid(unsaved, savedRects)
+      equivalence.boxes.forEach((b) => {
+        const saved = savedFor(b)
+        const fallback = defaults.get(b.boxId) || { x: 0, y: 0 }
+        const x = typeof saved?.x === 'number' ? saved.x : fallback.x
+        const y = typeof saved?.y === 'number' ? saved.y : fallback.y
         const isEq = b.groupIds.length > 1
         const totalCount = b.nodeIds.length
-        const boxWidth = options.showNodeCards ? 520 : 260
-        const columns = options.showNodeCards ? (boxWidth >= 520 ? 3 : 2) : 0
-        const estimateHeight = () => {
-          if (!options.showNodeCards) return 160
-          const rows = Math.ceil(Math.min(totalCount, maxCards) / columns)
-          return 28 + rows * (80 + 12) + 24
-        }
         const sid = safeIdByBoxId.get(b.boxId)!
         nodes.push({
           id: sid,
           data: { label: boxIdToName.get(b.boxId) || 'Group', isEquivalent: isEq, chips: chipsFor(b.nodeIds), linkPairs: linkPairsFor(b.nodeIds), showNodeCards: !!options.showNodeCards, visibleCardCount: Math.min(totalCount, maxCards), totalCardCount: totalCount, showCapIndicator: showCap },
           position: { x, y },
-          style: { width: boxWidth, height: estimateHeight() },
+          style: { width: boxWidth, height: sizeOf(b).h },
           type: 'groupBox',
           draggable: true,
         })
@@ -221,16 +273,13 @@ function GroupViewInner() {
         // Show full node cards inside group (flat mode: all nodes of the set)
         if (options.showNodeCards) {
           const childIds = b.nodeIds.slice(0, maxCards)
-          const columns = (boxWidth >= 520 ? 3 : 2)
-          const cardW = 180
-          const cardH = 80
-          const padX = 12, padY = 28
+          const padY = 28
           const cardPos = new Map<string, XY>()
           childIds.forEach((cid, cidx) => {
             const col = cidx % columns
             const row = Math.floor(cidx / columns)
-            const cx = padX + col * (cardW + 12)
-            const cy = padY + row * (cardH + 12)
+            const cx = CARD_PAD_X + col * (CARD_W + CARD_GAP)
+            const cy = padY + row * (CARD_H + CARD_GAP)
             cardPos.set(cid, { x: cx, y: cy })
             const meta = idToMeta.get(cid)
             const path = idToPath.get(cid)
@@ -285,63 +334,55 @@ function GroupViewInner() {
         })
       })
     } else {
-      // Nesting mode: recursively place children under each parent; duplicate children under multiple parents
-      const placeBox = (
-        boxId: string,
-        parentSafeId?: string,
-        depth: number = 0,
-        idx: number = 0,
-        forcedX?: number,
-        forcedY?: number,
-        forcedWidth?: number,
-        forcedHeight?: number
-      ) => {
-        const b = equivalence.boxes.find(x => x.boxId === boxId)
+      // Nesting mode: recursively place children under each parent; duplicate children under multiple parents.
+      // Sizes are measured bottom-up, so a parent always fits its nested children at every depth.
+      const boxById = new Map(equivalence.boxes.map(b => [b.boxId, b]))
+      const rowH = options.showNodeCards ? CARD_H : 48
+      const padY = 16
+      const rootWidth = options.showNodeCards ? CARD_BOX_W : 260
+      const childWidthFor = (parentWidth: number) => Math.max(160, parentWidth - 32)
+      const directChildrenOf = (boxId: string, chain: Set<string>) =>
+        Array.from(childrenOf.get(boxId) || []).filter(cid => boxById.has(cid) && !chain.has(cid))
+      // Pages a box lists itself: the root shows what its children don't; children show their whole set
+      const displayedFor = (boxId: string, isRoot: boolean) => {
+        const b = boxById.get(boxId)!
+        const kids = Array.from(childrenOf.get(boxId) || [])
+        if (!isRoot || kids.length === 0) return b.nodeIds
+        return computeRemainder(b.nodeIds, kids.map(cid => boxById.get(cid)?.nodeIds || []))
+      }
+      const listHeightFor = (count: number, width: number) => {
+        if (count === 0) return 0
+        const columns = options.showNodeCards ? cardColumnsFor(width) : 1
+        return Math.ceil(Math.min(count, maxCards) / columns) * (rowH + CARD_GAP) + padY
+      }
+      const heightMemo = new Map<string, number>()
+      const measureHeight = (boxId: string, width: number, isRoot: boolean, chain: Set<string>): number => {
+        const key = `${boxId}|${width}|${isRoot ? 1 : 0}`
+        const memo = heightMemo.get(key)
+        if (memo !== undefined) return memo
+        const nextChain = new Set(chain).add(boxId)
+        const kids = directChildrenOf(boxId, nextChain)
+        const childW = childWidthFor(width)
+        let childrenHeight = 0
+        kids.forEach(cid => { childrenHeight += measureHeight(cid, childW, false, nextChain) + CARD_GAP })
+        if (childrenHeight > 0) childrenHeight += padY
+        const h = 24 /*header*/ + listHeightFor(displayedFor(boxId, isRoot).length, width) + childrenHeight + padY
+        heightMemo.set(key, h)
+        return h
+      }
+
+      const placeBox = (boxId: string, parentSafeId: string | undefined, x: number, y: number, boxWidth: number, chain: Set<string>) => {
+        const b = boxById.get(boxId)
         if (!b) return
         const safe = safeIdByBoxId.get(boxId)!
         const baseId = parentSafeId ? `${safe}__under__${parentSafeId}` : safe
-        const saved = layout.boxes[baseId] || layout.boxes[safe] || layout.boxes[boxId]
-        const x = parentSafeId ? (forcedX ?? 24) : (saved?.x ?? (idx % perRow) * gridW)
-        const y = parentSafeId ? (forcedY ?? 32) : (saved?.y ?? Math.floor(idx / perRow) * gridH)
         const isEq = b.groupIds.length > 1
-
-        // If nested, parent sees only remainder; the child shows its own chips
-        const directChildren = Array.from(childrenOf.get(boxId) || [])
-        const remainder = directChildren.length > 0 ? computeRemainder(b.nodeIds, directChildren.map(cid => {
-          const cb = equivalence.boxes.find(x => x.boxId === cid)
-          return cb ? cb.nodeIds : []
-        })) : b.nodeIds
         const isRoot = !parentSafeId
-        const displayedSet = isRoot ? remainder : b.nodeIds
+        const remainder = displayedFor(boxId, true)
+        const displayedSet = displayedFor(boxId, isRoot)
         const totalCount = displayedSet.length
-
-        // Sizes and padding for nested rendering
-        const boxWidth = forcedWidth ?? (options.showNodeCards ? (parentSafeId ? 480 : 520) : (parentSafeId ? 240 : 260))
-        const columns = options.showNodeCards ? (boxWidth >= 520 ? 3 : 2) : 1
-        const cardW = 180
-        const cardH = options.showNodeCards ? 80 : 48
-        const padX = 16
-        const padY = 16
-        const remainderRows = Math.ceil(Math.min(displayedSet.length, maxCards) / columns)
-        const remainderHeight = displayedSet.length === 0 ? 0 : remainderRows * (cardH + 12) + (displayedSet.length > 0 ? padY : 0)
-
-        // Precompute child sizes to size parent tightly
-        let childrenHeight = 0
-        const childSizes: Array<{ id: string; w: number; h: number }> = []
-        const childWidthBase = Math.max(200, boxWidth - 48)
-        directChildren.forEach(cid => {
-          const childBox = equivalence.boxes.find(x => x.boxId === cid)
-          const childCount = childBox ? Math.min(childBox.nodeIds.length, maxCards) : 0
-          const childCols = options.showNodeCards ? (childWidthBase >= 480 ? 3 : 2) : 1
-          const childRows = childCols > 0 ? Math.ceil(childCount / childCols) : 0
-          const childH = 24 + (childCount > 0 ? childRows * (cardH + 12) + padY : 0)
-          const childW = Math.min(boxWidth - 32, options.showNodeCards ? Math.max(240, childWidthBase) : Math.max(200, childWidthBase))
-          childSizes.push({ id: cid, w: childW, h: childH || (options.showNodeCards ? 120 : 80) })
-          childrenHeight += (childH || (options.showNodeCards ? 120 : 80)) + 12
-        })
-        if (childrenHeight > 0) childrenHeight += padY
-
-        const boxHeight = forcedHeight ?? (24 /*header*/ + remainderHeight + childrenHeight + padY)
+        const boxHeight = measureHeight(boxId, boxWidth, isRoot, chain)
+        const remainderHeight = listHeightFor(displayedSet.length, boxWidth)
 
         nodes.push({
           id: baseId,
@@ -368,16 +409,14 @@ function GroupViewInner() {
         // child boxes will render their own nodes.
         if (options.showNodeCards) {
           const childIds = (isRoot ? remainder : b.nodeIds).slice(0, maxCards)
-          const columns = (boxWidth >= 520 ? 3 : 2)
-          const cardW = 180
-          const cardH = 80
-          const padX = 12, padY = 20
+          const columns = cardColumnsFor(boxWidth)
+          const padY = 20
           const cardPos = new Map<string, XY>()
           childIds.forEach((cid, cidx) => {
             const col = cidx % columns
             const row = Math.floor(cidx / columns)
-            const cx = padX + col * (cardW + 12)
-            const cy = padY + row * (cardH + 12) + 24 // leave space for header
+            const cx = CARD_PAD_X + col * (CARD_W + CARD_GAP)
+            const cy = padY + row * (CARD_H + CARD_GAP) + 24 // leave space for header
             cardPos.set(cid, { x: cx, y: cy })
             const meta = idToMeta.get(cid)
             const path = idToPath.get(cid)
@@ -416,21 +455,39 @@ function GroupViewInner() {
           })
         }
 
-        // Recurse children: duplicate under this baseId
-        if (directChildren.length > 0) {
+        // Recurse children: duplicate under this baseId, stacked by their measured heights
+        const nextChain = new Set(chain).add(boxId)
+        const kids = directChildrenOf(boxId, nextChain)
+        if (kids.length > 0) {
+          const childW = childWidthFor(boxWidth)
           let childY = 24 + remainderHeight + padY
-          directChildren.forEach(cid => {
-            const size = childSizes.find(s => s.id === cid)
-            const cWidth = size?.w ?? Math.min(boxWidth - 32, options.showNodeCards ? 360 : 240)
-            const cHeight = size?.h ?? (options.showNodeCards ? 140 : 100)
-            const cx = Math.max(16, (boxWidth - cWidth) / 2)
-            placeBox(cid, baseId, depth + 1, 0, cx, childY, cWidth, cHeight)
-            childY += cHeight + 12
+          kids.forEach(cid => {
+            const cx = Math.max(16, (boxWidth - childW) / 2)
+            placeBox(cid, baseId, cx, childY, childW, nextChain)
+            childY += measureHeight(cid, childW, false, nextChain) + CARD_GAP
           })
         }
       }
 
-      topLevel.forEach((b, idx) => placeBox(b.boxId, undefined, 0, idx))
+      // Top-level boxes: saved positions first, then grid slots spaced from measured sizes
+      const savedFor = (boxId: string) => {
+        const safe = safeIdByBoxId.get(boxId)!
+        const saved = layout.boxes[safe] || layout.boxes[boxId]
+        return saved && typeof saved.x === 'number' && typeof saved.y === 'number' ? saved : undefined
+      }
+      const savedRects: Rect[] = []
+      const unsaved: Array<{ id: string; w: number; h: number }> = []
+      topLevel.forEach(b => {
+        const h = measureHeight(b.boxId, rootWidth, true, new Set())
+        const saved = savedFor(b.boxId)
+        if (saved) savedRects.push({ x: saved.x, y: saved.y, w: rootWidth, h })
+        else unsaved.push({ id: b.boxId, w: rootWidth, h })
+      })
+      const defaults = placeOnGrid(unsaved, savedRects)
+      topLevel.forEach(b => {
+        const pos = savedFor(b.boxId) || defaults.get(b.boxId) || { x: 0, y: 0 }
+        placeBox(b.boxId, undefined, pos.x, pos.y, rootWidth, new Set())
+      })
     }
 
     return { flowNodes: nodes, flowEdges: edges }
@@ -451,6 +508,25 @@ function GroupViewInner() {
       })
     })
   }, [flowNodes])
+  // Re-fit the view when the layout changes shape (groups added or removed, node cards or nesting
+  // toggled), so re-spaced boxes stay on screen. Drags don't change this signature.
+  const layoutSig = useMemo(
+    () => `${options.nestGroups ? 1 : 0}|${options.showNodeCards ? 1 : 0}|${equivalence.boxes.map(b => b.boxId).join(',')}`,
+    [options.nestGroups, options.showNodeCards, equivalence]
+  )
+  const fittedSigRef = useRef<string | null>(null)
+  useEffect(() => {
+    // The first layout is fitted by ReactFlow's fitView prop
+    if (fittedSigRef.current === null) { fittedSigRef.current = layoutSig; return }
+    if (fittedSigRef.current === layoutSig) return
+    fittedSigRef.current = layoutSig
+    // Wait for React Flow to measure the new nodes
+    const id = window.setTimeout(() => {
+      try { fitView({ padding: 0.2 }) } catch (err) { console.warn('[GroupView] fitView failed', err) }
+    }, 120)
+    return () => window.clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutSig])
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     const applicable = changes.filter(c => c.type === 'dimensions' || c.type === 'position' || c.type === 'select')
     if (applicable.length > 0) setRfNodes(nds => applyNodeChanges(applicable, nds))
@@ -832,11 +908,26 @@ function GroupViewInner() {
     if (path && meta) addEditorTab(path, meta.name)
   }, [idToPath, verbweaverNodes, addEditorTab])
 
-  const handleDeleteNode = useCallback(async (underlyingId?: string) => {
+  // Deleting a card's page asks first, as in the Mind Map (#99)
+  const [confirmDelete, setConfirmDelete] = useState<{ path: string; name: string } | null>(null)
+  const handleDeleteNode = useCallback((underlyingId?: string) => {
     if (!underlyingId) return
     const path = idToPath.get(underlyingId)
-    if (path) await deleteNode(path)
-  }, [idToPath, deleteNode])
+    if (!path) return
+    const name = idToMeta.get(underlyingId)?.title || path.split('/').pop() || path
+    setConfirmDelete({ path, name })
+  }, [idToPath, idToMeta])
+  const confirmDeleteNode = useCallback(async () => {
+    if (!confirmDelete) return
+    try {
+      await deleteNode(confirmDelete.path)
+    } catch (err) {
+      console.error('[GroupView] Failed to delete node', err)
+      toast.error('Failed to delete node')
+    } finally {
+      setConfirmDelete(null)
+    }
+  }, [confirmDelete, deleteNode])
 
   const handleUnlinkEdge = useCallback(async (edgeId?: string) => {
     if (!edgeId) return
@@ -980,6 +1071,13 @@ function GroupViewInner() {
           }}
         />
       )}
+      <ConfirmDialog
+        isOpen={!!confirmDelete}
+        title="Delete node"
+        message={`Are you sure you want to delete "${confirmDelete?.name || ''}"? This action cannot be undone.`}
+        onConfirm={confirmDeleteNode}
+        onCancel={() => setConfirmDelete(null)}
+      />
       <RemoveLinksModal
         isOpen={!!removeLinksPath}
         linkedNodes={removeLinksCandidates}

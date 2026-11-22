@@ -70,6 +70,9 @@ const nodeTypes: NodeTypes = {
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
+// Absolute path of a project's outline/positions file
+const outlineAbsPath = (projectPath: string) =>
+  `${projectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
 // Any of these held while clicking a node toggles it in/out of the selection
 const MULTI_SELECT_KEYS = ['Shift', 'Control', 'Meta']
 
@@ -90,6 +93,8 @@ function GraphView() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; edgeId?: string; isFolder?: boolean; hasTask?: boolean } | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+  // Template picked from the canvas menu's "From Template" list, preselected in the dialog
+  const [initialTemplatePath, setInitialTemplatePath] = useState<string | undefined>()
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
   const [pendingNodePosition, setPendingNodePosition] = useState<{ x: number; y: number } | undefined>()
   const [parentPathForNewNode, setParentPathForNewNode] = useState<string>('')
@@ -241,6 +246,17 @@ function GraphView() {
   
   // Flag to trigger initial rebuild after positions are loaded
   const [positionsReady, setPositionsReady] = useState<boolean>(false)
+  // Latest positions/collapsed state, for saves made from callbacks
+  const graphPositionsRef = useRef(graphPositions)
+  graphPositionsRef.current = graphPositions
+  const graphCollapsedRef = useRef(graphCollapsed)
+  graphCollapsedRef.current = graphCollapsed
+  // Where positions are stored for the open project (desktop: project folder; web: project id).
+  // Saves are only allowed once the saved state for this key has been read (#111, #112).
+  const storageKey = isElectron ? (currentProjectPath || null) : (currentProject?.id ? String(currentProject.id) : null)
+  const loadedForRef = useRef<string | null>(null)
+  const lastSavedRef = useRef<string>('')
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve())
 
   // Outline subview state
   type GraphSubView = 'mindmap' | 'outline' | 'progression' | 'group'
@@ -270,45 +286,59 @@ function GraphView() {
     setExpanded(expandAll ? parents : new Set())
   }
 
-  // Load outline order (web: project settings; electron: local file if present)
+  // Load outline order, folder positions and collapsed state for the open project
+  // (web: project settings; electron: .verbweaver/outline.yaml). Nothing is saved until this
+  // has finished for the current project, so defaults can't overwrite saved positions (#111, #112).
   useEffect(() => {
-    const loadOutline = async () => {
-      if (!currentProject?.id) return
+    let cancelled = false
+    setPositionsReady(false)
+    loadedForRef.current = null
+    setGraphPositions({})
+    setGraphCollapsed({})
+    setOutlineOrder({})
+    const key = storageKey
+    if (!currentProject?.id || !key) return
+    ;(async () => {
+      let outline: Record<string, string[]> = {}
+      let positions: Record<string, { x: number; y: number }> = {}
+      let collapsed: Record<string, boolean> = {}
+      // False when stored state exists but couldn't be read: show defaults, but don't save over it
+      let canSave = true
       try {
         if (!isElectron) {
-          const settings = await projectsApi.getProjectSettings(currentProject.id)
-          if (settings && typeof (settings as any).outlineMap === 'object') {
-            setOutlineOrder((settings as any).outlineMap as Record<string, string[]>)
+          const settings: any = await projectsApi.getProjectSettings(currentProject.id)
+          if (settings && typeof settings.outlineMap === 'object') outline = settings.outlineMap
+          if (settings && typeof settings.graphPositions === 'object') positions = settings.graphPositions
+          if (settings && typeof settings.graphCollapsed === 'object') collapsed = settings.graphCollapsed
+        } else if (window.electronAPI) {
+          let content = ''
+          try {
+            content = await window.electronAPI.readFile(outlineAbsPath(key))
+          } catch (e) {
+            // A missing file just means nothing has been saved yet
+            if (!/ENOENT/.test(String(e))) throw e
           }
-          if (settings && typeof (settings as any).graphPositions === 'object') {
-            setGraphPositions((settings as any).graphPositions as Record<string, { x: number; y: number }>)
-          }
-          if (settings && typeof (settings as any).graphCollapsed === 'object') {
-            setGraphCollapsed((settings as any).graphCollapsed as Record<string, boolean>)
-          }
-          // Ensure positionsReady flips even if no positions exist
-          setPositionsReady(true)
-          return
-        } else {
-          // Electron: try local file if exists
-          if (window.electronAPI && currentProjectPath) {
-            const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
-            try {
-              const content = await window.electronAPI.readFile(abs)
-              const parsed: any = yaml.load(content || '') || {}
-              if (parsed && typeof parsed === 'object') setOutlineOrder(parsed.outline || {})
-              if (parsed && typeof parsed.graph_positions === 'object') setGraphPositions(parsed.graph_positions)
-              if (parsed && typeof parsed.graph_collapsed === 'object') setGraphCollapsed(parsed.graph_collapsed)
-              setPositionsReady(true)
-            } catch {}
-          }
+          const parsed: any = yaml.load(content || '') || {}
+          if (parsed && typeof parsed.outline === 'object') outline = parsed.outline || {}
+          if (parsed && typeof parsed.graph_positions === 'object') positions = parsed.graph_positions || {}
+          if (parsed && typeof parsed.graph_collapsed === 'object') collapsed = parsed.graph_collapsed || {}
         }
-      } catch {}
-      // If web and settings didn't contain outlineMap, still mark ready to avoid blocking
+      } catch (e) {
+        console.warn('[Graph] Failed to load saved outline/positions; changes will not be saved', e)
+        canSave = false
+      }
+      if (cancelled) return
+      setOutlineOrder(outline)
+      setGraphPositions(positions)
+      setGraphCollapsed(collapsed)
+      graphPositionsRef.current = positions
+      graphCollapsedRef.current = collapsed
+      lastSavedRef.current = JSON.stringify([positions, collapsed])
+      loadedForRef.current = canSave ? key : null
       setPositionsReady(true)
-    }
-    loadOutline()
-  }, [currentProject?.id, currentProjectPath])
+    })()
+    return () => { cancelled = true }
+  }, [currentProject?.id, storageKey])
 
   // Load per-project Tasks settings (columns + completed column)
   useEffect(() => {
@@ -362,31 +392,31 @@ function GraphView() {
     updateTab(tab.id, { title })
   }, [subView, getActiveTab, updateTab])
 
+  // Save the Outline order, leaving the other stored keys (positions, collapsed) as they are
   const saveOutline = async (map: Record<string, string[]>) => {
     if (!currentProject?.id) return
-    // Web: store in project settings to avoid file API constraints
-    if (!isElectron) {
+    const run = async () => {
       try {
-        const settings = await projectsApi.getProjectSettings(currentProject.id)
-        const next = { ...(settings || {}), outlineMap: map, graphPositions, graphCollapsed }
-        await projectsApi.updateProjectSettings(currentProject.id, next)
+        if (!isElectron) {
+          // Web: store in project settings to avoid file API constraints
+          const settings = await projectsApi.getProjectSettings(currentProject.id)
+          await projectsApi.updateProjectSettings(currentProject.id, { ...(settings || {}), outlineMap: map })
+        } else if (window.electronAPI && currentProjectPath) {
+          const abs = outlineAbsPath(currentProjectPath)
+          let parsed: any = {}
+          try { parsed = yaml.load(await window.electronAPI.readFile(abs) || '') || {} } catch {}
+          parsed.outline = map
+          await window.electronAPI.writeFile(abs, yaml.dump(parsed))
+        } else {
+          await editorApi.writeFile(currentProject.id, outlineFilePath, yaml.dump({ outline: map }))
+        }
       } catch (e) {
-        console.warn('Failed to save outline in project settings', e)
+        console.warn('Failed to save outline', e)
       }
-      return
     }
-    // Electron: persist to file alongside project
-    try {
-      const content = yaml.dump({ outline: map, graph_positions: graphPositions, graph_collapsed: graphCollapsed })
-      if (window.electronAPI && currentProjectPath) {
-        const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
-        await window.electronAPI.writeFile(abs, content)
-      } else if (currentProject?.id) {
-        await editorApi.writeFile(currentProject.id, outlineFilePath, content)
-      }
-    } catch (e) {
-      console.warn('Failed to save outline.yaml', e)
-    }
+    // Queue behind other saves so read-merge-write calls don't interleave
+    saveChainRef.current = saveChainRef.current.then(run, run)
+    await saveChainRef.current
   }
 
   // Persist graph positions and collapsed state to storage
@@ -398,7 +428,7 @@ function GraphView() {
         const next = { ...(settings || {}), graphPositions: folderPositions, graphCollapsed: collapsedMap }
         await projectsApi.updateProjectSettings(currentProject.id, next)
       } else if (window.electronAPI && currentProjectPath) {
-        const abs = `${currentProjectPath}/.verbweaver/outline.yaml`.replace(/\\/g, '/').replace(/\/\//g, '/')
+        const abs = outlineAbsPath(currentProjectPath)
         let parsed: any = {}
         try {
           const content = await window.electronAPI.readFile(abs)
@@ -410,8 +440,21 @@ function GraphView() {
         const content = yaml.dump(parsed)
         await window.electronAPI.writeFile(abs, content)
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[Graph] Failed to save folder positions', e)
+    }
   }, [currentProject?.id, currentProjectPath, outlineOrder])
+
+  // Save folder positions and collapsed state, but only once the stored state for this project
+  // has been loaded, only when something changed, and one write at a time (#111, #112)
+  const saveGraphState = useCallback((positions: Record<string, { x: number; y: number }>, collapsed: Record<string, boolean>) => {
+    if (!storageKey || loadedForRef.current !== storageKey) return
+    const snapshot = JSON.stringify([positions, collapsed])
+    if (snapshot === lastSavedRef.current) return
+    lastSavedRef.current = snapshot
+    const run = () => persistGraphState(positions, collapsed)
+    saveChainRef.current = saveChainRef.current.then(run, run)
+  }, [storageKey, persistGraphState])
 
   // Build virtual parent index for items moved to different folders
   const virtualParentOf = useMemo(() => {
@@ -468,7 +511,9 @@ function GraphView() {
         return
       }
       
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeIds.size > 0) {
+      // Delete and Rigid mode act on the Mind Map only; its selection is hidden in other sub-views (#100)
+      const inMindMap = subView === 'mindmap'
+      if (inMindMap && (e.key === 'Delete' || e.key === 'Backspace') && selectedNodeIds.size > 0) {
         e.preventDefault()
         const hasNodes = selectedNodeIds.has('nodes')
         if (selectedNodeIds.size === 1) {
@@ -505,7 +550,7 @@ function GraphView() {
         })
       }
       // Toggle Rigid Mode (A)
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'a') {
+      if (inMindMap && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'a') {
         setRigidMode(v => {
           const next = !v
           try { localStorage.setItem(STORAGE_KEYS.GRAPH_RIGID_MODE, String(next)) } catch {}
@@ -521,7 +566,14 @@ function GraphView() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedNodeIds])
+  }, [selectedNodeIds, subView, verbweaverNodes, setNodes])
+
+  // Leaving the Mind Map clears its selection, so nothing acts on nodes you can't see (#100)
+  useEffect(() => {
+    if (subView === 'mindmap') return
+    setSelectedNodeIds(prev => (prev.size === 0 ? prev : new Set()))
+    setNodes(prev => (prev.some(n => n.selected) ? prev.map(n => (n.selected ? { ...n, selected: false } : n)) : prev))
+  }, [subView, setNodes])
 
   // When an attach target is set, programmatically open the file picker
   useEffect(() => {
@@ -767,7 +819,8 @@ function GraphView() {
         const position = (() => {
           if (node.path === 'nodes') {
             const persisted = graphPositions['nodes']
-            return persisted || { x: 0, y: 0 }
+            if (persisted && typeof persisted.x === 'number' && typeof persisted.y === 'number') return persisted
+            return { x: 0, y: 0 }
           }
           // Prefer persisted per-project positions for folders
           if (node.isDirectory) {
@@ -829,7 +882,7 @@ function GraphView() {
         flowNodes.push({
           id: 'nodes',
           type: 'custom',
-          position: graphPositions['nodes'] || { x: 0, y: 0 },
+          position: (typeof graphPositions['nodes']?.x === 'number' && typeof graphPositions['nodes']?.y === 'number') ? graphPositions['nodes'] : { x: 0, y: 0 },
           data: {
             label: 'nodes',
             type: 'folder',
@@ -986,9 +1039,20 @@ function GraphView() {
         // Prevent drag persistence when locked
         .filter(n => !(n.data as any)?.locked)
       if (moved.length === 0) return
-      // Only persist when rigid mode is ON
+      // Folder positions live in graphPositions (kept in memory either way, saved only in Rigid mode)
+      const folderPositions: Record<string, { x: number; y: number }> = {}
+      moved.forEach(n => {
+        const isFolder = (n.data as any)?.isDirectory || (n.data as any)?.type === 'folder' || n.id === 'nodes'
+        if (isFolder) folderPositions[n.id] = { x: n.position.x, y: n.position.y }
+      })
+      if (Object.keys(folderPositions).length > 0) {
+        const next = { ...graphPositionsRef.current, ...folderPositions }
+        graphPositionsRef.current = next
+        setGraphPositions(next)
+        if (rigidMode) saveGraphState(next, graphCollapsedRef.current)
+      }
+      // Only persist page positions when rigid mode is ON
       if (rigidMode) {
-        const folderPositions: Record<string, { x: number; y: number }> = {}
         moved.forEach(n => {
           updateNode(n.id, {
             metadata: { position: n.position }
@@ -1000,13 +1064,7 @@ function GraphView() {
             } catch {}
             toast.error('Failed to save node position')
           })
-          // Persist per-project position for folders and nodes root
-          const isFolder = (n.data as any)?.isDirectory || (n.data as any)?.type === 'folder' || n.id === 'nodes'
-          if (isFolder) folderPositions[n.id] = { x: n.position.x, y: n.position.y }
         })
-        if (Object.keys(folderPositions).length > 0) {
-          setGraphPositions(prev => ({ ...prev, ...folderPositions }))
-        }
       }
       // After moving, recompute edge handles to ensure closest-side attachments
       setEdges(prev => {
@@ -1030,7 +1088,7 @@ function GraphView() {
         })
       })
     },
-    [updateNode, nodes, setEdges, rigidMode]
+    [updateNode, nodes, setEdges, rigidMode, saveGraphState]
   )
 
   // Handle new connections
@@ -1209,46 +1267,36 @@ function GraphView() {
     []
   )
 
-  // Handle unlinking edges
+  // Handle unlinking edges. Only soft links (between pages) can be unlinked; folder lines
+  // ("contains") come from where files are stored, so the menu shows Unlink disabled for them (#101)
   const handleUnlinkEdge = useCallback(
     async (edgeId: string) => {
-      console.log('handleUnlinkEdge called with:', edgeId)
       try {
-        // Parse edge ID to get source and target node IDs
-        if (edgeId.startsWith('soft_')) {
-          const parts = edgeId.split('_', 3)
-          if (parts.length === 3) {
-            const sourceId = parts[1]
-            const targetId = parts[2]
-            
-            // Find nodes by ID
-            const sourceNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === sourceId)
-            const targetNode = Array.from(verbweaverNodes.values()).find(n => n.metadata.id === targetId)
-            
-            if (sourceNode && targetNode) {
-              console.log('Removing link between:', sourceNode.path, 'and', targetNode.path)
-              await removeSoftLink(sourceNode.path, targetNode.path)
-              
-              // Remove edge from visual graph
-              setEdges((eds) => eds.filter(edge => edge.id !== edgeId))
-              
-              toast.success('Link removed')
-            }
-          }
+        const edge = edges.find(e => e.id === edgeId)
+        if (!edge || !edgeId.startsWith('soft_')) {
+          toast.error('Only links between pages can be unlinked')
+          return
         }
+        // Soft-link edges run from the linking page's path to the linked page's path
+        await removeSoftLink(edge.source, edge.target)
+        setEdges((eds) => eds.filter(e => e.id !== edgeId))
+        toast.success('Link removed')
       } catch (error) {
         console.error('Failed to remove link:', error)
         toast.error('Failed to remove link')
+      } finally {
+        setContextMenu(null)
       }
     },
-    [removeSoftLink, setEdges, verbweaverNodes]
+    [edges, removeSoftLink, setEdges]
   )
 
   // Handle creating new node
   const handleCreateNode = useCallback(
-    async (type: string, position?: { x: number; y: number }) => {
+    async (type: string, position?: { x: number; y: number }, templatePath?: string) => {
       setPendingNodePosition(position)
       setParentPathForNewNode('')
+      setInitialTemplatePath(templatePath)
       
       if (type === 'folder') {
         // For folders, open folder dialog
@@ -1301,6 +1349,7 @@ function GraphView() {
   const handleCreateChildNode = useCallback(
     async (parentPath: string) => {
       setParentPathForNewNode(parentPath)
+      setInitialTemplatePath(undefined)
       setTemplateDialogOpen(true)
       setContextMenu(null)
     },
@@ -1513,60 +1562,41 @@ function GraphView() {
     ).then(() => {
       setNodes(layoutedNodes)
       setEdges(updatedEdges)
+      const folderPositions: Record<string, { x: number; y: number }> = {}
+      layoutedNodes.forEach(n => {
+        const isFolder = (n.data as any)?.isDirectory || (n.data as any)?.type === 'folder' || n.id === 'nodes'
+        if (isFolder) folderPositions[n.id] = { x: n.position.x, y: n.position.y }
+      })
+      const next = { ...graphPositionsRef.current, ...folderPositions }
+      graphPositionsRef.current = next
+      setGraphPositions(next)
+      if (rigidMode) saveGraphState(next, graphCollapsedRef.current)
       toast.success('Layout applied')
     }).catch(() => {
       toast.error('Failed to save layout positions')
     })
-  }, [nodes, edges, setNodes, setEdges, updateNode, chooseHandleIds])
-
-  // Persist positions when they change (dragging or layout applied)
-  useEffect(() => {
-    if (!currentProject?.id) return
-    // Build a map of folder positions plus special 'nodes'
-    const folderPositions: Record<string, { x: number; y: number }> = {}
-    nodes.forEach(n => {
-      const isFolder = (n.data as any)?.isDirectory || (n.data as any)?.type === 'folder' || n.id === 'nodes'
-      if (isFolder && n.position) folderPositions[n.id] = { x: n.position.x, y: n.position.y }
-    })
-    // Only update graphPositions when positions actually changed
-    let different = false
-    const keysA = Object.keys(graphPositions)
-    const keysB = Object.keys(folderPositions)
-    if (keysA.length !== keysB.length) different = true
-    if (!different) {
-      for (const k of keysA) {
-        const a = graphPositions[k]
-        const b = folderPositions[k]
-        if (!b || a.x !== b.x || a.y !== b.y) { different = true; break }
-      }
-    }
-    if (different) setGraphPositions(folderPositions)
-    // Save merged into project settings or outline.yaml without blocking UI
-    ;(async () => {
-      try {
-        if (rigidMode) await persistGraphState(folderPositions, graphCollapsed)
-      } catch {}
-    })()
-  }, [nodes, currentProject?.id, rigidMode, graphCollapsed, persistGraphState])
+  }, [nodes, edges, setNodes, setEdges, updateNode, chooseHandleIds, rigidMode, saveGraphState])
 
   // Toggle collapsed state for a folder and persist immediately
-  const toggleFolderCollapsed = useCallback(async (folderPath: string) => {
-    setGraphCollapsed(prev => {
-      const next = { ...prev, [folderPath]: !prev[folderPath] }
-      // Persist asynchronously but do not block UI
-      ;(async () => {
-        try {
-          await persistGraphState(graphPositions, next)
-        } catch {}
-      })()
-      return next
-    })
-  }, [graphPositions, persistGraphState])
+  const toggleFolderCollapsed = useCallback((folderPath: string) => {
+    const prev = graphCollapsedRef.current
+    const next = { ...prev, [folderPath]: !prev[folderPath] }
+    graphCollapsedRef.current = next
+    setGraphCollapsed(next)
+    saveGraphState(graphPositionsRef.current, next)
+  }, [saveGraphState])
 
   // -------- Outline helpers --------
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [dragOverPos, setDragOverPos] = useState<'before' | 'after' | 'into' | null>(null)
+  // Releasing the mouse anywhere ends an Outline drag; row handlers run first and do the move
+  useEffect(() => {
+    if (!draggingId) return
+    const end = () => { setDraggingId(null); setDragOverId(null); setDragOverPos(null) }
+    window.addEventListener('mouseup', end)
+    return () => window.removeEventListener('mouseup', end)
+  }, [draggingId])
   const [previewSort, setPreviewSort] = useState<'none' | 'alphabetical' | 'reverse-alphabetical' | 'random' | 'relationship-group'>('none')
   const previewActive = previewSort !== 'none'
 
@@ -1680,7 +1710,6 @@ function GraphView() {
                 )}
                 style={indent}
                 onMouseDown={(e)=>{
-                  if (rigidMode) return
                   setDraggingId(id)
                   setDragOverId(id)
                   const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
@@ -1695,7 +1724,7 @@ function GraphView() {
                 }}
                 onMouseLeave={()=>{ if (!draggingId) return; setDragOverId(null); setDragOverPos(null) }}
                 onMouseUp={async ()=>{
-                  if (!draggingId || rigidMode) return
+                  if (!draggingId) return
                   const sourceId = draggingId
                   const targetId = id
                   const pos = dragOverPos || 'after'
@@ -1760,7 +1789,7 @@ function GraphView() {
                   onMouseMove={()=>{ if (!draggingId) return; setDragOverId(id); setDragOverPos('into') }}
                   onMouseLeave={()=>{ if (!draggingId) return; setDragOverId(null); setDragOverPos(null) }}
                   onMouseUp={async ()=>{
-                    if (!draggingId || rigidMode) return
+                    if (!draggingId) return
                     const sourceId = draggingId
                     setDraggingId(null); setDragOverId(null); setDragOverPos(null)
                     if (sourceId === id) return
@@ -2124,18 +2153,6 @@ function GraphView() {
                 />
                 Hide uploads
               </label>
-              <label className="inline-flex items-center gap-2 text-xs" title="When enabled: dragging updates and saves positions (folders saved per project). When disabled: dragging is temporary and not saved.">
-                <input
-                  type="checkbox"
-                  checked={rigidMode}
-                  onChange={(e)=>{
-                    const v = e.target.checked
-                    setRigidMode(v)
-                    try { localStorage.setItem(STORAGE_KEYS.GRAPH_RIGID_MODE, String(v)) } catch {}
-                  }}
-                />
-                Rigid mode
-              </label>
               <div className="pt-1 border-t border-border" />
               <label className="text-xs font-medium">Sort</label>
               <select
@@ -2195,7 +2212,8 @@ function GraphView() {
           edgeId={contextMenu.edgeId}
           isFolder={contextMenu.isFolder || contextMenu.nodeId === 'nodes'}
           hasTask={contextMenu.hasTask}
-          onExportMapAsPng={contextMenu.nodeId ? undefined : exportMapAsPng}
+          onExportMapAsPng={contextMenu.nodeId || contextMenu.edgeId ? undefined : exportMapAsPng}
+          unlinkDisabledReason={contextMenu.edgeId && !contextMenu.edgeId.startsWith('soft_') ? 'This line shows a folder holding a page. To change it, move the page to another folder.' : undefined}
           onCreateNode={handleCreateNode}
           onDeleteNode={(id) => {
             const isFolder = !!verbweaverNodes.get(id)?.isDirectory
@@ -2373,9 +2391,10 @@ function GraphView() {
       
       <TemplateSelectionDialog
         isOpen={templateDialogOpen}
-        onClose={() => setTemplateDialogOpen(false)}
+        onClose={() => { setTemplateDialogOpen(false); setInitialTemplatePath(undefined) }}
         onSelectTemplate={handleTemplateSelected}
         parentPath={parentPathForNewNode}
+        initialTemplatePath={initialTemplatePath}
       />
 
       {/* Create Link Modal (context menu) */}

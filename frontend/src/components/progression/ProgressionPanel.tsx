@@ -5,15 +5,14 @@ import NodeOrderingPanel from '../NodeOrderingPanel'
 import { useNodeStore } from '../../store/nodeStore'
 import { useProjectStore } from '../../store/projectStore'
 import { useTabStore } from '../../store/tabStore'
-import { Network, ListTree, LineChart } from 'lucide-react'
-import clsx from 'clsx'
+import { Network, ListTree, LineChart, Layers } from 'lucide-react'
 import { HELP_DOCS, HELP_GRAPH_SECTIONS } from '@verbweaver/shared'
 import { useOpenHelp } from '../../hooks/useOpenHelp'
 
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined
 
-type SubView = 'mindmap' | 'outline' | 'progression'
+type SubView = 'mindmap' | 'group' | 'outline' | 'progression'
 
 interface ProgressionConfig {
   xVar: string
@@ -499,9 +498,10 @@ export default function ProgressionPanel(
       <div className="w-80 border-l border-border p-2 flex flex-col gap-2 overflow-y-auto">
         {/* Integrated sub-view switcher */}
         <div className="flex flex-col gap-2 items-stretch">
-          <button className={clsx('px-2 py-1 text-sm', 'border rounded')} onClick={()=> onSwitchSubView?.('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
-          <button className={clsx('px-2 py-1 text-sm', 'border rounded')} onClick={()=> onSwitchSubView?.('outline')}><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
-          <button className={clsx('px-2 py-1 text-sm', 'bg-accent rounded')} onClick={()=> onSwitchSubView?.('progression')} disabled><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
+          <button className="px-2 py-1 text-sm" onClick={()=> onSwitchSubView?.('mindmap')}><span className="inline-flex items-center gap-1"><Network className="w-4 h-4"/>Mind Map</span></button>
+          <button className="px-2 py-1 text-sm" onClick={()=> onSwitchSubView?.('group')}><span className="inline-flex items-center gap-1"><Layers className="w-4 h-4"/>Group</span></button>
+          <button className="px-2 py-1 text-sm" onClick={()=> onSwitchSubView?.('outline')}><span className="inline-flex items-center gap-1"><ListTree className="w-4 h-4"/>Outline</span></button>
+          <button className="px-2 py-1 bg-accent rounded text-sm" onClick={()=> onSwitchSubView?.('progression')} disabled><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
         </div>
         <div className="pt-1 border-t border-border" />
         <div className="grid grid-cols-5 gap-2 items-stretch">

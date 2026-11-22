@@ -1057,8 +1057,17 @@ function setupIpcHandlers() {
       if (!existsSync(dir)) {
         await mkdir(dir, { recursive: true });
       }
-      // Write UTF-8 text content
-      await writeFile(fullPath, content, 'utf8');
+      // Write UTF-8 text content to a temp file, then rename it into place, so a concurrent
+      // read never sees a truncated or half-written file (#112)
+      const tmpPath = `${fullPath}.${process.pid}.${Date.now()}.tmp`;
+      await writeFile(tmpPath, content, 'utf8');
+      try {
+        await fs.rename(tmpPath, fullPath);
+      } catch (renameError) {
+        // Rename can fail on Windows when another process holds the file; fall back to writing in place
+        await fs.unlink(tmpPath).catch(() => {});
+        await writeFile(fullPath, content, 'utf8');
+      }
     } catch (error) {
       console.error('[fs:writeFile] Failed', { filePath, error });
       throw new Error(`Failed to write file: ${error}`);
