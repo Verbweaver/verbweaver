@@ -734,6 +734,21 @@ function TasksView() {
     setIsDetailModalOpen(true)
   }
 
+  /** Remove a task's due date (used when it is dragged onto the Unscheduled list). */
+  const clearDueDate = async (path: string) => {
+    const node = useNodeStore.getState().nodes.get(path)
+    const task = node?.metadata?.task
+    if (!node || !task?.dueDate) return
+    const updated = { ...task }
+    delete updated.dueDate
+    await useNodeStore.getState().updateNode(path, { metadata: { task: updated } })
+  }
+
+  const isOverUnscheduled = (x: number, y: number) => {
+    const rect = document.getElementById('vw-unscheduled')?.getBoundingClientRect()
+    return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+  }
+
   const handleRequestDelete = (node: VerbweaverNode) => {
     const name = node.metadata?.title || node.name
     setConfirmState({ open: true, nodePath: node.path, nodeName: name })
@@ -1030,6 +1045,13 @@ function TasksView() {
                     }
                   }
                 }}
+                eventDragStop={async (info) => {
+                  // Dragged out of the calendar onto the Unscheduled list: remove the due date
+                  const { clientX, clientY } = info.jsEvent as MouseEvent
+                  if (isOverUnscheduled(clientX, clientY)) {
+                    await clearDueDate(info.event.id)
+                  }
+                }}
                 eventReceive={async (info) => {
                   // External drop from Unscheduled list
                   const nodePath = info.event.id
@@ -1075,14 +1097,9 @@ function TasksView() {
                   {/* Overdue */}
                   <div className="border border-border rounded p-2 flex flex-col overflow-hidden">
                     <h3 className="text-sm font-medium mb-2">Overdue Tasks</h3>
-                    <div className="flex-1 overflow-auto space-y-2" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>{
-                      const path = e.dataTransfer.getData('text/task-path');
-                      if (path) {
-                        // Clear due date when dropped into overdue panel? Keep as is; do nothing
-                      }
-                    }}>
+                    <div className="flex-1 overflow-auto space-y-2">
                       {overdueTasks.map(t => (
-                        <div key={t.path} className={clsx("p-2 rounded border border-border flex items-center justify-between", isTaskCompleted(t) && "opacity-60") }>
+                        <div key={t.path} className={clsx("p-2 rounded border border-border flex items-center justify-between", isTaskCompleted(t) && "opacity-60") } draggable onDragStart={(e)=>{ e.dataTransfer.setData('text/task-path', t.path) }}>
                           <label className="inline-flex items-center gap-2 text-sm">
                             <input
                               type="checkbox"
@@ -1121,7 +1138,7 @@ function TasksView() {
                         </div>
                       ))}
                     </div>
-                    <div className="mt-2 text-xs text-muted-foreground">Drag from Unscheduled to add to selected day. Drag a task out to Unscheduled to remove date.</div>
+                    <div className="mt-2 text-xs text-muted-foreground">Drag a task here to schedule it for this day. Drag a task onto Unscheduled to remove its due date.</div>
                   </div>
                 </div>
               </div>
@@ -1174,7 +1191,18 @@ function TasksView() {
               </div>
             )}
             {showUnscheduled && (
-              <div className="w-80 border-l border-border p-3 overflow-y-auto" id="vw-unscheduled">
+              <div
+                className="w-80 border-l border-border p-3 overflow-y-auto"
+                id="vw-unscheduled"
+                onDragOver={(e)=>{ if (e.dataTransfer.types.includes('text/task-path')) e.preventDefault() }}
+                onDrop={async (e)=>{
+                  const path = e.dataTransfer.getData('text/task-path')
+                  if (path) {
+                    e.preventDefault()
+                    await clearDueDate(path)
+                  }
+                }}
+              >
                 <h3 className="text-sm font-medium mb-2">Unscheduled</h3>
                 <div className="space-y-2">
                   {Array.from(nodes.values()).filter(n => !n.isDirectory && n.hasTask && !n.metadata?.task?.dueDate && !n.path.startsWith('uploads/nodes/'))

@@ -3,7 +3,7 @@ import { X, Send, Paperclip, Link, User, Calendar, Tag, MessageSquare, Edit3, Do
 import { useNavigate } from 'react-router-dom'
 import { useNodeStore } from '../../store/nodeStore'
 import { useTabStore } from '../../store/tabStore'
-import { TaskState } from '@verbweaver/shared'
+import { TaskState, TaskPriority } from '@verbweaver/shared'
 import { FileStorage, StoredFile } from '../../utils/fileStorage'
 import { getLinkedNodes } from '../../utils/nodeLinks'
 import { uploadFilesForNode } from '../../utils/nodeAttachments'
@@ -76,7 +76,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
   const [isEditing, setIsEditing] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
+  const [priority, setPriority] = useState<TaskPriority>('medium')
   const [status, setStatus] = useState('todo')
   const [assignee, setAssignee] = useState('')
   const [dueDate, setDueDate] = useState('')
@@ -126,7 +126,9 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
     setDueDate(task.dueDate || n.metadata.dueDate || '')
     // Support new fields with legacy fallback
     setStartDate(task.startDate || n.metadata.startDate || '')
-    setLevelOfEffort(task.levelOfEffort || n.metadata.levelOfEffort || '')
+    // Older tasks may hold a number (or NaN) here; keep it as text so Save can't crash
+    const loe: unknown = task.levelOfEffort ?? n.metadata.levelOfEffort
+    setLevelOfEffort(loe == null || (typeof loe === 'number' && Number.isNaN(loe)) ? '' : String(loe))
     setTags(n.metadata.tags || [])
     setNewTag('')
     setFiles(loadTaskFiles(n))
@@ -442,7 +444,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
                 {isEditing ? (
                   <select
                     value={priority}
-                    onChange={(e) => setPriority(e.target.value as any)}
+                    onChange={(e) => setPriority(e.target.value as TaskPriority)}
                     className="w-full p-2 border border-input rounded-md bg-background"
                   >
                     <option value="low">Low</option>

@@ -35,15 +35,18 @@ export interface MarkdownMetadata {
   [key: string]: any; // Allow custom metadata
 }
 
+// Task priority, lowest to highest
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+
 // Task metadata
 export interface TaskMetadata {
   status: TaskState;
   assignee?: string;
-  priority?: 'low' | 'medium' | 'high';
+  priority?: TaskPriority;
   dueDate?: string;
   completedDate?: string;
   startDate?: string;
-  levelOfEffort?: number;
+  levelOfEffort?: string; // free text, up to 100 characters (e.g. "Small", "3 points")
   estimatedHours?: number;
   actualHours?: number;
   comments?: Comment[];

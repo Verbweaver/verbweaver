@@ -100,14 +100,10 @@ export const projectsApi = {
     }
   },
 
-  // Update tasks settings (also mirror to legacy for one release)
+  // Update tasks settings. Send only the keys that changed (null clears one); the server
+  // merges them into the saved settings and mirrors them to the legacy 'threads' key.
   updateTasksSettings: async (projectId: string, tasksSettings: Record<string, any>): Promise<void> => {
-    try {
-      await apiClient.put(`/projects/${projectId}/settings/tasks`, tasksSettings)
-    } finally {
-      // Best-effort legacy mirror
-      try { await apiClient.put(`/projects/${projectId}/settings/threads`, tasksSettings) } catch {}
-    }
+    await apiClient.put(`/projects/${projectId}/settings/tasks`, tasksSettings)
   },
 
   // Re-seed templates (README, node, compiler) into an existing project
