@@ -49,6 +49,7 @@ The Calendar shows tasks on their due dates. Switch between **Month** and **Week
 - **Reschedule a task:** drag it to another day.
 - **Create a task due on a day:** click that empty day.
 - **Schedule an undated task:** click **Show Unscheduled**, then drag the task onto a day.
+- **Remove a task's due date:** click **Show Unscheduled**, then drag the task onto the **Unscheduled** list.
 
 ## To-Do
 
@@ -59,7 +60,9 @@ The To-Do view is a daily checklist. Pick a day from the strip at the top to see
 - **Mark a task done:** tick its checkbox. It moves to your Completed Column.
 - **Reopen a finished task:** untick it and choose which status to move it back to.
 - **See finished tasks:** turn on **View Completed**.
-- **Give an undated task today's date:** click **Show Unscheduled**, then drag the task into the list.
+- **Give an undated task today's date:** click **Show Unscheduled**, then drag the task into **Today's Tasks**.
+- **Reschedule an overdue task:** drag it from **Overdue Tasks** into **Today's Tasks**.
+- **Remove a task's due date:** click **Show Unscheduled**, then drag the task onto the **Unscheduled** list.
 
 ## Charts
 

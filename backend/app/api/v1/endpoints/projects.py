@@ -24,6 +24,16 @@ from app.models import User
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+def merge_tasks_settings(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge a (possibly partial) tasks-settings update into the saved settings.
+
+    Keys in ``incoming`` replace saved values; keys it omits are kept, so saving one setting
+    never resets another. A key sent as ``None`` is removed (back to its default).
+    """
+    merged = {**(existing or {}), **(incoming or {})}
+    return {key: value for key, value in merged.items() if value is not None}
+
 # get_git_service factory is removed
 
 @router.get("/", response_model=List[ProjectResponse])
@@ -507,7 +517,7 @@ async def update_tasks_settings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update tasks-specific settings (Kanban columns). Also mirror to legacy 'threads' key."""
+    """Update tasks settings. Partial updates are merged; also mirror to legacy 'threads' key."""
     # Get project to verify access
     result = await db.execute(
         select(Project)
@@ -541,9 +551,11 @@ async def update_tasks_settings(
         else:
             settings = {}
 
-        # Update tasks settings and mirror to legacy
-        settings['tasks'] = tasks_settings
-        settings['threads'] = tasks_settings
+        # Merge into the saved tasks settings (same legacy fallback as the GET) and mirror
+        existing = settings.get('tasks') or settings.get('threads') or {}
+        merged = merge_tasks_settings(existing, tasks_settings)
+        settings['tasks'] = merged
+        settings['threads'] = merged
 
         # Write back to file
         with open(settings_file, 'w', encoding='utf-8') as f:

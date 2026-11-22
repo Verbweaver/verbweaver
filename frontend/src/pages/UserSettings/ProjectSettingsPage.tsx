@@ -104,18 +104,23 @@ export default function ProjectSettingsPage() {
     }
   };
 
+  // Send only the settings that changed. The server merges them into the saved settings,
+  // so other settings are kept. Send null to clear a setting.
+  const saveTasksSettings = async (patch: Record<string, unknown>) => {
+    if (!currentProject) return;
+    await projectsApi.updateTasksSettings(currentProject.id, patch);
+  };
+
   const persistTasksSettings = async (cols: KanbanColumn[], defId: string, compId: string | null) => {
     if (!currentProject) return;
     try {
       setTaskColumns(cols);
       setDefaultColumnId(defId);
       setCompletedColumnId(compId);
-      await projectsApi.updateTasksSettings(currentProject.id, {
+      await saveTasksSettings({
         columns: cols,
         defaultColumnId: defId,
         completedColumnId: compId,
-        defaultTemplatePath: defaultTemplatePath || undefined,
-        autoCommitOnTaskUpdate: autoCommitOnTaskUpdate,
       });
     } catch (e) {
       console.error('Failed to save tasks settings', e);
@@ -242,19 +247,11 @@ export default function ProjectSettingsPage() {
               onChange={async (e) => {
                 const next = e.target.checked;
                 setAutoCommitOnTaskUpdate(next);
-                // Persist immediately alongside existing tasks settings
-                if (currentProject) {
-                  try {
-                    await projectsApi.updateTasksSettings(currentProject.id, {
-                      columns: taskColumns,
-                      defaultColumnId,
-                      completedColumnId,
-                      defaultTemplatePath: defaultTemplatePath || undefined,
-                      autoCommitOnTaskUpdate: next,
-                    })
-                  } catch (err) {
-                    console.error('Failed to save auto-commit setting', err)
-                  }
+                // Persist immediately; the server keeps the other tasks settings
+                try {
+                  await saveTasksSettings({ autoCommitOnTaskUpdate: next })
+                } catch (err) {
+                  console.error('Failed to save auto-commit setting', err)
                 }
               }}
             />
@@ -275,17 +272,11 @@ export default function ProjectSettingsPage() {
                 const val = e.target.value
                 setDefaultTemplatePath(val)
                 // Persist immediately
-                if (currentProject) {
-                  try {
-                    await projectsApi.updateTasksSettings(currentProject.id, {
-                      columns: taskColumns,
-                      defaultColumnId,
-                      completedColumnId,
-                      defaultTemplatePath: val || undefined,
-                    })
-                  } catch (err) {
-                    console.error('Failed to save default template', err)
-                  }
+                try {
+                  // null clears the setting; omitting it would keep the old template
+                  await saveTasksSettings({ defaultTemplatePath: val || null })
+                } catch (err) {
+                  console.error('Failed to save default template', err)
                 }
               }}
             >

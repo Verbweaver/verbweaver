@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useNodeStore } from '../../store/nodeStore'
-import { TaskState, MarkdownMetadata } from '@verbweaver/shared'
+import { TaskState, TaskPriority, MarkdownMetadata } from '@verbweaver/shared'
 import toast from 'react-hot-toast'
 import { useProjectStore } from '../../store/projectStore'
 import { templatesApi, Template } from '../../api/templates'
@@ -23,7 +23,7 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
   const { loadNodes } = useNodeStore()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
+  const [priority, setPriority] = useState<TaskPriority>('medium')
   const [dueDate, setDueDate] = useState('')
   const [startDate, setStartDate] = useState('')
   const [assignee, setAssignee] = useState('')
@@ -129,12 +129,13 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
         tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
         task: {
           status: (selectedStatus || defaultStatus) as TaskState,
-          priority: priority as 'low' | 'medium' | 'high',
+          priority,
           assignee: assignee || undefined,
           // Store date-only string to match the rest of the app and avoid timezone issues
           dueDate: dueDate ? dueDate : undefined,
           startDate: startDate ? startDate : undefined,
-          levelOfEffort: levelOfEffort ? Number(levelOfEffort) : undefined,
+          // Free text, saved as typed (same as the task details window)
+          levelOfEffort: levelOfEffort.trim() ? levelOfEffort.trim().slice(0, 100) : undefined,
           completedDate: undefined
         }
       }
@@ -253,12 +254,13 @@ function CreateTaskModal({ projectId, defaultStatus, onClose, defaultDueDate }: 
               <label className="block text-sm font-medium mb-1">Priority</label>
               <select
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as any)}
+                onChange={(e) => setPriority(e.target.value as TaskPriority)}
                 className="w-full px-3 py-2 border border-input rounded-md bg-background"
               >
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
+                <option value="urgent">Urgent</option>
               </select>
             </div>
           </div>

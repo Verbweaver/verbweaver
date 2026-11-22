@@ -1,6 +1,6 @@
 # Desktop app tests (Playwright)
 
-End-to-end tests that drive the Verbweaver desktop app with [Playwright](https://playwright.dev/docs/api/class-electron). They cover the Compiler page (`compiler.spec.mjs`): every export format, the variable forms (text, checkboxes, menus, Import CSV, tables, per-node values), the options, default templates, error messages, and Save/Load Configuration. `graph.spec.mjs` covers the Graph view: saved folder positions, sub-view switching, shortcuts, right-click menus, delete confirmations, and the Group layout.
+End-to-end tests that drive the Verbweaver desktop app with [Playwright](https://playwright.dev/docs/api/class-electron). They cover the Compiler page (`compiler.spec.mjs`): every export format, the variable forms (text, checkboxes, menus, Import CSV, tables, per-node values), the options, default templates, error messages, and Save/Load Configuration. `graph.spec.mjs` covers the Graph view: saved folder positions, sub-view switching, shortcuts, right-click menus, delete confirmations, and the Group layout. `tasks.spec.mjs` covers the Tasks view: Create Task fields, editing older tasks, dragging tasks onto Unscheduled (To-Do and Calendar), and task settings that must not reset each other.
 
 ```bash
 npm run test:e2e                          # from the repo root
