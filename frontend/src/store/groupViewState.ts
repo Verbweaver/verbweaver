@@ -1,12 +1,25 @@
 import { create } from 'zustand'
-import type { NodeFilterState } from '../components/NodeFiltersDialog'
+import { DEFAULT_FILTERS, type NodeFilterState } from '../components/NodeFiltersDialog'
 
 export type GroupDefinition = {
   id: string
   name: string
   enabled: boolean
   color?: string
-  filters: NodeFilterState
+  // A page belongs to the group if it matches any of these filters (#68)
+  filters: NodeFilterState[]
+}
+
+export const MAX_FILTERS_PER_GROUP = 20
+
+// Older saves and exports hold a single filter object; newer ones hold a list (#68)
+export const normalizeFilters = (raw: unknown): NodeFilterState[] => {
+  const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : []
+  const filters = list
+    .filter((f): f is Partial<NodeFilterState> => !!f && typeof f === 'object')
+    .slice(0, MAX_FILTERS_PER_GROUP)
+    .map(f => ({ ...DEFAULT_FILTERS, ...f }))
+  return filters.length > 0 ? filters : [{ ...DEFAULT_FILTERS }]
 }
 
 export type GroupViewOptions = {
@@ -77,7 +90,7 @@ export const useGroupViewStore = create<GroupViewStore>((set, get) => ({
       const parsed = JSON.parse(raw) as GroupViewPersisted
       if (!parsed || parsed.version !== 1) return
       set({
-        groups: Array.isArray(parsed.groups) ? parsed.groups : [],
+        groups: Array.isArray(parsed.groups) ? parsed.groups.map(g => ({ ...g, filters: normalizeFilters(g?.filters) })) : [],
         options: {
           nestGroups: !!parsed.options?.nestGroups,
           showNodeCards: !!parsed.options?.showNodeCards,
@@ -120,7 +133,7 @@ export const useGroupViewStore = create<GroupViewStore>((set, get) => ({
       name: String(g?.name || ''),
       enabled: !!g?.enabled,
       color: g?.color ? String(g.color) : undefined,
-      filters: (g && g.filters ? g.filters : ({} as any)) as NodeFilterState,
+      filters: normalizeFilters(g?.filters),
     })) : []
     const options = {
       nestGroups: !!cfg.options?.nestGroups,

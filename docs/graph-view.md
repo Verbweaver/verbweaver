@@ -102,6 +102,8 @@ The Group view sorts your pages into named collections and shows them as boxes, 
 2. Click the funnel icon to choose which pages belong in it, for example everything tagged "villain".
 3. Click the pencil icon to give it a name.
 
+To include pages that don't have anything in common, click the **+** next to the funnel to add another filter. A page joins the group if it matches any of the group's filters. For example, one filter for the name "Alice" and one for the name "Bob" puts both of them in the group. Use the **x** next to a filter to remove it.
+
 Use the checkbox next to a group to show or hide it. The bin icon deletes the group after you confirm. Your pages are not affected.
 
 ### Reading the boxes
