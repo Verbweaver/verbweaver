@@ -8,7 +8,7 @@ Shows who you're signed in as.
 
 ![Settings, Profile: your details and, in the desktop app, Data Locations](images/settings-profile.png)
 
-In the desktop app, **Data Locations** lets you choose where Verbweaver keeps its information and your project folders. Click **Save**, then **restart the app** for the change to take effect. Most people never need to change these.
+In the desktop app, **Data Locations** lets you choose where Verbweaver keeps its information and your project folders. Leave a box empty to use the default shown in it. After you click **Save**, a message asks you to restart Verbweaver. Click **Restart now** to use the new locations straight away. Most people never need to change these.
 
 ## Appearance
 
@@ -20,7 +20,7 @@ To make your own colour scheme:
 
 1. Edit the colour values in the list. The swatch next to each one shows the colour.
 2. Click **Save as Custom**.
-3. Use **Export Theme** to save it to a file, and **Import Theme** to load one, for example a theme shared by a colleague.
+3. Use **Export Theme** to save the current theme's colours to a file, and **Import Theme** to load one, for example a theme shared by a colleague. Export works for any theme, so you can also start from Dark or Light and share your changes.
 
 ## Security
 

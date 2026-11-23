@@ -335,6 +335,20 @@ async function findAvailablePort(startPort: number = 8000): Promise<number> {
   return port;
 }
 
+type DataLocations = { databaseUrl: string; gitProjectsRoot: string };
+
+// Data Locations the running backend was started with (null until it starts)
+let activeDataLocations: DataLocations | null = null;
+
+// Database URL and Git projects root used when Settings -> Profile -> Data Locations are left empty
+function getDataLocationDefaults(): DataLocations {
+  const userDataDir = app.getPath('userData');
+  return {
+    databaseUrl: process.env.DATABASE_URL || `sqlite+aiosqlite:///${join(userDataDir, 'verbweaver.db')}`,
+    gitProjectsRoot: process.env.GIT_PROJECTS_ROOT || join(userDataDir, 'git-repos'),
+  };
+}
+
 async function startBackend(): Promise<{ port: number; pid: number }> {
   if (backendProcess) {
     console.log('Backend already running');
@@ -370,11 +384,11 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     // Resolve configurable storage locations
     const userDataDir = app.getPath('userData');
     const preferences = (store.get('preferences', {}) as any) || {};
-    const defaultDbPath = join(userDataDir, 'verbweaver.db');
-    const defaultGitRoot = join(userDataDir, 'git-repos');
+    const dataDefaults = getDataLocationDefaults();
     const defaultGlobalTemplates = join(userDataDir, 'templates');
-    const dbUrl = (preferences.databaseUrl as string) || process.env.DATABASE_URL || `sqlite+aiosqlite:///${defaultDbPath}`;
-    const gitRoot = (preferences.gitProjectsRoot as string) || process.env.GIT_PROJECTS_ROOT || defaultGitRoot;
+    const dbUrl = (preferences.databaseUrl as string) || dataDefaults.databaseUrl;
+    const gitRoot = (preferences.gitProjectsRoot as string) || dataDefaults.gitProjectsRoot;
+    activeDataLocations = { databaseUrl: dbUrl, gitProjectsRoot: gitRoot };
     const globalTemplatesDir = (store.get('globalTemplatesDir') as string) || process.env.GLOBAL_TEMPLATES_DIR || defaultGlobalTemplates;
 
     // Sanitize environment for backend: Electron/Node often set DEBUG=electron*, which breaks Pydantic bool parsing
@@ -2967,6 +2981,17 @@ function setupIpcHandlers() {
 
   ipc.handle('preferences:set', async (_, prefs: any) => {
     store.set('preferences', prefs);
+  });
+
+  // Data Locations are only read when the backend starts, so Settings offers a restart after changing them
+  ipc.handle('preferences:dataLocations', async () => ({
+    defaults: getDataLocationDefaults(),
+    active: activeDataLocations,
+  }));
+
+  ipc.handle('app:relaunch', async () => {
+    app.relaunch();
+    app.quit();
   });
 
   // Backend operations

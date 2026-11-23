@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useThemeStore, Theme } from '../../store/themeStore'; // Adjusted path
 
 const AppearanceSettingsPage: React.FC = () => {
@@ -65,21 +65,29 @@ const AppearanceSettingsPage: React.FC = () => {
     }
   }, [theme])
 
+  // The values shown in the inputs: the active theme's colours with any unsaved edits on top
+  const effectiveVars: Record<string, string> = { ...themeVars, ...customVars }
+
+  const [importStatus, setImportStatus] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null)
+
   const onEditVar = (key: string, val: string) => {
     setCustomVars(prev => ({ ...prev, [key]: val }))
   }
 
   const applyCustom = () => {
+    // Persist every colour, not only the edited ones: the Custom theme has no CSS of its own,
+    // so anything missing would fall back to the Light colours.
     // Persist first, then switch theme so App effect applies exactly those values
-    const next = { ...customVars }
+    const next = { ...effectiveVars }
     useThemeStore.getState().setCustomVars(next)
-    setTheme('custom' as Theme as any)
+    setTheme('custom')
   }
 
   const exportTheme = () => {
+    // Every colour of the current theme, including unsaved edits, so the file can restore it
     const data = {
-      name: 'custom',
-      variables: { ...customVars },
+      name: theme,
+      variables: { ...effectiveVars },
     }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -99,23 +107,32 @@ const AppearanceSettingsPage: React.FC = () => {
     input.onchange = async () => {
       const file = input.files && input.files[0]
       if (!file) return
+      setImportStatus(null)
+      let parsed: { variables?: unknown } | null
       try {
-        const text = await file.text()
-        const parsed = JSON.parse(text || '{}')
-        const vars = (parsed && parsed.variables && typeof parsed.variables === 'object') ? parsed.variables : {}
-        // Basic sanitize: keep only known keys
-        const allowed = new Set(Object.keys(readVars()))
-        const next: Record<string,string> = {}
-        Object.entries(vars).forEach(([k,v]) => {
-          if (allowed.has(k) && typeof v === 'string') next[k] = v
-        })
-        setCustomVars(next)
-        // Persist and apply as custom
-        useThemeStore.getState().setCustomVars(next)
-        setTheme('custom' as Theme as any)
-      } catch (e) {
-        // noop: invalid file
+        parsed = JSON.parse(await file.text())
+      } catch {
+        setImportStatus({ kind: 'error', message: `"${file.name}" isn't a theme file. The theme wasn't changed.` })
+        return
       }
+      const vars = (parsed && parsed.variables && typeof parsed.variables === 'object') ? parsed.variables as Record<string, unknown> : {}
+      // Basic sanitize: keep only known keys
+      const allowed = new Set(Object.keys(readVars()))
+      const imported: Record<string,string> = {}
+      Object.entries(vars).forEach(([k,v]) => {
+        if (allowed.has(k) && typeof v === 'string' && v.trim()) imported[k] = v.trim()
+      })
+      if (Object.keys(imported).length === 0) {
+        setImportStatus({ kind: 'error', message: `"${file.name}" has no theme colours. The theme wasn't changed.` })
+        return
+      }
+      // Fill any colours the file leaves out from the current theme, so Custom is complete
+      const next = { ...effectiveVars, ...imported }
+      setCustomVars(next)
+      // Persist and apply as custom
+      useThemeStore.getState().setCustomVars(next)
+      setTheme('custom')
+      setImportStatus({ kind: 'ok', message: 'Theme imported.' })
     }
     input.click()
   }
@@ -148,9 +165,10 @@ const AppearanceSettingsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {Object.entries(themeVars).map(([k, v]) => (
                 <div key={k} className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded border border-border" style={{ backgroundColor: k.toLowerCase().includes('foreground') ? `hsl(${themeVars[k.replace('Foreground','') as keyof typeof themeVars] || v})` : `hsl(${v})` }} />
-                  <label className="w-44 text-sm text-muted-foreground capitalize">{k.replace(/([A-Z])/g,' $1')}</label>
+                  <div className="w-5 h-5 rounded border border-border" data-testid={`swatch-${k}`} style={{ backgroundColor: `hsl(${effectiveVars[k]})` }} />
+                  <label htmlFor={`theme-var-${k}`} className="w-44 text-sm text-muted-foreground capitalize">{k.replace(/([A-Z])/g,' $1')}</label>
                   <input
+                    id={`theme-var-${k}`}
                     className="flex-1 px-2 py-1 text-sm rounded border border-input bg-background"
                     placeholder="e.g. 217 91% 60%"
                     value={customVars[k] ?? v}
@@ -163,8 +181,14 @@ const AppearanceSettingsPage: React.FC = () => {
               <button onClick={applyCustom} className="px-3 py-1.5 rounded bg-primary text-primary-foreground">Save as Custom</button>
               <button onClick={exportTheme} className="px-3 py-1.5 rounded border border-border">Export Theme</button>
               <button onClick={importTheme} className="px-3 py-1.5 rounded border border-border">Import Theme</button>
-              <span className="text-xs text-muted-foreground">Exports/Imports JSON with HSL triplets for the Custom theme.</span>
+              <span className="text-xs text-muted-foreground">Export saves every colour of the current theme as JSON (HSL triplets). Import loads one as the Custom theme.</span>
             </div>
+            {importStatus && (
+              <p role={importStatus.kind === 'error' ? 'alert' : 'status'}
+                 className={`mt-2 text-sm ${importStatus.kind === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+                {importStatus.message}
+              </p>
+            )}
           </div>
         </div>
       </div>
