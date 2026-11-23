@@ -97,6 +97,25 @@
   height: 8px;
 }
 
+/* React Flow 12 draws its zoom controls, minimap and credit link in fixed light colours, with
+   control icons inheriting our text colour, so they went blank in dark themes (#149). Take the
+   colours from the app theme instead so every theme (including custom ones) works. */
+.react-flow {
+  --xy-controls-button-background-color: hsl(var(--card));
+  --xy-controls-button-background-color-hover: hsl(var(--accent));
+  --xy-controls-button-color: hsl(var(--card-foreground));
+  --xy-controls-button-color-hover: hsl(var(--accent-foreground));
+  --xy-controls-button-border-color: hsl(var(--border));
+  --xy-controls-box-shadow: 0 0 0 1px hsl(var(--border));
+  --xy-minimap-background-color: hsl(var(--card));
+  --xy-minimap-mask-background-color: hsl(var(--muted) / 0.6);
+  --xy-attribution-background-color: hsl(var(--background) / 0.6);
+}
+
+.react-flow__attribution a {
+  color: hsl(var(--muted-foreground));
+}
+
 /* Animations */
 @keyframes slideIn {
   from {
