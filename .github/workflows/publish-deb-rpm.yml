@@ -1,11 +1,9 @@
-name: Build and Publish Server Packages (deb/rpm)
+name: Build Server Packages (deb/rpm)
 
+# Reusable workflow. release-desktop.yml calls it on every run and, for vX.Y.Z tags, adds the
+# packages to its draft release. This workflow never creates or publishes a release itself (#73).
 on:
-  push:
-    branches:
-      - release-testing
-    tags:
-      - 'v*.*.*'
+  workflow_call:
 
 jobs:
   build-packages:
@@ -110,13 +108,12 @@ jobs:
           nfpm pkg --packager deb --target verbweaver-backend_${GITHUB_REF_NAME}_amd64.deb --config nfpm.yaml
           nfpm pkg --packager rpm --target verbweaver-backend_${GITHUB_REF_NAME}_amd64.rpm --config nfpm.yaml
 
-      - name: Upload release assets
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - name: Upload server packages
+        uses: actions/upload-artifact@v6
         with:
-          files: |
+          name: server-packages
+          path: |
             *.deb
             *.rpm
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+          if-no-files-found: error
+          retention-days: 7

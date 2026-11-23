@@ -7,13 +7,21 @@ on:
 jobs:
   winget:
     runs-on: windows-latest
+    env:
+      # Classic PAT with public_repo scope. The default GITHUB_TOKEN can't open PRs at
+      # microsoft/winget-pkgs. See dev-docs/RELEASE_CHECKLIST.md (#73).
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
     steps:
+      - name: Skip when WINGET_TOKEN is not set
+        if: env.WINGET_TOKEN == ''
+        shell: bash
+        run: echo "::notice::WINGET_TOKEN secret is not set; skipping the winget submission."
+
+      # The version defaults to the release tag without its 'v' prefix.
       - name: Winget Create
+        if: env.WINGET_TOKEN != ''
         uses: vedantmgoyal2009/winget-releaser@v2
         with:
           identifier: Verbweaver.Verbweaver
-          version: ${{ github.event.release.tag_name }}
-          installer_url: https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/Verbweaver-${{ github.event.release.tag_name }}-x64.exe
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-
+          installers-regex: '^Verbweaver-Setup-.*\.exe$'
+          token: ${{ env.WINGET_TOKEN }}

@@ -22,17 +22,29 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
           API_URL="https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG}"
-          DMG_URL=$(curl -sSL -H "authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$API_URL" | jq -r '.assets[] | select(.name | endswith(".dmg")) | .browser_download_url' | head -n1)
-          if [ -z "$DMG_URL" ]; then echo "No DMG asset found"; exit 1; fi
-          SHA=$(curl -L "$DMG_URL" | shasum -a 256 | awk '{print $1}')
+          ASSETS=$(curl -fsSL -H "authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$API_URL")
+          # Releases carry one DMG per arch (#73). The cask lists both.
+          dmg_url() {
+            local url
+            url=$(jq -r --arg name "Verbweaver-${TAG}-$1.dmg" '.assets[] | select(.name == $name) | .browser_download_url' <<<"$ASSETS")
+            if [ -z "$url" ]; then echo "::error::No Verbweaver-${TAG}-$1.dmg asset on release ${TAG}" >&2; exit 1; fi
+            echo "$url"
+          }
+          ARM_URL=$(dmg_url arm64)
+          X64_URL=$(dmg_url x64)
+          ARM_SHA=$(curl -fsSL "$ARM_URL" | shasum -a 256 | awk '{print $1}')
+          X64_SHA=$(curl -fsSL "$X64_URL" | shasum -a 256 | awk '{print $1}')
           CASK_FILE="Casks/verbweaver.rb"
           mkdir -p Casks
           cat > "$CASK_FILE" <<EOF
           cask "verbweaver" do
-            version "${VERSION}"
-            sha256 "${SHA}"
+            arch arm: "arm64", intel: "x64"
 
-            url "${DMG_URL}"
+            version "${VERSION}"
+            sha256 arm:   "${ARM_SHA}",
+                   intel: "${X64_SHA}"
+
+            url "https://github.com/${{ github.repository }}/releases/download/v#{version}/Verbweaver-v#{version}-#{arch}.dmg"
             name "Verbweaver"
             desc "Nonlinear writing and task management"
             homepage "https://github.com/${{ github.repository }}"
@@ -40,6 +52,7 @@ jobs:
             app "Verbweaver.app"
           end
           EOF
+          cat "$CASK_FILE"
 
       - name: Commit and push
         run: |
