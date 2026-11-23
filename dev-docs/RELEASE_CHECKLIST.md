@@ -8,6 +8,8 @@ Steps to prepare, ship and verify a desktop release and the server packages.
 - [ ] GitHub permissions to create Releases and set Actions secrets
 - [ ] Homebrew tap repository (e.g. `yourorg/homebrew-verbweaver`)
 - [ ] winget identifier confirmed (`Verbweaver.Verbweaver`)
+- [ ] A fork of `microsoft/winget-pkgs` under the Verbweaver org (the winget workflow opens its PRs from it)
+- [ ] `Verbweaver.Verbweaver` already exists in winget-pkgs. The workflow only updates it, so submit the first version by hand (e.g. `komac new`)
 
 ## 1) GitHub Actions secrets
 Signing steps are skipped when a secret is missing, so an unsigned build still succeeds. Check the secrets before tagging.
@@ -24,6 +26,8 @@ Signing steps are skipped when a secret is missing, so an unsigned build still s
 - [ ] Homebrew tap (`publish-homebrew.yml`)
   - [ ] `HOMEBREW_TAP_REPO`
   - [ ] `HOMEBREW_TAP_TOKEN` (token with push access to the tap)
+- [ ] winget (`publish-winget.yml`)
+  - [ ] `WINGET_TOKEN` (classic token with `public_repo` scope; if it is missing, the winget job is skipped)
 - [ ] Docker Hub (`publish-docker.yml`; GHCR uses `GITHUB_TOKEN`)
   - [ ] `DOCKERHUB_ORG`
   - [ ] `DOCKERHUB_USERNAME`
@@ -36,10 +40,10 @@ Signing steps are skipped when a secret is missing, so an unsigned build still s
   - [ ] `publish: ["github"]`
   - [ ] `extraResources` includes `resources/backend`, `../docs` and `../assets/templates`
 - [ ] Expected release assets:
-  - [ ] Windows: `Verbweaver-Setup-X.Y.Z.exe` (the winget workflow still expects `Verbweaver-vX.Y.Z-x64.exe`, see #73)
+  - [ ] Windows: `Verbweaver-Setup-X.Y.Z.exe`
   - [ ] macOS: `Verbweaver-vX.Y.Z-arm64.dmg` and `-x64.dmg`, plus the matching `.zip` files
   - [ ] Linux: `.AppImage`, `.deb` and `.rpm`
-- [ ] Server packages: `verbweaver-backend` `.deb` and `.rpm` from `publish-deb-rpm.yml`
+- [ ] Server packages: `verbweaver-backend_vX.Y.Z_amd64.deb` and `.rpm`, built by `publish-deb-rpm.yml`
 
 ## 3) Backend bundling (desktop)
 - [ ] Local test: `cd backend && pyinstaller --onefile entry.py --name verbweaver-backend`
@@ -47,11 +51,11 @@ Signing steps are skipped when a secret is missing, so an unsigned build still s
 
 ## 4) Workflows
 - [ ] `build.yml` (CI) runs on PRs: shared and frontend build, backend `pytest`
-- [ ] `release-desktop.yml` builds the backend binary, packages Electron per OS and creates a draft release
-- [ ] `publish-homebrew.yml` fetches the DMG asset, computes its sha256 and commits `Casks/verbweaver.rb` to the tap
+- [ ] `release-desktop.yml` builds the backend binary, packages Electron per OS, builds the server packages (via `publish-deb-rpm.yml`) and creates a draft release with all of them
+- [ ] `publish-homebrew.yml` fetches the arm64 and x64 DMG assets, computes their sha256 and commits `Casks/verbweaver.rb` to the tap
 - [ ] `publish-winget.yml` opens or updates a PR to winget-pkgs
-- [ ] `publish-docker.yml` pushes backend images to Docker Hub and GHCR on `v*.*.*` tags
-- [ ] `publish-deb-rpm.yml` uploads the server `.deb` and `.rpm` to the release
+- [ ] `publish-docker.yml` pushes backend images to Docker Hub and GHCR when the release is published
+- [ ] `publish-deb-rpm.yml` builds the server `.deb` and `.rpm`. It never creates or uploads to a release; `release-desktop.yml` adds them to the draft
 
 ## 5) Signing and notarization
 - [ ] Windows: the installer is signed
@@ -100,8 +104,8 @@ Signing steps are skipped when a secret is missing, so an unsigned build still s
 - [ ] Create and push an annotated tag `vX.Y.Z`. Only `v*.*.*` tags run the release
       pipeline, and the `publish` job fails if the tag doesn't match `desktop/package.json`
 - [ ] Never create the release or upload assets by hand. The `publish` job in
-      `release-desktop.yml` creates a **draft** release with every installer and the update
-      metadata (section 6). Tags with a suffix (`vX.Y.Z-rc.1`) become prereleases
+      `release-desktop.yml` creates a **draft** release with every installer, the server `.deb`/`.rpm`
+      and the update metadata (section 6). Tags with a suffix (`vX.Y.Z-rc.1`) become prereleases
 - [ ] Review the draft's assets, then publish it. Publishing triggers the Homebrew, winget and Docker workflows
 - [ ] The Homebrew workflow pushed the updated cask
 - [ ] The winget workflow created or updated its PR

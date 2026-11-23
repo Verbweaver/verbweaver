@@ -254,11 +254,17 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Creates a DRAFT GitHub Release from the matrix builds. Review it, then publish it by hand.
-  # electron-updater needs latest.yml (Windows), latest-mac.yml and latest-linux.yml on the release (#17).
+  # Server (backend) .deb/.rpm packages. Built on every run; on tags `publish` adds them to the draft (#73).
+  server-packages:
+    name: Build server packages (deb/rpm)
+    uses: ./.github/workflows/publish-deb-rpm.yml
+
+  # Creates a DRAFT GitHub Release from the matrix builds and the server packages. Review it, then
+  # publish it by hand. electron-updater needs latest.yml (Windows), latest-mac.yml and
+  # latest-linux.yml on the release (#17).
   publish:
     name: Create draft release
-    needs: build-release
+    needs: [build-release, server-packages]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -302,6 +308,7 @@ jobs:
           set -euo pipefail
           mkdir release
           # Raw distributables only. Never upload Actions artifact zips (see #32).
+          # Includes the server verbweaver-backend_*.deb/.rpm from the server-packages artifact (#73).
           while IFS= read -r -d '' f; do
             name="$(basename "$f")"
             if [[ -e "release/$name" ]]; then echo "::error::Duplicate asset name $name"; exit 1; fi
