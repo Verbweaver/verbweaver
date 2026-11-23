@@ -49,6 +49,7 @@ To remove a link, right-click the line and choose **Unlink**. Lines from a folde
 - **Hide completed Tasks:** hides pages whose tasks are done.
 - **Display one-way links:** shows links that only point one way, as dashed arrows.
 - **Filters:** shows only the pages you want, for example those with a certain tag.
+- **Save Image:** saves the whole map as a PNG picture you can share.
 
 ### Shortcuts
 
@@ -119,6 +120,7 @@ Use the checkbox next to a group to show or hide it. The bin icon deletes the gr
 - **Show node cards:** shows full page cards instead of a simple list of titles.
 - **Max cards:** limits how many cards each box shows, which keeps large groups tidy.
 - **Export JSON / Import JSON:** saves your groups to a file, or loads them back.
+- **Save Image:** saves the groups as a PNG picture you can share.
 
 ### Working with pages
 
@@ -128,7 +130,7 @@ Use the checkbox next to a group to show or hide it. The bin icon deletes the gr
 
 ### Saving a picture
 
-Right-click empty space and choose **Save as PNG...**.
+Click **Save Image** in the Options panel, or right-click empty space and choose **Save as PNG...**.
 
 Your groups are remembered on this computer for this tab.
 

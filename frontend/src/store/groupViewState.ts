@@ -53,6 +53,10 @@ type GroupViewStore = {
   groups: GroupDefinition[]
   options: GroupViewOptions
   layout: GroupViewLayout
+  // Saves the Group canvas as a PNG; set by GroupView while it is mounted, so the Options tray
+  // outside it can offer a Save Image button (#148). Not persisted.
+  exportImage: (() => Promise<void>) | null
+  setExportImage: (fn: (() => Promise<void>) | null) => void
 
   setGroups: (groups: GroupDefinition[]) => void
   addGroup: (group: GroupDefinition) => void
@@ -72,6 +76,8 @@ export const useGroupViewStore = create<GroupViewStore>((set, get) => ({
   groups: [],
   options: { nestGroups: false, showNodeCards: false, maxCardsPerGroup: 40, showCapIndicator: true },
   layout: { boxes: {} },
+  exportImage: null,
+  setExportImage: (fn) => set({ exportImage: fn }),
 
   setGroups: (groups) => set({ groups }),
   addGroup: (group) => set((s) => ({ groups: [...s.groups, group] })),

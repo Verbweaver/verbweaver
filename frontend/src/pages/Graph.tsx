@@ -31,7 +31,7 @@ import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
 import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
-import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers, HelpCircle } from 'lucide-react'
+import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers, HelpCircle, ImageDown } from 'lucide-react'
 import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
 import * as htmlToImage from 'html-to-image'
@@ -1145,7 +1145,7 @@ function GraphView() {
   const exportMapAsPng = useCallback(async () => {
     // Track temporary UI changes so we can always restore them
     const toHide: HTMLElement[] = []
-    const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; borderColor?: string; fill?: string; stroke?: string } }> = []
+    const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; borderColor?: string; fill?: string; stroke?: string; fontSize?: string; fontFamily?: string; fontWeight?: string } }> = []
     try {
       const wrapper = reactFlowWrapperRef.current
       if (!wrapper) return
@@ -1174,11 +1174,16 @@ function GraphView() {
       rf.querySelectorAll('.react-flow__edge-text').forEach(el => {
         const h = el as HTMLElement
         const cs = getComputedStyle(h)
-        const prev = { color: h.style.color, fill: (h.style as any).fill }
+        const prev = { color: h.style.color, fill: (h.style as any).fill, fontSize: h.style.fontSize, fontFamily: h.style.fontFamily, fontWeight: h.style.fontWeight }
         const textFill = (cs as any).fill && (cs as any).fill !== 'none' ? (cs as any).fill : cs.color
         if (textFill) (h.style as any).fill = textFill
         // Also set color for HTML fallback
         h.style.color = textFill
+        // Keep the label's font: its size comes from a React Flow class the image doesn't carry, so
+        // the text grew past its background box in the saved picture (#148)
+        h.style.fontSize = cs.fontSize
+        h.style.fontFamily = cs.fontFamily
+        h.style.fontWeight = cs.fontWeight
         styled.push({ el: h, prev })
       })
 
@@ -1200,7 +1205,8 @@ function GraphView() {
       const bgColor = bgVar ? `hsl(${bgVar})` : undefined
       const dataUrl = await htmlToImage.toPng(rf, {
         backgroundColor: bgColor,
-        pixelRatio: window.devicePixelRatio || 1,
+        // At least 2x, like the Group view, so saved maps stay sharp on standard displays (#148)
+        pixelRatio: Math.max(2, window.devicePixelRatio || 1),
         filter: (el: Element) => {
           const cls = (el as HTMLElement).classList
           if (!cls) return true
@@ -1234,6 +1240,9 @@ function GraphView() {
           if ((s.prev as any).borderColor !== undefined) (s.el.style as any).borderColor = (s.prev as any).borderColor
           if ((s.prev as any).fill !== undefined) (s.el.style as any).fill = (s.prev as any).fill
           if ((s.prev as any).stroke !== undefined) (s.el.style as any).stroke = (s.prev as any).stroke
+          if (s.prev.fontSize !== undefined) s.el.style.fontSize = s.prev.fontSize
+          if (s.prev.fontFamily !== undefined) s.el.style.fontFamily = s.prev.fontFamily
+          if (s.prev.fontWeight !== undefined) s.el.style.fontWeight = s.prev.fontWeight
         })
       } catch {}
       setContextMenu(null)
@@ -2048,6 +2057,14 @@ function GraphView() {
                 >
                   <Filter className="w-4 h-4" />
                   <span>Filters</span>
+                </button>
+                <button
+                  className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent flex items-center gap-2"
+                  onClick={() => { void exportMapAsPng() }}
+                  title="Save the whole map as a PNG picture"
+                >
+                  <ImageDown className="w-4 h-4" />
+                  <span>Save Image</span>
                 </button>
                 {(() => {
                   const parts: string[] = []

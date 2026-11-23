@@ -47,6 +47,7 @@ function GroupViewInner() {
   const options = useGroupViewStore(s => s.options)
   const layout = useGroupViewStore(s => s.layout)
   const setBoxLayout = useGroupViewStore(s => s.setBoxLayout)
+  const setExportImage = useGroupViewStore(s => s.setExportImage)
   const { nodes: verbweaverNodes, loadNodes, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
   const { addEditorTab } = useTabStore()
   const flowWrapperRef = useRef<HTMLDivElement>(null)
@@ -575,6 +576,8 @@ function GroupViewInner() {
 
   const exportMapAsPng = useCallback(async () => {
     const toHide: HTMLElement[] = []
+    // Scrolling lists inside boxes: their scrollbars render as bright native bars in the image (#148)
+    const noScrollbar: Array<{ el: HTMLElement; prev: string }> = []
     const styled: Array<{ el: HTMLElement; prev: { color?: string; backgroundColor?: string; fill?: string; stroke?: string; strokeWidth?: string; attrStroke?: string | null; attrStrokeWidth?: string | null; attrFill?: string | null } }> = []
     const imageEvents: Array<{ src: string; ok: boolean; error?: any }> = []
     const originalImage = window.Image
@@ -649,6 +652,13 @@ function GroupViewInner() {
       wrapper?.querySelectorAll('.react-flow__attribution, .react-flow__controls, .vw-node-context-menu').forEach(el => {
         const h = el as HTMLElement
         if (h.style) { toHide.push(h); h.style.visibility = 'hidden' }
+      })
+      wrapper?.querySelectorAll('.react-flow__node-groupBox *').forEach(el => {
+        const h = el as HTMLElement
+        if (h.scrollHeight > h.clientHeight || h.scrollWidth > h.clientWidth) {
+          noScrollbar.push({ el: h, prev: h.style.overflow })
+          h.style.overflow = 'hidden'
+        }
       })
 
       // Scrub invalid XML chars from attribute values to avoid parser errors in toSvg
@@ -862,6 +872,7 @@ function GroupViewInner() {
       try { window.Image = originalImage } catch {}
       try { console.log('[Group export] image load events', imageEvents) } catch {}
       try { toHide.forEach(h => { h.style.visibility = '' }) } catch {}
+      try { noScrollbar.forEach(({ el, prev }) => { el.style.overflow = prev }) } catch { /* best effort */ }
       try { scrubbedAttrs.forEach(s => { s.el.setAttribute(s.name, s.prev) }) } catch {}
       try {
         styled.forEach(s => {
@@ -883,6 +894,12 @@ function GroupViewInner() {
       setContextMenu(null)
     }
   }, [isElectron, flowNodes.length, fitView, getViewport, setViewport])
+
+  // Offer this export to the Options tray's Save Image button while the Group view is open (#148)
+  useEffect(() => {
+    setExportImage(exportMapAsPng)
+    return () => setExportImage(null)
+  }, [exportMapAsPng, setExportImage])
 
   const parseUnderlyingId = (nodeId: string): string | null => {
     const marker = '::n::'
