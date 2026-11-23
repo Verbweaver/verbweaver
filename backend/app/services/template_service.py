@@ -73,6 +73,65 @@ end
 """
 
 
+# Compiler layout options (#143), mapped to Pandoc variables. Only these allow-listed
+# values are passed on, so nothing the user types reaches the Pandoc command line.
+# "default" (or a missing/unknown value) sends nothing, leaving the template's own
+# front-matter value, or Pandoc's default, in place.
+_LAYOUT_VARIABLES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
+    "pdf": {
+        "layoutPageSize": {
+            "a4": ["papersize=a4"],
+            "letter": ["papersize=letter"],
+            "a5": ["papersize=a5"],
+        },
+        "layoutFontSize": {
+            "small": ["fontsize=10pt"],
+            "medium": ["fontsize=11pt"],
+            "large": ["fontsize=12pt"],
+        },
+        "layoutMargins": {
+            "narrow": ["geometry:margin=1.5cm"],
+            "normal": ["geometry:margin=2.5cm"],
+            "wide": ["geometry:margin=3.5cm"],
+        },
+        "layoutLineSpacing": {
+            "single": ["linestretch=1"],
+            "1.5": ["linestretch=1.5"],
+            "double": ["linestretch=2"],
+        },
+    },
+    "html": {
+        "layoutFontSize": {
+            "small": ["fontsize=14px"],
+            "medium": ["fontsize=16px"],
+            "large": ["fontsize=19px"],
+        },
+        "layoutMargins": {
+            size: [f"margin-{side}={px}" for side in ("left", "right", "top", "bottom")]
+            for size, px in (("narrow", "20px"), ("normal", "50px"), ("wide", "90px"))
+        },
+        "layoutLineSpacing": {
+            "single": ["linestretch=1.2"],
+            "1.5": ["linestretch=1.5"],
+            "double": ["linestretch=2"],
+        },
+    },
+}
+
+
+def layout_variable_args(options: Optional[Dict[str, Any]], output_format: str) -> List[str]:
+    """Pandoc `-V` arguments for the Compiler's layout options, for formats that use them."""
+    table = _LAYOUT_VARIABLES.get(output_format)
+    if not options or not table:
+        return []
+    args: List[str] = []
+    for key, values in table.items():
+        chosen = str(options.get(key) or "").strip().lower()
+        for variable in values.get(chosen, []):
+            args.extend(["-V", variable])
+    return args
+
+
 def _write_temp_file(content: str, suffix: str) -> str:
     """Write content to a new temporary file and return its absolute path."""
     with tempfile.NamedTemporaryFile(mode='w', suffix=suffix,
@@ -992,6 +1051,9 @@ class TemplateService:
                 if options and (options.get('includeTOC') or options.get('includeToc') or options.get('includeToc') is True or options.get('includeToc') == 'true'):
                     cmd.append('--toc')
                 
+                # Page size, font size, margins and line spacing chosen in the Compiler
+                cmd.extend(layout_variable_args(options, output_format))
+
                 # Add format-specific options
                 if output_format == 'pdf':
                     # Wrap long code-block lines and inline code spans instead of

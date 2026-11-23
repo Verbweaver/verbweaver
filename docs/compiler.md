@@ -8,7 +8,8 @@ The Compiler (the **Export Document** page) turns pages from your project into o
 
 In **Select Files** on the left, tick the pages to include. Ticking a folder includes everything inside it.
 
-- **Select All** and **Clear All** help with large projects.
+- **Select All** and **Clear All** help with large projects. They include pages in closed folders too.
+- **Expand All** opens every folder, however deep.
 - **Filters** narrows the list, for example to pages with a certain tag.
 
 ## 2. Put them in order
@@ -16,7 +17,8 @@ In **Select Files** on the left, tick the pages to include. Ticking a folder inc
 **File Order** in the middle lists your chosen pages in the order they'll appear in the document.
 
 - Drag a page up or down to move it.
-- Use the **Sort** buttons to reorder quickly, for example alphabetically.
+- Use the **Sort** buttons to reorder quickly, for example alphabetically. **By Date Modified** puts the least recently changed page first, and **By File Size** puts the smallest first. These two work in the desktop app only.
+- To sort just some pages, tick them first. They're sorted among the places they already hold.
 - Click **X** on a page to leave it out.
 
 ## 3. Choose how it looks
@@ -27,6 +29,7 @@ On the right:
 - **Export Format:** pick Markdown, HTML, PDF, Word Document, OpenDocument, or EPUB.
 - **Template** (optional): pick a ready-made layout if your project has one for that format. Some templates ask you to fill in extra details, such as a subtitle or a version number.
 - **Options:** choose whether to include a table of contents, page details, and attached files such as images.
+- **Layout** (PDF and HTML): choose the page size (PDF only), font size, margins, and line spacing. **Template default** keeps whatever the template sets. Any other choice replaces the template's setting.
 
 ## 4. Export
 

@@ -24,6 +24,7 @@ declare global {
       writeFile: (filePath: string, content: string) => Promise<void>;
       writeFileBinary: (filePath: string, uint8Array: Uint8Array) => Promise<{ success: boolean }>;
       readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
+      statFiles?: (paths: string[]) => Promise<Array<{ path: string; size: number; mtimeMs: number } | null>>;
       createDirectory: (dirPath: string) => Promise<{ success: boolean }>;
       deleteFile: (filePath: string) => Promise<void>;
       downloadFile: (filePath: string, originalName: string) => Promise<{ success: boolean; data: Buffer; filename: string; mimeType: string }>;

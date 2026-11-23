@@ -3,6 +3,12 @@ title: $title$
 author: $author$
 date: $date$
 summary: $summary$
+# Page layout, used by PDF and HTML exports. The Compiler's Layout settings
+# override these; "Template default" keeps them.
+papersize: a4
+fontsize: 11pt
+geometry: margin=2cm
+linestretch: 1.15
 variables:
   summary:
     type: string

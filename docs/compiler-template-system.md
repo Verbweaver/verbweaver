@@ -753,6 +753,27 @@ For reports with a fixed structure. Document variables:
 
 Each page is a section, except pages whose **appendix** node variable is true (from `appendix: true` in their details block), which are meant to appear under "Appendices". Node variables **cvss_vector** and **cvss** are read from the page details for security findings.
 
+### Page layout
+
+Each default template sets its page layout in its front matter. PDF and HTML exports use these settings; the other formats ignore them.
+
+| Template | Page size | Font size | Margins | Line spacing |
+|---|---|---|---|---|
+| Simple | A4 | 11pt | 2.5 cm | 1.2 |
+| Academic | A4 | 12pt | 2.5 cm | 1.5 |
+| Technical Report | A4 | 11pt | 2 cm | 1.15 |
+
+To set the layout in your own template, add these lines to its front matter:
+
+```yaml
+papersize: a4          # a4, a5, letter, ... (PDF)
+fontsize: 11pt         # 10pt, 11pt or 12pt for PDF; any CSS size for HTML
+geometry: margin=2.5cm # page margins (PDF)
+linestretch: 1.2       # line spacing (PDF and HTML)
+```
+
+The **Layout** settings in the Compiler override these. Leave a setting on **Template default** to keep the template's value.
+
 ## Error Handling
 
 ### Pandoc Not Installed

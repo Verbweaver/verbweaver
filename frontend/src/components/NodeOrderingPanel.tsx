@@ -30,13 +30,14 @@ type SortStrategy =
   | 'random'
   | 'date-modified'
   | 'file-size'
-  | 'creation-date'
 
 interface SortOption {
   id: SortStrategy
   name: string
   icon: any
   description: string
+  // Needs file sizes/dates, which only the desktop app can read
+  needsFileStats?: boolean
 }
 
 const sortOptions: SortOption[] = [
@@ -68,13 +69,15 @@ const sortOptions: SortOption[] = [
     id: 'date-modified',
     name: 'By Date Modified',
     icon: Calendar,
-    description: 'Sort by last modified date'
+    description: 'Sort by when the file was last changed, oldest first',
+    needsFileStats: true
   },
   {
     id: 'file-size',
     name: 'By File Size',
     icon: Hash,
-    description: 'Sort by file size'
+    description: 'Sort by file size, smallest first',
+    needsFileStats: true
   }
 ]
 
@@ -92,6 +95,68 @@ function reconcileOrder(prevOrder: string[], selected: string[]): string[] {
 
 function sameOrder(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((p, i) => p === b[i])
+}
+
+type FileStat = { size: number; mtimeMs: number }
+
+const canReadFileStats = (): boolean =>
+  typeof window !== 'undefined' && typeof window.electronAPI?.statFiles === 'function'
+
+async function readFileStats(paths: string[]): Promise<Map<string, FileStat>> {
+  const out = new Map<string, FileStat>()
+  if (!canReadFileStats() || paths.length === 0) return out
+  const stats = await window.electronAPI!.statFiles!(paths)
+  stats.forEach((st, i) => {
+    if (st) out.set(paths[i], { size: st.size, mtimeMs: st.mtimeMs })
+  })
+  return out
+}
+
+// Fisher–Yates shuffle; sorting with a random comparator is biased
+function shuffle<T>(items: T[]): T[] {
+  const out = [...items]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
+// Ascending by a numeric key; files without one go last, ties broken by path
+function sortByKey(nodes: OrderedNode[], key: (path: string) => number | undefined): OrderedNode[] {
+  return [...nodes].sort((a, b) => {
+    const ka = key(a.path)
+    const kb = key(b.path)
+    if (ka === undefined && kb === undefined) return a.path.localeCompare(b.path)
+    if (ka === undefined) return 1
+    if (kb === undefined) return -1
+    return ka - kb || a.path.localeCompare(b.path)
+  })
+}
+
+async function sortNodesByStrategy(nodes: OrderedNode[], strategy: SortStrategy): Promise<OrderedNode[]> {
+  const sortedNodes = [...nodes]
+  switch (strategy) {
+    case 'sequential':
+      // Original file tree order, i.e. by path
+      return sortedNodes.sort((a, b) => a.path.localeCompare(b.path))
+    case 'alphabetical':
+      return sortedNodes.sort((a, b) => a.name.localeCompare(b.name))
+    case 'reverse-alphabetical':
+      return sortedNodes.sort((a, b) => b.name.localeCompare(a.name))
+    case 'random':
+      return shuffle(sortedNodes)
+    case 'date-modified': {
+      const stats = await readFileStats(nodes.map(n => n.path))
+      return sortByKey(sortedNodes, p => stats.get(p)?.mtimeMs)
+    }
+    case 'file-size': {
+      const stats = await readFileStats(nodes.map(n => n.path))
+      return sortByKey(sortedNodes, p => stats.get(p)?.size)
+    }
+    default:
+      return sortedNodes
+  }
 }
 
 function toOrderedNode(path: string, node: { path: string; name: string; metadata?: any } | undefined): OrderedNode {
@@ -214,67 +279,33 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
     setLastClickedIndex(null)
   }, [])
 
-  const sortAllNodes = useCallback((strategy: SortStrategy) => {
-    const sortedNodes = sortNodesByStrategy(orderedNodes, strategy)
-    setOrderedNodes(sortedNodes)
-    onOrderChange(sortedNodes.map(node => node.path))
-  }, [orderedNodes, onOrderChange])
+  const [sorting, setSorting] = useState(false)
 
-  const sortSelectedNodes = useCallback((strategy: SortStrategy) => {
-    if (!selectedNodeIndices || selectedNodeIndices.size === 0) {
-      // If no selection, sort all nodes
-      sortAllNodes(strategy)
-      return
+  const sortSelectedNodes = useCallback(async (strategy: SortStrategy) => {
+    if (sorting) return
+    setSorting(true)
+    try {
+      const indices = Array.from(selectedNodeIndices || [])
+        .filter(i => i >= 0 && i < orderedNodes.length)
+        .sort((a, b) => a - b)
+      let newOrderedNodes: OrderedNode[]
+      if (indices.length === 0) {
+        // No selection: sort all nodes
+        newOrderedNodes = await sortNodesByStrategy(orderedNodes, strategy)
+      } else {
+        // Sort the selected nodes among the positions they already occupy
+        const sortedSelected = await sortNodesByStrategy(indices.map(i => orderedNodes[i]), strategy)
+        newOrderedNodes = [...orderedNodes]
+        indices.forEach((pos, i) => { newOrderedNodes[pos] = sortedSelected[i] })
+      }
+      setOrderedNodes(newOrderedNodes)
+      onOrderChange(newOrderedNodes.map(node => node.path))
+    } catch (error) {
+      console.error('NodeOrderingPanel: sort failed:', error)
+    } finally {
+      setSorting(false)
     }
-
-    const selectedNodes = Array.from(selectedNodeIndices || []).map(index => orderedNodes[index])
-    const unselectedNodes = orderedNodes.filter((_, index) => !selectedNodeIndices?.has(index))
-    
-    // Sort the selected nodes
-    const sortedSelectedNodes = sortNodesByStrategy(selectedNodes, strategy)
-    
-    // Reconstruct the array with sorted selected nodes in their original positions
-    const newOrderedNodes = [...orderedNodes]
-    const selectedIndicesArray = Array.from(selectedNodeIndices || []).sort((a, b) => a - b)
-    
-    // Replace selected nodes with sorted versions
-    for (let i = 0; i < selectedIndicesArray.length; i++) {
-      newOrderedNodes[selectedIndicesArray[i]] = sortedSelectedNodes[i]
-    }
-    
-    setOrderedNodes(newOrderedNodes)
-    onOrderChange(newOrderedNodes.map(node => node.path))
-  }, [orderedNodes, selectedNodeIndices, onOrderChange, sortAllNodes])
-
-  const sortNodesByStrategy = useCallback((nodes: OrderedNode[], strategy: SortStrategy): OrderedNode[] => {
-    const sortedNodes = [...nodes]
-    
-    switch (strategy) {
-      case 'sequential':
-        // Original file tree order, i.e. by path
-        return sortedNodes.sort((a, b) => a.path.localeCompare(b.path))
-        
-      case 'alphabetical':
-        return sortedNodes.sort((a, b) => a.name.localeCompare(b.name))
-        
-      case 'reverse-alphabetical':
-        return sortedNodes.sort((a, b) => b.name.localeCompare(a.name))
-        
-      case 'random':
-        return sortedNodes.sort(() => Math.random() - 0.5)
-        
-      case 'date-modified':
-        // For now, fall back to alphabetical since we don't have file dates
-        return sortedNodes.sort((a, b) => a.name.localeCompare(b.name))
-        
-      case 'file-size':
-        // For now, fall back to alphabetical since we don't have file sizes
-        return sortedNodes.sort((a, b) => a.name.localeCompare(b.name))
-        
-      default:
-        return sortedNodes
-    }
-  }, [])
+  }, [orderedNodes, selectedNodeIndices, onOrderChange, sorting])
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index)
@@ -429,20 +460,24 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
       <div className="p-3 border-b border-border">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-medium">Sort:</span>
-          {sortOptions.map((option) => (
+          {sortOptions.map((option) => {
+            const unavailable = option.needsFileStats && !canReadFileStats()
+            return (
             <button
               key={option.id}
               onClick={() => sortSelectedNodes(option.id)}
+              disabled={unavailable || sorting}
               className={clsx(
-                "text-xs px-2 py-1 border rounded hover:bg-accent flex items-center gap-1 transition-colors",
+                "text-xs px-2 py-1 border rounded hover:bg-accent flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                 hasSelection && "bg-primary text-primary-foreground border-primary shadow-sm"
               )}
-              title={option.description}
+              title={unavailable ? `${option.description} (available in the desktop app)` : option.description}
             >
               <option.icon className="w-3 h-3" />
               {hasSelection ? `${option.name} (${selectedCount})` : option.name}
             </button>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -451,6 +486,7 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
         {orderedNodes.map((node, index) => (
           <div
             key={node.path}
+            data-path={node.path}
             draggable
             onDragStart={(e) => handleDragStart(e, index)}
             onDragOver={(e) => handleDragOver(e, index)}

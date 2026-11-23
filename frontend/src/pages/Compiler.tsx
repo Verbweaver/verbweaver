@@ -66,16 +66,27 @@ const exportFormats: ExportFormat[] = [
   }
 ]
 
+type LayoutPageSize = 'default' | 'a4' | 'letter' | 'a5'
+type LayoutFontSize = 'default' | 'small' | 'medium' | 'large'
+type LayoutMargins = 'default' | 'narrow' | 'normal' | 'wide'
+type LayoutLineSpacing = 'default' | 'single' | '1.5' | 'double'
+
+// Formats whose Pandoc output reads the layout settings
+const LAYOUT_FORMATS = ['pdf', 'html']
+
 interface CompileOptions {
   includeMetadata: boolean
   includeToc: boolean
   includeIndex: boolean
   includeBibliography: boolean
   embedUploadedFiles: boolean
-  pageSize: 'A4' | 'Letter' | 'A5'
-  fontSize: 'small' | 'medium' | 'large'
-  margins: 'narrow' | 'normal' | 'wide'
-  lineSpacing: 'single' | '1.5' | 'double'
+  // Layout (PDF and HTML only). 'default' leaves the template's or Pandoc's own setting.
+  // New key names (#143): the old pageSize/fontSize/margins/lineSpacing keys were never
+  // shown or used, so configurations saved with them must not suddenly change output.
+  layoutPageSize: LayoutPageSize
+  layoutFontSize: LayoutFontSize
+  layoutMargins: LayoutMargins
+  layoutLineSpacing: LayoutLineSpacing
   // Advanced
   maxVariablePasses?: number
   reprocessNodesInPasses?: boolean
@@ -129,10 +140,10 @@ function CompilerView() {
     includeIndex: false,
     includeBibliography: false,
     embedUploadedFiles: true,
-    pageSize: 'A4',
-    fontSize: 'medium',
-    margins: 'normal',
-    lineSpacing: '1.5',
+    layoutPageSize: 'default',
+    layoutFontSize: 'default',
+    layoutMargins: 'default',
+    layoutLineSpacing: 'default',
     maxVariablePasses: 5,
     reprocessNodesInPasses: true,
     showUnresolvedMarkers: false
@@ -1219,6 +1230,74 @@ function CompilerView() {
               <span className="text-sm">Embed uploaded files (if supported by format)</span>
             </label>
           </div>
+
+          {/* Layout (PDF and HTML) */}
+          {LAYOUT_FORMATS.includes(selectedFormat) && (
+            <div className="space-y-3" data-testid="compiler-layout">
+              <h3 className="font-semibold">Layout</h3>
+              <p className="text-xs text-muted-foreground">
+                "Template default" keeps whatever the template sets.
+              </p>
+              {selectedFormat === 'pdf' && (
+                <label className="flex items-center gap-3">
+                  <span className="text-sm w-28">Page size</span>
+                  <select
+                    aria-label="Page size"
+                    className="px-2 py-1 border border-input rounded bg-background text-sm"
+                    value={options.layoutPageSize ?? 'default'}
+                    onChange={(e) => updateOption('layoutPageSize', e.target.value as LayoutPageSize)}
+                  >
+                    <option value="default">Template default</option>
+                    <option value="a4">A4</option>
+                    <option value="letter">Letter</option>
+                    <option value="a5">A5</option>
+                  </select>
+                </label>
+              )}
+              <label className="flex items-center gap-3">
+                <span className="text-sm w-28">Font size</span>
+                <select
+                  aria-label="Font size"
+                  className="px-2 py-1 border border-input rounded bg-background text-sm"
+                  value={options.layoutFontSize ?? 'default'}
+                  onChange={(e) => updateOption('layoutFontSize', e.target.value as LayoutFontSize)}
+                >
+                  <option value="default">Template default</option>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-3">
+                <span className="text-sm w-28">Margins</span>
+                <select
+                  aria-label="Margins"
+                  className="px-2 py-1 border border-input rounded bg-background text-sm"
+                  value={options.layoutMargins ?? 'default'}
+                  onChange={(e) => updateOption('layoutMargins', e.target.value as LayoutMargins)}
+                >
+                  <option value="default">Template default</option>
+                  <option value="narrow">Narrow</option>
+                  <option value="normal">Normal</option>
+                  <option value="wide">Wide</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-3">
+                <span className="text-sm w-28">Line spacing</span>
+                <select
+                  aria-label="Line spacing"
+                  className="px-2 py-1 border border-input rounded bg-background text-sm"
+                  value={options.layoutLineSpacing ?? 'default'}
+                  onChange={(e) => updateOption('layoutLineSpacing', e.target.value as LayoutLineSpacing)}
+                >
+                  <option value="default">Template default</option>
+                  <option value="single">Single</option>
+                  <option value="1.5">1.5</option>
+                  <option value="double">Double</option>
+                </select>
+              </label>
+            </div>
+          )}
 
           {/* Advanced options */}
           <details className="space-y-3 border rounded p-3">

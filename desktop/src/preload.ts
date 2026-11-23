@@ -21,6 +21,7 @@ export interface ElectronAPI {
   writeFile: (filePath: string, content: string) => Promise<void>;
   writeFileBinary: (filePath: string, uint8Array: Uint8Array) => Promise<{ success: boolean }>;
   readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
+  statFiles: (paths: string[]) => Promise<Array<{ path: string; size: number; mtimeMs: number } | null>>;
   createDirectory: (dirPath: string) => Promise<{ success: boolean }>;
   deleteFile: (filePath: string) => Promise<void>;
   downloadFile: (filePath: string, originalName: string) => Promise<{ success: boolean; data: Buffer; filename: string; mimeType: string }>;
@@ -124,6 +125,7 @@ const electronAPI = {
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
   writeFileBinary: (filePath: string, uint8Array: Uint8Array) => ipcRenderer.invoke('fs:writeFileBinary', filePath, uint8Array),
   readDirectory: (dirPath: string) => ipcRenderer.invoke('fs:readDirectory', dirPath),
+  statFiles: (paths: string[]) => ipcRenderer.invoke('fs:statFiles', paths),
   createDirectory: (dirPath: string) => ipcRenderer.invoke('fs:createDirectory', dirPath),
   deleteFile: (filePath: string) => ipcRenderer.invoke('fs:deleteFile', filePath),
   downloadFile: (filePath: string, originalName: string) => ipcRenderer.invoke('fs:downloadFile', filePath, originalName),

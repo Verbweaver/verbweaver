@@ -2,6 +2,12 @@
 title: $title$
 author: $author$
 date: $date$
+# Page layout, used by PDF and HTML exports. The Compiler's Layout settings
+# override these; "Template default" keeps them.
+papersize: a4
+fontsize: 12pt
+geometry: margin=2.5cm
+linestretch: 1.5
 variables:
   includeMetadata:
     type: boolean
