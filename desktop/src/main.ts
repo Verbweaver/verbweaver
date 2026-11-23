@@ -975,6 +975,26 @@ function setupIpcHandlers() {
     }
   });
 
+  // Size and modification time of project files, for the Compiler's "By Date Modified"
+  // and "By File Size" sorts (#105). Paths are project-relative; a path outside the
+  // project or a missing file gives null.
+  ipc.handle('fs:statFiles', async (_event, paths: string[]) => {
+    const projectPath = store.get('currentProjectPath') as string | undefined;
+    if (!projectPath || !Array.isArray(paths)) return [];
+    const root = path.resolve(projectPath);
+    return Promise.all(paths.map(async (p) => {
+      try {
+        const full = path.resolve(root, String(p));
+        if (full !== root && !full.startsWith(root + path.sep)) return null;
+        const st = await fs.stat(full);
+        if (!st.isFile()) return null;
+        return { path: p, size: st.size, mtimeMs: st.mtimeMs };
+      } catch {
+        return null;
+      }
+    }));
+  });
+
   ipc.handle('dialog:saveFile', async (_, content: string) => {
     const result = await dialog.showSaveDialog(mainWindow!, {
       defaultPath: dialogDefaultPath(),

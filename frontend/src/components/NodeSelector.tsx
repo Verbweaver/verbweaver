@@ -47,6 +47,11 @@ function NodeSelector({
   const [isLoading, setIsLoading] = useState(true)
   const [showNodesOnly, setShowNodesOnly] = useState(true)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  // Which bulk action (Select All / Clear All / Expand All) is loading folders, if any
+  const [busyAction, setBusyAction] = useState<string | null>(null)
+  // Latest selection, read after awaits so a stale closure doesn't drop changes
+  const selectedNodesRef = useRef(selectedNodes)
+  selectedNodesRef.current = selectedNodes
   const filters = useMemo(() => ({
     ...DEFAULT_FILTERS,
     ...(externalFilters || {})
@@ -450,15 +455,16 @@ function NodeSelector({
       </div>
     )
   }
-  // Build filtered tree based on active filters
-  const filteredTree: FileNode[] = useMemo(() => {
+  // Filter a tree by the active filters. Kept separate from the memo below so that
+  // Select All / Clear All / Expand All can apply it to a freshly loaded tree (#113).
+  const applyFilters = useCallback((tree: FileNode[]): FileNode[] => {
     const normalizeId = (s: string) => String(s || '').replace(/^node-/, '')
     const active = filters
     const usingFilters = (
       (active.tags || []).length > 0 || active.nameKeyword || active.descriptionKeyword || active.startsWith || active.endsWith ||
       active.startDateFrom || active.startDateTo || active.dueDateFrom || active.dueDateTo || active.hasAttachments || (active.linkedFromNodeTags || []).length > 0
     )
-    if (!usingFilters) return fileTree
+    if (!usingFilters) return tree
 
     // Precompute set of target IDs from linked-from sources
     const sourceIds = new Set<string>((active.linkedFromNodeTags || []).map(normalizeId).filter(Boolean))
@@ -568,8 +574,10 @@ function NodeSelector({
       return out
     }
 
-    return filterNodes(fileTree)
-  }, [fileTree, filters, nodeMap])
+    return filterNodes(tree)
+  }, [filters, nodeMap])
+
+  const filteredTree: FileNode[] = useMemo(() => applyFilters(fileTree), [applyFilters, fileTree])
 
   // Remove auto-selection: expanding or loading should not auto-select any files
 
@@ -578,19 +586,73 @@ function NodeSelector({
     onFiltersChange?.(merged)
   }
 
-  const selectAll = () => {
-    const allFilePaths = getAllFilePaths(filteredTree) // visible files only
-    const set = new Set(selectedNodes)
-    allFilePaths.forEach(p => set.add(p))
-    onSelectionChange(Array.from(set))
+  // Load every folder (the tree loads lazily), so bulk actions also reach files in
+  // folders that haven't been expanded yet (#113). Nodes are loaded in place, so the
+  // returned `fileTree` holds the full tree once this resolves.
+  const loadAllFolders = async (): Promise<FileNode[]> => {
+    for (const node of fileTree) {
+      await ensureAllDescendantsLoaded(node)
+    }
+    return fileTree
   }
 
-  const clearSelection = () => {
-    // Clear only visible files from selection
-    const visible = new Set(getAllFilePaths(filteredTree))
-    const next = selectedNodes.filter(p => !visible.has(p))
-    onSelectionChange(next)
+  const runBulkAction = async (name: string, action: () => Promise<void>) => {
+    if (busyAction) return
+    setBusyAction(name)
+    try {
+      await action()
+    } catch (error) {
+      console.error(`NodeSelector: ${name} failed:`, error)
+    } finally {
+      setBusyAction(null)
+    }
   }
+
+  const selectAll = () => runBulkAction('select', async () => {
+    const tree = await loadAllFolders()
+    const set = new Set(selectedNodesRef.current)
+    getAllFilePaths(applyFilters(tree)).forEach(p => set.add(p)) // visible files only
+    onSelectionChange(Array.from(set))
+  })
+
+  const clearSelection = () => runBulkAction('clear', async () => {
+    // Clear only files that pass the filters; with no filters, clear everything
+    const tree = await loadAllFolders()
+    const filtered = applyFilters(tree)
+    const visible = new Set(getAllFilePaths(filtered))
+    const usingFilters = filtered !== tree
+    const next = usingFilters ? selectedNodesRef.current.filter(p => !visible.has(p)) : []
+    onSelectionChange(next)
+  })
+
+  const expandAll = () => runBulkAction('expand', async () => {
+    const tree = await loadAllFolders()
+    const allDirs = getAllDirectoryPaths(applyFilters(tree))
+    setExpandedDirs(prev => {
+      const next = new Set(prev)
+      allDirs.forEach(d => next.add(d))
+      return next
+    })
+  })
+
+  // A selection restored from a saved configuration or tab state can include files in
+  // folders that haven't loaded yet, so those folders' checkboxes would show as empty.
+  // Load the tree when that happens so the checkboxes match the selection.
+  const loadingForSelectionRef = useRef(false)
+  useEffect(() => {
+    if (loadingForSelectionRef.current || selectedNodes.length === 0 || fileTree.length === 0) return
+    const hasUnloadedAncestor = (nodes: FileNode[]): boolean => nodes.some(node => {
+      if (node.type !== 'directory') return false
+      const prefix = `${node.path}/`
+      if (!selectedNodes.some(p => p.startsWith(prefix))) return false
+      return !node.loaded || hasUnloadedAncestor(node.children || [])
+    })
+    if (!hasUnloadedAncestor(fileTree)) return
+    loadingForSelectionRef.current = true
+    loadAllFolders()
+      .catch(error => console.error('NodeSelector: loading folders for selection failed:', error))
+      .finally(() => { loadingForSelectionRef.current = false })
+  }, [selectedNodes, fileTree])
 
   const getAllFilePaths = (nodes: FileNode[]): string[] => {
     const paths: string[] = []
@@ -641,28 +703,24 @@ function NodeSelector({
         <div className="flex items-center gap-1">
           <button
             onClick={selectAll}
-            className="text-xs px-2 py-1 border border-input rounded hover:bg-accent"
+            disabled={busyAction !== null}
+            className="text-xs px-2 py-1 border border-input rounded hover:bg-accent disabled:opacity-50"
           >
-            Select All
+            {busyAction === 'select' ? 'Loading…' : 'Select All'}
           </button>
           <button
             onClick={clearSelection}
-            className="text-xs px-2 py-1 border border-input rounded hover:bg-accent"
+            disabled={busyAction !== null}
+            className="text-xs px-2 py-1 border border-input rounded hover:bg-accent disabled:opacity-50"
           >
-            Clear All
+            {busyAction === 'clear' ? 'Loading…' : 'Clear All'}
           </button>
           <button
-            onClick={() => {
-              const allDirs = new Set(getAllDirectoryPaths(filteredTree))
-              setExpandedDirs(prev => {
-                const next = new Set(prev)
-                allDirs.forEach(d => next.add(d))
-                return next
-              })
-            }}
-            className="text-xs px-2 py-1 border border-input rounded hover:bg-accent"
+            onClick={expandAll}
+            disabled={busyAction !== null}
+            className="text-xs px-2 py-1 border border-input rounded hover:bg-accent disabled:opacity-50"
           >
-            Expand All
+            {busyAction === 'expand' ? 'Loading…' : 'Expand All'}
           </button>
           <button
             onClick={() => {

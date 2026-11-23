@@ -19,10 +19,10 @@ export interface CompilerState {
     includeIndex?: boolean
     includeBibliography?: boolean
     embedUploadedFiles?: boolean
-    pageSize?: 'A4' | 'Letter' | 'A5'
-    fontSize?: 'small' | 'medium' | 'large'
-    margins?: 'narrow' | 'normal' | 'wide'
-    lineSpacing?: 'single' | '1.5' | 'double'
+    layoutPageSize?: 'default' | 'a4' | 'letter' | 'a5'
+    layoutFontSize?: 'default' | 'small' | 'medium' | 'large'
+    layoutMargins?: 'default' | 'narrow' | 'normal' | 'wide'
+    layoutLineSpacing?: 'default' | 'single' | '1.5' | 'double'
   }
 }
 
