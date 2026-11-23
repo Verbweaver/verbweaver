@@ -142,3 +142,73 @@ def test_pdf_export_uses_page_size(tmp_path):
     info = subprocess.run(["pdfinfo", str(out)], capture_output=True, text=True).stdout
     # A5 is 419.53 x 595.28 pt
     assert "419.5" in info and "595.2" in info, info
+
+
+# The shipped example templates set their own page layout in front matter, and the
+# Compiler's Layout settings override it.
+
+SHIPPED_LAYOUTS = {
+    "simple.md": {"papersize": "a4", "fontsize": "11pt", "geometry": "margin=2.5cm", "linestretch": 1.2},
+    "academic.md": {"papersize": "a4", "fontsize": "12pt", "geometry": "margin=2.5cm", "linestretch": 1.5},
+    "technical-report.md": {
+        "papersize": "a4", "fontsize": "11pt", "geometry": "margin=2cm", "linestretch": 1.15,
+    },
+}
+
+
+@pytest.mark.parametrize("name,layout", SHIPPED_LAYOUTS.items())
+def test_shipped_templates_declare_layout(name, layout):
+    import yaml
+
+    from tests.compiler_harness import SHIPPED_TEMPLATES
+
+    text = (SHIPPED_TEMPLATES / "markdown" / name).read_text(encoding="utf-8")
+    front = yaml.safe_load(text.split("---")[1])
+    assert {k: front.get(k) for k in layout} == layout
+
+
+@pytest.fixture(scope="module")
+def shipped_project(tmp_path_factory):
+    from tests.compiler_harness import make_project
+
+    return make_project(tmp_path_factory.mktemp("layout") / "project")
+
+
+def _compile_shipped(project, fmt, template, options=None):
+    from tests.compiler_harness import compile_case
+
+    case = {"template": template, "options": {"title": "Layout", "author": "A", **(options or {})}}
+    status, body = compile_case(project, case, fmt, ["nodes/Intro.md"])
+    assert status == 200, body[:500]
+    return body
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_shipped_template_layout_reaches_html(shipped_project):
+    html = _compile_shipped(shipped_project, "html", "academic.md").decode("utf-8")
+    assert "font-size: 12pt;" in html
+    assert "line-height: 1.5;" in html
+    # The Compiler's choice wins over the template's
+    html = _compile_shipped(
+        shipped_project, "html", "academic.md", {"layoutLineSpacing": "double"}
+    ).decode("utf-8")
+    assert "line-height: 2;" in html
+    assert "font-size: 12pt;" in html
+
+
+@pytest.mark.skipif(
+    shutil.which("pandoc") is None
+    or shutil.which("pdfinfo") is None
+    or not (shutil.which("tectonic") or shutil.which("xelatex")),
+    reason="pandoc, a PDF engine and pdfinfo are needed",
+)
+def test_shipped_template_layout_reaches_pdf(shipped_project, tmp_path):
+    def page_size(pdf_bytes):
+        f = tmp_path / "out.pdf"
+        f.write_bytes(pdf_bytes)
+        return subprocess.run(["pdfinfo", str(f)], capture_output=True, text=True).stdout
+
+    info = page_size(_compile_shipped(shipped_project, "pdf", "simple.md"))
+    assert "595.2" in info and "841.8" in info, info  # A4 from the template
+    info = page_size(_compile_shipped(shipped_project, "pdf", "simple.md", {"layoutPageSize": "a5"}))
+    assert "419.5" in info and "595.2" in info, info  # A5 from the Compiler
