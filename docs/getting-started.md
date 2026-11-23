@@ -75,6 +75,6 @@ Verbweaver doesn't update on its own. To check for a new version, choose **Help 
 
 ## If something goes wrong
 
-- **"Failed to start the backend server" when the app opens:** Verbweaver runs a small helper program in the background. Security software sometimes blocks it. Allow Verbweaver in your antivirus, then restart the app.
+- **"Verbweaver couldn't start its background helper" when the app opens:** Verbweaver runs a small helper program in the background. Security software sometimes blocks it. Allow Verbweaver in your antivirus, then restart the app. If that doesn't help, reinstall Verbweaver. If it still fails, click **Report Issue** in the message and include the details it shows.
 - **Saving a version fails:** check that Git is installed and that you've set your name and email (see [Also install Git](#also-install-git)).
 - **Something else:** choose **Help → Report Issue** to tell us about it on GitHub. Include what you were doing and, if you can, a screenshot.

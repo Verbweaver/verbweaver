@@ -248,6 +248,7 @@ async function copyTree(src: string, dst: string) {
 }
 
 const BACKEND_STARTUP_TIMEOUT = 60000; // 60 seconds
+const REPORT_ISSUE_URL = 'https://github.com/Verbweaver/verbweaver/issues';
 
 const DEV_RENDERER_ORIGIN = 'http://localhost:3000';
 
@@ -377,10 +378,6 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
   const useBundledBinary = !isDevelopment;
   
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error('Backend startup timeout'));
-    }, BACKEND_STARTUP_TIMEOUT);
-
     // Resolve configurable storage locations
     const userDataDir = app.getPath('userData');
     const preferences = (store.get('preferences', {}) as any) || {};
@@ -485,7 +482,29 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
     }
 
     const currentProcess = backendProcess;
-    
+
+    // Settle start-up once: ready, spawn error, early exit, or timeout
+    let settled = false;
+    const recentStderr: string[] = [];
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      backendPort = port;
+      resolve({ port, pid: currentProcess.pid! });
+    };
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    };
+    const timeout = setTimeout(() => {
+      fail(new Error(`Backend did not start within ${BACKEND_STARTUP_TIMEOUT / 1000} seconds`));
+      // Don't leave a half-started backend running
+      stopBackend().catch(() => {});
+    }, BACKEND_STARTUP_TIMEOUT);
+
     currentProcess.stdout?.on('data', (data) => {
       console.log(`Backend: ${data}`);
       mainWindow?.webContents.send('backend:log', data.toString());
@@ -496,19 +515,16 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       
       if (data.toString().includes('Uvicorn running on')) {
         // Add a small delay to ensure the server is fully started
-        setTimeout(() => {
-          clearTimeout(timeout);
-          backendPort = port;
-          // On Windows, place backend into a Job so all children terminate with it
-          
-          resolve({ port, pid: currentProcess.pid! });
-        }, 1000);
+        setTimeout(succeed, 1000);
       }
     });
 
     currentProcess.stderr?.on('data', (data) => {
       console.error(`Backend Error: ${data}`);
       mainWindow?.webContents.send('backend:log', `ERROR: ${data}`);
+      // Keep the last few stderr lines to explain an early exit
+      recentStderr.push(...String(data).split(/\r?\n/).filter((line) => line.trim()));
+      if (recentStderr.length > 20) recentStderr.splice(0, recentStderr.length - 20);
       try {
         const m = /Started server process \[(\d+)\]/.exec(String(data));
         if (m && m[1]) backendServerPid = parseInt(m[1], 10);
@@ -517,18 +533,12 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       // Also check stderr for the startup message
       if (data.toString().includes('Uvicorn running on')) {
         // Add a small delay to ensure the server is fully started
-        setTimeout(() => {
-          clearTimeout(timeout);
-          backendPort = port;
-          
-          resolve({ port, pid: currentProcess.pid! });
-        }, 1000);
+        setTimeout(succeed, 1000);
       }
     });
 
     currentProcess.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
+      fail(error);
     });
 
     currentProcess.on('exit', (code) => {
@@ -536,6 +546,13 @@ async function startBackend(): Promise<{ port: number; pid: number }> {
       backendProcess = null;
       backendPort = null;
       backendServerPid = null;
+    });
+
+    // 'close' fires after stdio is flushed, so the stderr tail is complete
+    currentProcess.on('close', (code, signal) => {
+      const how = code !== null ? `code ${code}` : `signal ${signal}`;
+      const tail = recentStderr.length ? `\n${recentStderr.join('\n')}` : '';
+      fail(new Error(`Backend exited with ${how} before it was ready.${tail}`));
     });
   });
 }
@@ -754,7 +771,7 @@ function createMenu() {
         {
           label: 'Report Issue',
           click: () => {
-            shell.openExternal('https://github.com/Verbweaver/verbweaver/issues');
+            shell.openExternal(REPORT_ISSUE_URL);
           }
         },
         { type: 'separator' },
@@ -844,6 +861,39 @@ async function checkForUpdatesShared(): Promise<UpdateCheckOutcome> {
 
 function showAppMessageBox(options: Electron.MessageBoxOptions) {
   return mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options);
+}
+
+// Explain a failed backend start. Packaged builds run a bundled helper, not Python (#119).
+async function showBackendStartupError(error: unknown): Promise<void> {
+  let details = error instanceof Error ? error.message : String(error);
+  if (details.length > 1500) details = `…${details.slice(-1500)}`;
+
+  if (isDevelopment) {
+    dialog.showErrorBox('Backend Error',
+      'Failed to start the backend server (development mode).\n\n' +
+      'Check that the backend virtual environment exists (.venv) or that Python is on your PATH, ' +
+      'or start the backend yourself and launch with SKIP_BACKEND=true.\n\n' +
+      `Details: ${details}`
+    );
+    return;
+  }
+
+  const { response } = await showAppMessageBox({
+    type: 'error',
+    title: 'Verbweaver',
+    message: "Verbweaver couldn't start its background helper.",
+    detail:
+      'Security software sometimes blocks it. Allow Verbweaver in your antivirus, then restart the app.\n\n' +
+      "If that doesn't help, reinstall Verbweaver. If it still fails, choose Report Issue and " +
+      'include the details below.\n\n' +
+      `Details: ${details}`,
+    buttons: ['Report Issue', 'Close'],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  if (response === 0) {
+    await shell.openExternal(REPORT_ISSUE_URL);
+  }
 }
 
 async function showUpdateOutcome(outcome: UpdateCheckOutcome): Promise<void> {
@@ -3237,11 +3287,7 @@ app.whenReady().then(async () => {
       store.set('backendUrl', `http://127.0.0.1:${backendInfo.port}`);
     } catch (error) {
       console.error('Failed to start backend:', error);
-      dialog.showErrorBox('Backend Error', 
-        'Failed to start the backend server.\n\n' +
-        'Make sure Python is installed and in your PATH.\n' +
-        'You can also run the frontend and backend separately.'
-      );
+      await showBackendStartupError(error);
     }
   } else {
     console.log('Skipping backend startup (SKIP_BACKEND=true)');
