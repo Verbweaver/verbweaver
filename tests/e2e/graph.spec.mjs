@@ -315,6 +315,39 @@ test.describe('Graph view', () => {
     await expect(selected).toHaveText('Scene');
   });
 
+  test('zoom controls, minimap and credit link follow the dark theme (#149)', async ({ graph }) => {
+    const { win } = graph;
+    await openGraphWithPages(graph);
+    const colours = () => win.evaluate(() => {
+      const css = (sel, prop) => { const el = document.querySelector(sel); return el ? getComputedStyle(el)[prop] : null; };
+      const probe = document.createElement('div');
+      probe.style.color = 'hsl(var(--card))';
+      document.body.appendChild(probe);
+      const card = getComputedStyle(probe).color;
+      probe.remove();
+      return {
+        card,
+        buttonBg: css('.react-flow__controls-button', 'backgroundColor'),
+        iconFill: css('.react-flow__controls-button svg', 'fill'),
+        minimapBg: css('.react-flow__minimap', 'backgroundColor'),
+        creditBg: css('.react-flow__attribution', 'backgroundColor'),
+      };
+    });
+    const check = async () => {
+      const c = await colours();
+      expect(c.buttonBg).toBe(c.card);
+      expect(c.iconFill).not.toBe(c.buttonBg);
+      expect(c.minimapBg).toBe(c.card);
+      expect(c.creditBg).not.toMatch(/^rgba\(255, 255, 255/);
+    };
+    await check(); // Mind Map
+    await subViewButton(win, 'Group').click();
+    await expect(win.locator('.react-flow__controls-button').first()).toBeVisible();
+    const c = await colours();
+    expect(c.buttonBg).toBe(c.card);
+    expect(c.iconFill).not.toBe(c.buttonBg);
+  });
+
   test('Group view: no overlapping boxes, cards fit, deletes ask first (#99, #114)', async ({ graph }) => {
     const { win, tmp, projectPath } = graph;
     await openGraphWithPages(graph);
