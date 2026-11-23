@@ -315,6 +315,34 @@ test.describe('Graph view', () => {
     await expect(selected).toHaveText('Scene');
   });
 
+  test('Save Image saves the Mind Map and the Group view as PNG files (#148)', async ({ graph }) => {
+    const { app, win, tmp } = graph;
+    await openGraphWithPages(graph);
+    // Answer the desktop save dialog with a file in the test folder
+    const saveTo = (file) => app.evaluate(({ dialog }, filePath) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+    }, file);
+    const expectPng = async (file) => {
+      await expect.poll(async () => (await fs.stat(file).catch(() => null))?.size ?? 0, { timeout: 30_000 }).toBeGreaterThan(5_000);
+      const head = (await fs.readFile(file)).subarray(0, 8);
+      expect(head.equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe(true);
+      if (process.env.E2E_KEEP_IMAGES) await fs.copyFile(file, path.join(process.env.E2E_KEEP_IMAGES, path.basename(file)));
+    };
+
+    const mindMap = path.join(tmp, 'mind-map.png');
+    await saveTo(mindMap);
+    await win.getByRole('button', { name: 'Save Image' }).click();
+    await expectPng(mindMap);
+
+    await subViewButton(win, 'Group').click();
+    await win.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(win.locator('.react-flow__node-groupBox')).toHaveCount(1);
+    const groups = path.join(tmp, 'groups.png');
+    await saveTo(groups);
+    await win.getByRole('button', { name: 'Save Image' }).click();
+    await expectPng(groups);
+  });
+
   test('zoom controls, minimap and credit link follow the dark theme (#149)', async ({ graph }) => {
     const { win } = graph;
     await openGraphWithPages(graph);

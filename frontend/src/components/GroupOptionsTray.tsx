@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react'
 import { useGroupViewStore, type GroupViewPersisted } from '../store/groupViewState'
-import { Download, Upload } from 'lucide-react'
+import { Download, Upload, ImageDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type Props = {
@@ -17,6 +17,7 @@ export default function GroupOptionsTray({ projectId, tabId }: Props) {
   const exportConfig = useGroupViewStore(s => s.exportConfig)
   const importConfig = useGroupViewStore(s => s.importConfig)
   const saveToStorage = useGroupViewStore(s => s.saveToStorage)
+  const exportImage = useGroupViewStore(s => s.exportImage)
 
   const fileRef = useRef<HTMLInputElement | null>(null)
 
@@ -112,6 +113,14 @@ export default function GroupOptionsTray({ projectId, tabId }: Props) {
             <Upload className="w-4 h-4" /> Import JSON
           </button>
         </div>
+        <button
+          className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent inline-flex items-center gap-2 disabled:opacity-50"
+          onClick={() => { void exportImage?.() }}
+          disabled={!exportImage}
+          title="Save the groups as a PNG picture"
+        >
+          <ImageDown className="w-4 h-4" /> Save Image
+        </button>
       </div>
     </div>
   )
