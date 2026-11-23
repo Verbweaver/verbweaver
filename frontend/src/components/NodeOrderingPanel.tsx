@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { FileText, GripVertical, X, Check, ArrowUpDown, ArrowUp, ArrowDown, Shuffle, Calendar, Hash } from 'lucide-react'
+import { FileText, GripVertical, X, Check, ArrowUpDown, ArrowUp, ArrowDown, ArrowUpToLine, ArrowDownToLine, Shuffle, Calendar, Hash } from 'lucide-react'
 import { useNodeStore } from '../store/nodeStore'
 import { useCompilerStore } from '../store/compilerStore'
 import { useThemeStore } from '../store/themeStore'
@@ -95,6 +95,22 @@ function reconcileOrder(prevOrder: string[], selected: string[]): string[] {
 
 function sameOrder(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((p, i) => p === b[i])
+}
+
+/**
+ * Move the rows at `indices` as one block, keeping their relative order, so the
+ * first of them lands at `targetIndex` (clamped so the block fits). Returns the
+ * new order and the moved rows' new indices (#43).
+ */
+function moveRows<T>(items: T[], indices: number[], targetIndex: number): { items: T[]; selected: number[] } {
+  const picked = new Set(indices.filter(i => i >= 0 && i < items.length))
+  const moving = items.filter((_, i) => picked.has(i))
+  const rest = items.filter((_, i) => !picked.has(i))
+  const at = Math.max(0, Math.min(Math.floor(targetIndex), rest.length))
+  return {
+    items: [...rest.slice(0, at), ...moving, ...rest.slice(at)],
+    selected: moving.map((_, i) => at + i)
+  }
 }
 
 type FileStat = { size: number; mtimeMs: number }
@@ -332,6 +348,7 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
 
     const newOrderedNodes = [...orderedNodes]
     const draggedNode = newOrderedNodes[draggedIndex]
+    const tickedPaths = new Set(Array.from(selectedNodeIndices || []).map(i => orderedNodes[i]?.path))
     
     // Remove from original position
     newOrderedNodes.splice(draggedIndex, 1)
@@ -341,6 +358,15 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
     
     setOrderedNodes(newOrderedNodes)
     onOrderChange(newOrderedNodes.map(node => node.path))
+    // Selection is stored by row number, so keep the ticks on the same files
+    const ticked = new Set<number>()
+    newOrderedNodes.forEach((n, i) => { if (tickedPaths.has(n.path)) ticked.add(i) })
+    setSelectedIndices(ticked)
+    if (lastClickedIndex !== null) {
+      const lastPath = orderedNodes[lastClickedIndex]?.path
+      const next = newOrderedNodes.findIndex(n => n.path === lastPath)
+      setLastClickedIndex(next >= 0 ? next : null)
+    }
     
     setDraggedIndex(null)
     setDragOverIndex(null)
@@ -380,6 +406,22 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
     clearSelection()
     if (removed.length) onRemoveNodes?.(removed)
   }, [orderedNodes, selectedNodeIndices, onOrderChange, clearSelection])
+
+  // Move the ticked rows as a group, keeping their order; they stay ticked (#43)
+  const [moveToInput, setMoveToInput] = useState('')
+  const moveSelectedNodes = useCallback((target: 'top' | 'bottom' | number) => {
+    const indices = Array.from(selectedNodeIndices || [])
+    if (indices.length === 0) return
+    const targetIndex = target === 'top' ? 0 : target === 'bottom' ? orderedNodes.length : target - 1
+    const { items, selected } = moveRows(orderedNodes, indices, targetIndex)
+    setOrderedNodes(items)
+    onOrderChange(items.map(node => node.path))
+    setSelectedIndices(new Set(selected))
+    setLastClickedIndex(selected.length ? selected[0] : null)
+  }, [orderedNodes, selectedNodeIndices, onOrderChange, setSelectedIndices, setLastClickedIndex])
+
+  const moveToPosition = Number(moveToInput)
+  const moveToValid = moveToInput.trim() !== '' && Number.isInteger(moveToPosition) && moveToPosition >= 1
 
   // Handle Delete key to remove selected rows, only while focus is in this panel and not in a
   // text field (the panel takes focus when clicked: tabIndex -1 on its container)
@@ -421,7 +463,7 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
         <div>
           <h3 className="font-semibold">File Order</h3>
           <p className="text-sm text-muted-foreground">
-            Drag to reorder • Files will be compiled in this order
+            Drag or tick files to reorder • Files will be compiled in this order
           </p>
         </div>
         <div className="text-sm text-muted-foreground">
@@ -432,7 +474,7 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
 
       {/* Selection Controls */}
       {orderedNodes.length > 0 && (
-        <div className="flex items-center gap-2 p-3 border-b border-border bg-muted/30">
+        <div className="flex items-center gap-2 flex-wrap p-3 border-b border-border bg-muted/30">
           <button
             onClick={selectAll}
             className="text-xs px-2 py-1 border border-input rounded hover:bg-accent"
@@ -453,6 +495,49 @@ function NodeOrderingPanel({ selectedNodes, onOrderChange, onRemoveNodes, ordere
                Remove Selected
              </button>
            )}
+          {hasSelection && (
+            <>
+              <button
+                onClick={() => moveSelectedNodes('top')}
+                className="text-xs px-2 py-1 border border-input rounded hover:bg-accent flex items-center gap-1"
+                title="Move the ticked files to the top, keeping their order"
+              >
+                <ArrowUpToLine className="w-3 h-3" />
+                Move to Top
+              </button>
+              <button
+                onClick={() => moveSelectedNodes('bottom')}
+                className="text-xs px-2 py-1 border border-input rounded hover:bg-accent flex items-center gap-1"
+                title="Move the ticked files to the bottom, keeping their order"
+              >
+                <ArrowDownToLine className="w-3 h-3" />
+                Move to Bottom
+              </button>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={1}
+                  max={orderedNodes.length}
+                  value={moveToInput}
+                  onChange={(e) => setMoveToInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && moveToValid) moveSelectedNodes(moveToPosition)
+                  }}
+                  placeholder="#"
+                  aria-label="Position"
+                  className="w-14 text-xs px-2 py-1 border border-input rounded bg-background"
+                />
+                <button
+                  onClick={() => moveSelectedNodes(moveToPosition)}
+                  disabled={!moveToValid}
+                  className="text-xs px-2 py-1 border border-input rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Move the ticked files so the first of them is at this position, keeping their order"
+                >
+                  Move to #
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 

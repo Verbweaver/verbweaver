@@ -19,6 +19,7 @@ In **Select Files** on the left, tick the pages to include. Ticking a folder inc
 - Drag a page up or down to move it.
 - Use the **Sort** buttons to reorder quickly, for example alphabetically. **By Date Modified** puts the least recently changed page first, and **By File Size** puts the smallest first. These two work in the desktop app only.
 - To sort just some pages, tick them first. They're sorted among the places they already hold.
+- To move several pages at once, tick them and click **Move to Top** or **Move to Bottom**. Or type a position in the **#** box and click **Move to #**. They keep their order and stay ticked, so you can move them again.
 - Click **X** on a page to leave it out.
 
 ## 3. Choose how it looks

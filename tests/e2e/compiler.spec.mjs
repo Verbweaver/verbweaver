@@ -218,6 +218,61 @@ test.describe('Compiler', () => {
       expect((await fileOrder(win)).slice().sort()).toEqual(files);
     });
 
+    test('Move to Top, Move to Bottom and Move to # keep the ticked files in order (#43)', async ({ stress }) => {
+      const { win, tmp, projectPath } = stress;
+      const files = await allNodeFiles(projectPath);
+      expect(files.length).toBeGreaterThanOrEqual(5);
+      await freshTree(win, tmp);
+      await loadConfiguration(win, tmp, { selectedNodes: files, orderedNodes: files, expandedDirs: [] });
+      await expect(win.locator('[data-path]')).toHaveCount(files.length);
+      const tick = (p) => win.locator(`[data-path="${p}"] input[type="checkbox"]`).check();
+      const ticked = (p) => win.locator(`[data-path="${p}"] input[type="checkbox"]`);
+      const [a, b] = [files[1], files[3]];
+      const others = files.filter((f) => f !== a && f !== b);
+      await tick(a);
+      await tick(b);
+      await expect(win.getByText(`${files.length} files • 2 selected`)).toBeVisible();
+
+      await win.getByRole('button', { name: 'Move to Top', exact: true }).click();
+      await expect.poll(() => fileOrder(win)).toEqual([a, b, ...others]);
+      // They stay ticked, so they can be moved again
+      await expect(ticked(a)).toBeChecked();
+      await expect(ticked(b)).toBeChecked();
+      await expect(win.getByText(`${files.length} files • 2 selected`)).toBeVisible();
+
+      await win.getByRole('button', { name: 'Move to Bottom', exact: true }).click();
+      await expect.poll(() => fileOrder(win)).toEqual([...others, a, b]);
+
+      const moveTo = win.getByRole('button', { name: 'Move to #', exact: true });
+      await expect(moveTo).toBeDisabled();
+      await win.getByLabel('Position').fill('3');
+      await moveTo.click();
+      await expect.poll(() => fileOrder(win)).toEqual([...others.slice(0, 2), a, b, ...others.slice(2)]);
+
+      // Enter works too, and a position past the end puts them last
+      await win.getByLabel('Position').fill('999');
+      await win.getByLabel('Position').press('Enter');
+      await expect.poll(() => fileOrder(win)).toEqual([...others, a, b]);
+      await expect(ticked(a)).toBeChecked();
+      await expect(ticked(b)).toBeChecked();
+    });
+
+    test('after a drag the ticks stay on the same files (#43)', async ({ stress }) => {
+      const { win, tmp, projectPath } = stress;
+      const files = await allNodeFiles(projectPath);
+      await freshTree(win, tmp);
+      await loadConfiguration(win, tmp, { selectedNodes: files, orderedNodes: files, expandedDirs: [] });
+      await expect(win.locator('[data-path]')).toHaveCount(files.length);
+      const box = (p) => win.locator(`[data-path="${p}"] input[type="checkbox"]`);
+      await box(files[1]).check();
+      // Drag the first row onto the third: files[1] moves up to row 1
+      await win.locator(`[data-path="${files[0]}"]`).dragTo(win.locator(`[data-path="${files[2]}"]`));
+      await expect.poll(() => fileOrder(win)).toEqual([files[1], files[2], files[0], ...files.slice(3)]);
+      await expect(box(files[1])).toBeChecked();
+      await expect(box(files[0])).not.toBeChecked();
+      await expect(box(files[2])).not.toBeChecked();
+    });
+
     test('Layout settings reach PDF and HTML exports (#143)', async ({ stress }) => {
       const { win, tmp } = stress;
       const nodes = ['nodes/Findings/SQL Injection.md', 'nodes/Findings/XSS.md'];
