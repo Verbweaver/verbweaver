@@ -9,6 +9,7 @@ import NodeContextMenu from '../components/graph/NodeContextMenu'
 import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import RemoveLinksModal from '../components/common/RemoveLinksModal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import type { NodeFilterState } from '../components/NodeFiltersDialog'
 import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
 import { chooseHandleIds, type XY } from '../utils/edgeHandles'
@@ -81,13 +82,12 @@ function GroupViewInner() {
     const nodesArr = Array.from(verbweaverNodes.values() || [])
 
     const normalizeId = (s: string) => String(s || '').replace(/^node-/, '')
+    const isFilterActive = (filters: NodeFilterState): boolean => !!(
+      (filters.tags || []).length > 0 || filters.nameKeyword || filters.descriptionKeyword || filters.startsWith || filters.endsWith ||
+      filters.startDateFrom || filters.startDateTo || filters.dueDateFrom || filters.dueDateTo || filters.hasAttachments || (filters.linkedFromNodeTags || []).length > 0
+    )
     const matches = (node: any, filters: any): boolean => {
       const meta = node?.metadata || {}
-      const usingFilters = (
-        (filters.tags || []).length > 0 || filters.nameKeyword || filters.descriptionKeyword || filters.startsWith || filters.endsWith ||
-        filters.startDateFrom || filters.startDateTo || filters.dueDateFrom || filters.dueDateTo || filters.hasAttachments || (filters.linkedFromNodeTags || []).length > 0
-      )
-      if (!usingFilters) return true
       const title = String(meta?.title || node.name || '')
       const description = String(meta?.description || '')
       const tags: string[] = Array.isArray(meta?.tags) ? meta.tags.map(String) : []
@@ -138,13 +138,18 @@ function GroupViewInner() {
       return true
     }
 
-    const groupNodes = enabled.map(g => ({
-      groupId: g.id,
-      nodeIds: nodesArr
-        .filter(n => !n.isDirectory && matches(n, g.filters))
-        .map(n => String(n?.metadata?.id || ''))
-        .filter(Boolean),
-    }))
+    // A page is in a group if it matches any of the group's filters; blank filters are ignored,
+    // and a group with no conditions at all holds every page (#68)
+    const groupNodes = enabled.map(g => {
+      const active = g.filters.filter(isFilterActive)
+      return {
+        groupId: g.id,
+        nodeIds: nodesArr
+          .filter(n => !n.isDirectory && (active.length === 0 || active.some(f => matches(n, f))))
+          .map(n => String(n?.metadata?.id || ''))
+          .filter(Boolean),
+      }
+    })
 
     const boxes = buildEquivalenceBoxes(groupNodes)
     return { boxes, byId }

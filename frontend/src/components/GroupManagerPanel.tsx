@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Plus, Trash2, Edit, Filter as FilterIcon, ToggleLeft } from 'lucide-react'
+import { Plus, Trash2, Edit, Filter as FilterIcon, ToggleLeft, X } from 'lucide-react'
 import NodeFiltersDialog, { DEFAULT_FILTERS, NodeFilterState } from './NodeFiltersDialog'
-import { useGroupViewStore, type GroupDefinition } from '../store/groupViewState'
+import { useGroupViewStore, MAX_FILTERS_PER_GROUP, type GroupDefinition } from '../store/groupViewState'
 import toast from 'react-hot-toast'
 import ConfirmDialog from './ConfirmDialog'
 
@@ -18,7 +18,8 @@ export default function GroupManagerPanel({ className }: Props) {
   const updateGroup = useGroupViewStore(s => s.updateGroup)
   const removeGroup = useGroupViewStore(s => s.removeGroup)
 
-  const [filtersOpenFor, setFiltersOpenFor] = useState<string | null>(null)
+  // Which filter of which group the dialog is editing (#68)
+  const [filtersOpenFor, setFiltersOpenFor] = useState<{ groupId: string; index: number } | null>(null)
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState<string>('')
   // Group being deleted, waiting for confirmation (#99)
@@ -33,7 +34,7 @@ export default function GroupManagerPanel({ className }: Props) {
       id: genId(),
       name: `Group ${groups.length + 1}`,
       enabled: true,
-      filters: { ...DEFAULT_FILTERS },
+      filters: [{ ...DEFAULT_FILTERS }],
     }
     addGroup(next)
   }
@@ -61,15 +62,29 @@ export default function GroupManagerPanel({ className }: Props) {
     setRenameValue('')
   }
 
-  const handleEditFilters = (groupId: string) => setFiltersOpenFor(groupId)
+  const handleEditFilters = (groupId: string, index = 0) => setFiltersOpenFor({ groupId, index })
 
   const handleFiltersChange = (nextFilters: NodeFilterState) => {
-    const id = filtersOpenFor
-    if (!id) return
-    updateGroup(id, { filters: nextFilters })
+    if (!filtersOpenFor) return
+    const g = groups.find(g => g.id === filtersOpenFor.groupId)
+    if (!g) return
+    updateGroup(g.id, { filters: g.filters.map((f, i) => (i === filtersOpenFor.index ? nextFilters : f)) })
   }
 
-  const activeGroup = useMemo(() => groups.find(g => g.id === filtersOpenFor) || null, [filtersOpenFor, groups])
+  // Adds a blank filter and opens it; a page joins the group if it matches any filter (#68)
+  const handleAddFilter = (g: GroupDefinition) => {
+    if (g.filters.length >= MAX_FILTERS_PER_GROUP) return
+    updateGroup(g.id, { filters: [...g.filters, { ...DEFAULT_FILTERS }] })
+    setFiltersOpenFor({ groupId: g.id, index: g.filters.length })
+  }
+
+  const handleRemoveFilter = (g: GroupDefinition, index: number) => {
+    const rest = g.filters.filter((_, i) => i !== index)
+    updateGroup(g.id, { filters: rest.length > 0 ? rest : [{ ...DEFAULT_FILTERS }] })
+  }
+
+  const activeGroup = useMemo(() => groups.find(g => g.id === filtersOpenFor?.groupId) || null, [filtersOpenFor, groups])
+  const activeFilters = activeGroup && filtersOpenFor ? activeGroup.filters[filtersOpenFor.index] : undefined
 
   const summarizeFilters = (filters: NodeFilterState): string | null => {
     const parts: string[] = []
@@ -99,7 +114,8 @@ export default function GroupManagerPanel({ className }: Props) {
           <div className="text-xs text-muted-foreground">No groups yet. Click Add to create one.</div>
         )}
         {groups.map(g => {
-          const summary = summarizeFilters(g.filters)
+          const summaries = g.filters.map((f, index) => ({ index, summary: summarizeFilters(f) }))
+          const filterLines = summaries.filter(s => s.summary || g.filters.length > 1)
           return (
             <div key={g.id} className="px-2 py-1 border border-border rounded bg-background/60">
               <div className="flex items-center gap-2">
@@ -119,17 +135,40 @@ export default function GroupManagerPanel({ className }: Props) {
                   ) : (
                     <div className="text-sm truncate" title={g.name}>{g.name}</div>
                   )}
-                  {summary && (
-                    <div className="text-[11px] text-muted-foreground whitespace-normal break-words" title={summary}>
-                      Active: {summary}
-                    </div>
-                  )}
+                  {filterLines.map(({ index, summary }, line) => {
+                    const text = summary || '(empty)'
+                    const label = g.filters.length > 1 ? `${line > 0 ? 'or ' : ''}Filter ${index + 1}` : 'Active'
+                    return (
+                      <div key={index} className="flex items-start gap-1 text-[11px] text-muted-foreground">
+                        <div className="flex-1 min-w-0 whitespace-normal break-words" title={text}>{label}: {text}</div>
+                        {g.filters.length > 1 && (
+                          <>
+                            <button className="shrink-0 p-0.5 rounded hover:bg-accent" onClick={()=> handleEditFilters(g.id, index)} title={`Edit filter ${index + 1}`} aria-label={`Edit filter ${index + 1}`}>
+                              <FilterIcon className="w-3 h-3" />
+                            </button>
+                            <button className="shrink-0 p-0.5 rounded hover:bg-accent" onClick={()=> handleRemoveFilter(g, index)} title={`Remove filter ${index + 1}`} aria-label={`Remove filter ${index + 1}`}>
+                              <X className="w-3 h-3" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
                 <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent" onClick={()=> handleRename(g.id)} title="Rename">
                   <Edit className="w-3 h-3" />
                 </button>
                 <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent inline-flex items-center gap-1" onClick={()=> handleEditFilters(g.id)} title="Edit filters">
                   <FilterIcon className="w-3 h-3" />
+                </button>
+                <button
+                  className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent inline-flex items-center disabled:opacity-50"
+                  onClick={()=> handleAddFilter(g)}
+                  disabled={g.filters.length >= MAX_FILTERS_PER_GROUP}
+                  title="Add filter: pages matching any filter join the group"
+                  aria-label="Add filter"
+                >
+                  <Plus className="w-3 h-3" />
                 </button>
                 <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-destructive hover:text-destructive-foreground" onClick={()=> setConfirmRemove(g)} title="Delete">
                   <Trash2 className="w-3 h-3" />
@@ -140,11 +179,11 @@ export default function GroupManagerPanel({ className }: Props) {
         })}
       </div>
 
-      {activeGroup && (
+      {activeFilters && (
         <NodeFiltersDialog
           isOpen={!!filtersOpenFor}
           onClose={() => setFiltersOpenFor(null)}
-          filters={activeGroup.filters}
+          filters={activeFilters}
           onFiltersChange={handleFiltersChange}
         />
       )}

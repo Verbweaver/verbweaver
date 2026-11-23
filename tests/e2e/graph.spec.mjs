@@ -386,4 +386,41 @@ test.describe('Graph view', () => {
     await confirmDialog(win, 'Delete group').getByRole('button', { name: 'Delete', exact: true }).click();
     await expect(bins).toHaveCount(PAGES.length - 1);
   });
+
+  test('Group view: a group holds pages matching any of its filters (#68)', async ({ graph }) => {
+    const { win, tmp } = graph;
+    await openGraphWithPages(graph);
+    await subViewButton(win, 'Group').click();
+
+    const byName = (nameKeyword) => ({ tags: [], tagsLogic: 'ANY', nameKeyword, descriptionKeyword: '', startsWith: '', endsWith: '',
+      startsEndsCaseSensitive: false, hasAttachments: false, linkedFromNodeTags: [] });
+    const cfg = {
+      version: 1,
+      groups: [{ id: 'g1', name: 'One or Two', enabled: true, filters: [byName('One'), byName('Two')] }],
+      options: { nestGroups: false, showNodeCards: false, maxCardsPerGroup: 40, showCapIndicator: true },
+      layout: { boxes: {} },
+    };
+    const cfgFile = path.join(tmp, 'groups.json');
+    await fs.writeFile(cfgFile, JSON.stringify(cfg));
+    await win.locator('input[type=file][accept="application/json"]').setInputFiles(cfgFile);
+    const box = win.locator('.react-flow__node-groupBox');
+    await expect(box).toHaveCount(1);
+    await expect(box).toContainText('2 nodes');
+
+    // Add filter opens the dialog on a new, blank filter; a blank filter adds nothing
+    await win.getByRole('button', { name: 'Add filter' }).click();
+    const dialog = win.locator('.fixed.inset-0').filter({ has: win.locator('h3', { hasText: 'Filters' }) });
+    await expect(dialog).toBeVisible();
+    await expect(box).toContainText('2 nodes');
+    await dialog.locator('label:has-text("Keyword in name") + input').fill('Five');
+    await dialog.click({ position: { x: 5, y: 5 } });
+    await expect(dialog).toHaveCount(0);
+    await expect(box).toContainText('3 nodes');
+    await expect(win.getByText('or Filter 3: name:"Five"')).toBeVisible();
+
+    // Removing a filter drops only the pages that matched it
+    await win.getByRole('button', { name: 'Remove filter 1' }).click();
+    await expect(box).toContainText('2 nodes');
+    await expect(win.getByRole('button', { name: 'Remove filter 3' })).toHaveCount(0);
+  });
 });
