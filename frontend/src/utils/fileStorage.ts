@@ -51,6 +51,47 @@ export class FileStorage {
     return uploadsPath
   }
 
+  /**
+   * If `filePath` is inside `dirPath` (at any depth), the part of it below `dirPath` with forward
+   * slashes; otherwise null. Windows-style paths compare case-insensitively.
+   */
+  static relativePathInside(filePath: string, dirPath: string): string | null {
+    if (!filePath || !dirPath) return null
+    const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '')
+    const file = norm(filePath)
+    const dir = norm(dirPath)
+    const windows = /^[a-zA-Z]:\//.test(dir) || dirPath.includes('\\')
+    const fileCmp = windows ? file.toLowerCase() : file
+    const dirCmp = windows ? dir.toLowerCase() : dir
+    if (!fileCmp.startsWith(dirCmp + '/')) return null
+    const rel = file.slice(dir.length + 1)
+    if (!rel || rel.split('/').some((seg) => seg === '..' || seg === '.')) return null
+    return rel
+  }
+
+  /**
+   * A record for `file` if it is already inside the project's uploads folder (picked from there),
+   * so it can be attached where it is instead of being copied again as "name (1)". Otherwise null.
+   */
+  static findInUploads(file: File, taskId: string): StoredFile | null {
+    if (!isElectron || !window.electronAPI) return null
+    const uploadsPath = this.getUploadsPath()
+    if (!uploadsPath) return null
+    const rel = this.relativePathInside(window.electronAPI.getPathForFile?.(file) || '', uploadsPath)
+    if (!rel) return null
+    const name = rel.split('/').pop() || rel
+    return {
+      id: `${taskId}_${Date.now()}`,
+      name,
+      originalName: name,
+      size: file.size,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: 'Current User', // TODO: Get from auth context
+      path: `${uploadsPath}/${rel}`,
+      mimeType: file.type || 'application/octet-stream'
+    }
+  }
+
   static async uploadFile(file: File, taskId: string): Promise<StoredFile | null> {
     if (!isElectron || !window.electronAPI) {
       console.error('File upload only supported in Electron mode')

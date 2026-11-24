@@ -34,6 +34,8 @@ If you have unsaved changes, save them before you add or remove links or attachm
 
 Below the page are two lists you can open and close: **Links** shows the pages this one is linked to, and **Attachments** shows the files attached to it. The lists stay visible when **Hide Metadata** is on.
 
+When you attach a file that's already in the project's `uploads` folder, Verbweaver uses that file instead of making a copy.
+
 For each attached file you can:
 
 - **Open File** in its usual app.

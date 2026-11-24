@@ -6,7 +6,7 @@ import { useTabStore } from '../../store/tabStore'
 import { TaskState, TaskPriority } from '@verbweaver/shared'
 import { FileStorage, StoredFile } from '../../utils/fileStorage'
 import { getLinkedNodes } from '../../utils/nodeLinks'
-import { getNodeFiles, uploadFilesForNode } from '../../utils/nodeAttachments'
+import { findNodesReferencingFile, getNodeFiles, uploadFilesForNode, withoutDuplicateFiles } from '../../utils/nodeAttachments'
 import clsx from 'clsx'
 import SharedCreateLinkModal from '../common/CreateLinkModal'
 import { KanbanColumn } from './ColumnManager'
@@ -229,9 +229,13 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
       return
     }
 
-    // Removed attachments are deleted from disk only once the save succeeds
+    // Removed attachments are deleted from disk only once the save succeeds, and only when no
+    // other node still has the same file attached (duplicates and files reused from uploads/)
     const keptIds = new Set(files.map((f) => f.id))
+    const keptPaths = files.map((f) => f.path).filter(Boolean)
     for (const f of getNodeFiles(saved).filter((f) => !keptIds.has(f.id))) {
+      if (!f.path || keptPaths.includes(f.path)) continue
+      if (findNodesReferencingFile(f.path, useNodeStore.getState().nodes.values(), node.path).length > 0) continue
       try { await FileStorage.deleteFile(f) } catch (e) { console.error('Failed to delete removed file:', e) }
     }
     sessionUploadsRef.current = []
@@ -289,9 +293,11 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
 
     setIsUploading(true)
     try {
-      const newFiles = await uploadFilesForNode(uploadedFiles, node.path)
-      sessionUploadsRef.current = [...sessionUploadsRef.current, ...newFiles]
-      setFiles((prev) => [...prev, ...newFiles])
+      const { files: newFiles, copied } = await uploadFilesForNode(uploadedFiles, node.path)
+      // Only files this upload copied are cleaned up on cancel/remove; files picked from
+      // uploads/ already existed and must never be deleted here
+      sessionUploadsRef.current = [...sessionUploadsRef.current, ...copied]
+      setFiles((prev) => [...prev, ...withoutDuplicateFiles(prev, newFiles)])
     } catch (error) {
       console.error('Failed to upload files:', error)
     } finally {

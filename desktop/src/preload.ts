@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron';
 import type { UpdateCheckOutcome } from '@verbweaver/shared';
 
 // Define types for the API
@@ -59,6 +59,8 @@ export interface ElectronAPI {
   showItemInFolder: (path: string) => Promise<void>;
   /** Resolves to '' on success, or an error message (e.g. the file doesn't exist). */
   openPath: (path: string) => Promise<string>;
+  /** Absolute path of a File picked in a file input or dropped; '' if it has none. */
+  getPathForFile: (file: File) => string;
   
   // Window operations
   minimizeWindow: () => void;
@@ -164,6 +166,10 @@ const electronAPI = {
   showItemInFolder: (path: string) => ipcRenderer.invoke('shell:showItemInFolder', path),
   // Fallback to open arbitrary paths (folders/files)
   openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path),
+  // File.path was removed in Electron 32; webUtils is the supported replacement
+  getPathForFile: (file: File) => {
+    try { return webUtils.getPathForFile(file); } catch { return ''; }
+  },
   
   // Window operations
   minimizeWindow: () => ipcRenderer.send('window:minimize'),

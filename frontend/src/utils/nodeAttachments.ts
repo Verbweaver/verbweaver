@@ -54,14 +54,44 @@ export function findNodesReferencingFile(
   return result
 }
 
-/** Upload files for a node and return the stored entries (failed uploads are skipped). */
-export async function uploadFilesForNode(files: FileList | File[], nodePath: string): Promise<StoredFile[]> {
-  const uploaded: StoredFile[] = []
+export interface NodeFileUploads {
+  /** Entries to attach, in the order picked (failed uploads are skipped). */
+  files: StoredFile[]
+  /** The subset that was copied into uploads/ by this call (safe to delete if the attach is abandoned). */
+  copied: StoredFile[]
+}
+
+/**
+ * Store files for a node. Files picked from inside the uploads folder are used where they are;
+ * anything else is copied into it.
+ */
+export async function uploadFilesForNode(files: FileList | File[], nodePath: string): Promise<NodeFileUploads> {
+  const result: NodeFileUploads = { files: [], copied: [] }
   for (const f of Array.from(files)) {
+    const existing = FileStorage.findInUploads(f, nodePath)
+    if (existing) {
+      result.files.push(existing)
+      continue
+    }
     const sf = await FileStorage.uploadFile(f, nodePath)
-    if (sf) uploaded.push(sf)
+    if (sf) {
+      result.files.push(sf)
+      result.copied.push(sf)
+    }
   }
-  return uploaded
+  return result
+}
+
+/** `incoming` without entries whose file is already in `current` (or repeated within `incoming`). */
+export function withoutDuplicateFiles<T extends Partial<StoredFile>>(current: Partial<StoredFile>[], incoming: T[]): T[] {
+  const seen = new Set(current.map((f) => (f?.path ? normalizePath(f.path) : '')).filter(Boolean))
+  return incoming.filter((f) => {
+    if (!f.path) return true
+    const key = normalizePath(f.path)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 async function writeNodeFiles(nodePath: string, next: (files: RawFileEntry[]) => RawFileEntry[]): Promise<void> {
@@ -82,9 +112,14 @@ async function writeNodeFiles(nodePath: string, next: (files: RawFileEntry[]) =>
  */
 export async function attachFilesToNode(nodePath: string, files: FileList | File[]): Promise<StoredFile[]> {
   if (!useNodeStore.getState().nodes.get(nodePath)) throw new Error(`Node not found: ${nodePath}`)
-  const uploaded = await uploadFilesForNode(files, nodePath)
-  await writeNodeFiles(nodePath, (existing) => [...existing, ...uploaded])
-  return uploaded
+  const { files: stored } = await uploadFilesForNode(files, nodePath)
+  // Re-attaching a file the node already has (e.g. picked from uploads/) adds no second entry
+  let added: StoredFile[] = []
+  await writeNodeFiles(nodePath, (existing) => {
+    added = withoutDuplicateFiles(existing, stored)
+    return [...existing, ...added]
+  })
+  return added
 }
 
 /** Remove a file from a node's attachments, matching by id, or by path when the entry has no id. The file stays on disk. */

@@ -66,6 +66,8 @@ declare global {
       showItemInFolder: (path: string) => Promise<void>;
       /** Resolves to '' on success, or an error message (e.g. the file doesn't exist). */
       openPath?: (path: string) => Promise<string>;
+      /** Absolute path of a File picked in a file input or dropped; '' if it has none. */
+      getPathForFile?: (file: File) => string;
       
       // Window operations
       minimizeWindow: () => void;
