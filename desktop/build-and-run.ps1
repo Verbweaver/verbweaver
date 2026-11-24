@@ -95,18 +95,17 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Ensure electron-vite is present locally for config resolution
+# Find electron-vite. npm usually hoists it to the root node_modules, so check there as well
+# as desktop\node_modules. Don't `npm install` it here: that rewrites desktop/package.json and
+# package-lock.json (e.g. turns the exact Electron pin into a ^ range).
 $desktopPath = Join-Path $projectRoot "desktop"
-$electronVitePkg = Join-Path $desktopPath "node_modules\electron-vite\package.json"
-if (-not (Test-Path $electronVitePkg)) {
-    Write-Host "`nelectron-vite not found locally. Installing in desktop workspace..." -ForegroundColor Yellow
-    Set-Location $desktopPath
-    npm install electron-vite --save-dev
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to install electron-vite in desktop workspace" -ForegroundColor Red
-        exit 1
-    }
-    Set-Location $projectRoot
+$electronViteBin = @(
+    (Join-Path $desktopPath "node_modules\.bin\electron-vite.cmd"),
+    (Join-Path $projectRoot "node_modules\.bin\electron-vite.cmd")
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $electronViteBin) {
+    Write-Host "electron-vite not found. Run 'npm ci' in $projectRoot (or rerun this script with FORCE_INSTALL=true)." -ForegroundColor Red
+    exit 1
 }
 Set-Location $projectRoot
 
@@ -199,16 +198,7 @@ if ($ensureExit -ne 0) {
 
 # Start Electron (visible cmd window) and wait for it to exit
 try {
-    $electronViteBin = Join-Path $desktopPath "node_modules\.bin\electron-vite.cmd"
-    if (Test-Path $electronViteBin) {
-        $electronProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$electronViteBin`" dev" -WorkingDirectory $desktopPath -PassThru -WindowStyle Normal
-    } else {
-        # Fallback to npx to resolve electron-vite; ensure local electron-vite and electron are installed first
-        Set-Location $desktopPath
-        npm install electron-vite electron --save-dev --include=dev
-        Set-Location $projectRoot
-        $electronProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npx --yes electron-vite dev" -WorkingDirectory $desktopPath -PassThru -WindowStyle Normal
-    }
+    $electronProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$electronViteBin`" dev" -WorkingDirectory $desktopPath -PassThru -WindowStyle Normal
 } catch {
     Write-Host "Failed to start Electron dev process: $_" -ForegroundColor Red
     if ($frontendProcess) { try { Stop-Process -Id $frontendProcess.Id -Force } catch {} }
