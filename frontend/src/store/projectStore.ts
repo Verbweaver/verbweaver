@@ -8,6 +8,30 @@ import { useAuthStore } from '../services/auth'
 // Check if we're in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
 
+// The backend lists projects in its own shape (git_config, created_at); older code paths and the
+// web app use ProjectConfig (gitRepository, created). These read either one.
+type AnyProject = Project | ProjectConfig
+
+function localPathOf(p: AnyProject): string | undefined {
+  return ('git_config' in p ? p.git_config?.path : p.gitRepository?.path) ?? undefined
+}
+
+function toProjectConfig(p: AnyProject, path: string): ProjectConfig {
+  return {
+    id: p.id,
+    name: p.name,
+    description: p.description || `Local project at ${path}`,
+    created: 'created_at' in p ? p.created_at : p.created,
+    modified: 'updated_at' in p ? (p.updated_at || p.created_at) : ('modified' in p ? p.modified : new Date().toISOString()),
+    settings: p.settings || {},
+    gitRepository: {
+      url: 'git_config' in p ? (p.git_config.url || '') : (p.gitRepository?.url || ''),
+      branch: 'git_config' in p ? (p.git_config.branch || 'main') : (p.gitRepository?.branch || 'main'),
+      type: 'git_config' in p ? (p.git_config.type || 'local') : (p.gitRepository?.type || 'local')
+    }
+  }
+}
+
 interface ProjectState {
   projects: ProjectConfig[]
   currentProject: ProjectConfig | null
@@ -66,23 +90,23 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set({ projects, isLoading: false, hasLoadedOnce: true })
       const currentState = get()
       
-      // In desktop mode, check if we have a stored project path
+      // In desktop mode, reopen the project from its stored folder. The backend lists projects
+      // with git_config, so match on that. Without the folder path, views that read project files
+      // (e.g. the Graph) wait forever, so on desktop never pick a project without one. The main
+      // process also announces the open project on launch (project:opened), but not after a reload.
       if (isElectron) {
+        if (currentState.currentProjectPath) return
         const storedPath = localStorage.getItem('verbweaver_active_project_path')
-        if (storedPath) {
-          // Find the project with this path
-          const projectWithPath = projects.find(p => 
-            p.gitRepository?.type === 'local' && 
-            p.gitRepository?.path === storedPath
-          )
-          if (projectWithPath) {
-            set({ 
-              currentProject: projectWithPath,
-              currentProjectPath: storedPath
-            })
-            return
-          }
+        const projectWithPath = storedPath
+          ? (projects as AnyProject[]).find(p => localPathOf(p) === storedPath)
+          : undefined
+        if (storedPath && projectWithPath) {
+          set({
+            currentProject: toProjectConfig(projectWithPath, storedPath),
+            currentProjectPath: storedPath
+          })
         }
+        return
       }
       
       if (!currentState.currentProject && projects.length > 0) {
@@ -181,21 +205,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         get().stopCollaborationSchedulers()
         get().startCollaborationSchedulers()
       } else {
-        // Convert backend Project to ProjectConfig format
-        const projectConfig: ProjectConfig = {
-          id: existingProject.id,
-          name: existingProject.name,
-          description: existingProject.description || `Local project at ${path}`,
-          created: 'created_at' in existingProject ? existingProject.created_at : existingProject.created,
-          modified: 'updated_at' in existingProject ? (existingProject.updated_at || existingProject.created_at) : ('modified' in existingProject ? existingProject.modified : new Date().toISOString()),
-          settings: existingProject.settings || {},
-          gitRepository: {
-            url: 'git_config' in existingProject ? (existingProject.git_config.url || '') : (existingProject.gitRepository?.url || ''),
-            branch: 'git_config' in existingProject ? (existingProject.git_config.branch || 'main') : (existingProject.gitRepository?.branch || 'main'),
-            type: 'git_config' in existingProject ? (existingProject.git_config.type || 'local') : (existingProject.gitRepository?.type || 'local')
-          }
-        }
-        
+        const projectConfig = toProjectConfig(existingProject, path)
+
         // Update local projects list to include this project if not already present
         set(state => {
           const existingInLocal = state.projects.find(p => p.id === projectConfig.id)
