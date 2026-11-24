@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallback } from 'react'
 import ProgressionChart, { Series } from './ProgressionChart'
 import NodeSelector, { NodeFilterState } from '../NodeSelector'
+import NodeFiltersDialog, { DEFAULT_FILTERS } from '../NodeFiltersDialog'
+import { isFilterActive, buildLinkedTargets, matchesNodeFilters } from '../../utils/nodeFilters'
 import NodeOrderingPanel from '../NodeOrderingPanel'
 import { useNodeStore } from '../../store/nodeStore'
 import { useProjectStore } from '../../store/projectStore'
@@ -187,83 +189,14 @@ export default function ProgressionPanel(
     // If user explicitly selected nodes, start with those; otherwise start with all files (not folders)
     let paths = config.selectedNodes.length > 0 ? config.selectedNodes : Array.from(nodeMap.keys()).filter(p => !nodeMap.get(p)?.isDirectory)
 
-    // Apply filters when present (behaviorally mirroring NodeSelector)
+    // Apply filters when present (shared rules, #34)
     const f = config.filters
-    if (f) {
-      const usingFilters = (
-        (f.tags && f.tags.length > 0) || f.nameKeyword || f.descriptionKeyword || f.startsWith || f.endsWith ||
-        f.startDateFrom || f.startDateTo || f.dueDateFrom || f.dueDateTo || f.hasAttachments || (f.linkedFromNodeTags && f.linkedFromNodeTags.length > 0)
-      )
-      if (usingFilters) {
-        const normalizeId = (s: string) => String(s || '').replace(/^node-/, '')
-        const sourceIds = new Set<string>((f.linkedFromNodeTags || []).map(normalizeId).filter(Boolean))
-        const outgoingTargetIds = new Set<string>()
-        if (sourceIds.size > 0) {
-          for (const n of nodeMap.values()) {
-            const nid = (n?.metadata as any)?.id
-            if (nid && sourceIds.has(String(nid))) {
-              const links: string[] = Array.isArray((n?.metadata as any)?.links) ? (n as any).metadata.links : []
-              links.forEach(id => { if (id) outgoingTargetIds.add(String(id)) })
-            }
-          }
-        }
-        const matches = (path: string): boolean => {
-          const node = nodeMap.get(path)
-          if (!node) return false
-          const meta: any = node.metadata || {}
-          const title = String(meta?.title || node.name || '')
-          const description = String(meta?.description || '')
-          const tags: string[] = Array.isArray(meta?.tags) ? meta.tags.map(String) : []
-          const startDate = String(meta?.task?.startDate || '')
-          const dueDate = String(meta?.task?.dueDate || '')
-          const files = Array.isArray(meta?.task?.files) ? meta.task.files : []
-          const nodeId = String(meta?.id || '')
-
-          if (f.nameKeyword) {
-            const q = f.nameKeyword.toLowerCase()
-            if (!title.toLowerCase().includes(q)) return false
-          }
-          if (f.descriptionKeyword) {
-            const q = f.descriptionKeyword.toLowerCase()
-            if (!description.toLowerCase().includes(q)) return false
-          }
-          if (f.startsWith) {
-            if (f.startsEndsCaseSensitive) {
-              if (!title.startsWith(f.startsWith)) return false
-            } else {
-              if (!title.toLowerCase().startsWith(f.startsWith.toLowerCase())) return false
-            }
-          }
-          if (f.endsWith) {
-            if (f.startsEndsCaseSensitive) {
-              if (!title.endsWith(f.endsWith)) return false
-            } else {
-              if (!title.toLowerCase().endsWith(f.endsWith.toLowerCase())) return false
-            }
-          }
-          if ((f.tags || []).length > 0) {
-            const set = new Set(tags.map(t=>t.toLowerCase()))
-            const wanted = (f.tags || []).map(t=>t.toLowerCase())
-            if (f.tagsLogic === 'ANY') {
-              if (!wanted.some(t=> set.has(t))) return false
-            } else {
-              if (!wanted.every(t=> set.has(t))) return false
-            }
-          }
-          if (f.startDateFrom && (!startDate || startDate < f.startDateFrom)) return false
-          if (f.startDateTo && (!startDate || startDate > f.startDateTo)) return false
-          if (f.dueDateFrom && (!dueDate || dueDate < f.dueDateFrom)) return false
-          if (f.dueDateTo && (!dueDate || dueDate > f.dueDateTo)) return false
-          if (f.hasAttachments) {
-            if (!Array.isArray(files) || files.length === 0) return false
-          }
-          if (sourceIds.size > 0) {
-            if (!nodeId || !outgoingTargetIds.has(nodeId)) return false
-          }
-          return true
-        }
-        paths = paths.filter(p => matches(p))
-      }
+    if (f && isFilterActive(f)) {
+      const linkedTargets = buildLinkedTargets(f, nodeMap.values())
+      paths = paths.filter(p => {
+        const node = nodeMap.get(p)
+        return !!node && matchesNodeFilters(node, f, linkedTargets)
+      })
     }
 
     if (config.manualOrdering && config.orderedNodes.length > 0) {
@@ -590,72 +523,12 @@ export default function ProgressionPanel(
           </div>
         )}
       </div>
-      {filtersOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={()=>setFiltersOpen(false)}>
-          <div className="bg-background border border-border rounded-lg w-[640px] max-w-[95vw] p-4" onClick={(e)=>e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold">Filters</h3>
-              <button className="px-2 py-1 text-xs border rounded" onClick={()=> setConfig(c=>({ ...c, filters: { tags: [], tagsLogic: 'ANY', nameKeyword: '', descriptionKeyword: '', startsWith: '', endsWith: '', startsEndsCaseSensitive: false, startDateFrom: undefined, startDateTo: undefined, dueDateFrom: undefined, dueDateTo: undefined, hasAttachments: false, linkedFromNodeTags: [] } }))}>Clear</button>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="space-y-2">
-                <label className="block text-xs font-medium">Tags (comma-separated)</label>
-                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={(config.filters?.tags || []).join(', ')} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{ tags: [], tagsLogic: 'ANY', nameKeyword: '', descriptionKeyword: '', startsWith: '', endsWith: '', startsEndsCaseSensitive: false, hasAttachments: false, linkedFromNodeTags: [] }), tags: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) } }))} placeholder="e.g. design, api" />
-                <label className="inline-flex items-center gap-2 text-xs mt-1">
-                  <span>Match:</span>
-                  <select className="px-2 py-1 border border-input rounded bg-background" value={config.filters?.tagsLogic || 'ANY'} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), tagsLogic: (e.target.value as any) } }))}>
-                    <option value="ANY">ANY</option>
-                    <option value="ALL">ALL</option>
-                  </select>
-                </label>
-              </div>
-              <div className="space-y-2">
-                <label className="block text-xs font-medium">Keyword in name (title)</label>
-                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={config.filters?.nameKeyword || ''} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), nameKeyword: e.target.value } }))} placeholder="case-insensitive" />
-                <label className="block text-xs font-medium">Keyword in description</label>
-                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={config.filters?.descriptionKeyword || ''} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), descriptionKeyword: e.target.value } }))} placeholder="case-insensitive" />
-              </div>
-              <div className="space-y-2">
-                <label className="block text-xs font-medium">Starts with (title)</label>
-                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={config.filters?.startsWith || ''} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), startsWith: e.target.value } }))} />
-                <label className="block text-xs font-medium">Ends with (title)</label>
-                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={config.filters?.endsWith || ''} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), endsWith: e.target.value } }))} />
-                <label className="inline-flex items-center gap-2 text-xs">
-                  <input type="checkbox" className="rounded" checked={config.filters?.startsEndsCaseSensitive || false} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), startsEndsCaseSensitive: e.target.checked } }))} />
-                  Case sensitive
-                </label>
-              </div>
-              <div className="space-y-2">
-                <label className="block text-xs font-medium">Start date range (YYYY-MM-DD)</label>
-                <div className="flex gap-2">
-                  <input type="date" className="px-2 py-1 border border-input rounded bg-background w-full" value={config.filters?.startDateFrom || ''} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), startDateFrom: e.target.value || undefined } }))} />
-                  <input type="date" className="px-2 py-1 border border-input rounded bg-background w-full" value={config.filters?.startDateTo || ''} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), startDateTo: e.target.value || undefined } }))} />
-                </div>
-                <label className="block text-xs font-medium">Due date range (YYYY-MM-DD)</label>
-                <div className="flex gap-2">
-                  <input type="date" className="px-2 py-1 border border-input rounded bg-background w-full" value={config.filters?.dueDateFrom || ''} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), dueDateFrom: e.target.value || undefined } }))} />
-                  <input type="date" className="px-2 py-1 border border-input rounded bg-background w-full" value={config.filters?.dueDateTo || ''} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), dueDateTo: e.target.value || undefined } }))} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="inline-flex items-center gap-2 text-xs mt-5">
-                  <input type="checkbox" className="rounded" checked={config.filters?.hasAttachments || false} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), hasAttachments: e.target.checked } }))} />
-                  Has any file attachments
-                </label>
-              </div>
-              <div className="space-y-2 col-span-2">
-                <label className="block text-xs font-medium">Linked from node(s) (node ID tags, comma-separated)</label>
-                <input className="w-full px-2 py-1 border border-input rounded bg-background" value={(config.filters?.linkedFromNodeTags || []).join(', ')} onChange={(e)=> setConfig(c=>({ ...c, filters: { ...(c.filters||{} as any), linkedFromNodeTags: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) } }))} placeholder="e.g. node-123, node-456" />
-                <p className="text-[10px] text-muted-foreground">Includes nodes that are targets of the outgoing links from the specified node(s).</p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <button className="px-3 py-1.5 border rounded" onClick={()=> setFiltersOpen(false)}>Cancel</button>
-              <button className="px-3 py-1.5 border rounded bg-primary text-primary-foreground" onClick={()=> setFiltersOpen(false)}>Apply</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NodeFiltersDialog
+        filters={{ ...DEFAULT_FILTERS, ...(config.filters || {}) }}
+        onFiltersChange={(f)=> setConfig(c=>({ ...c, filters: f }))}
+        isOpen={filtersOpen}
+        onClose={()=> setFiltersOpen(false)}
+      />
     </div>
   )
 }

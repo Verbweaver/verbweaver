@@ -33,6 +33,7 @@ import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
 import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers, HelpCircle, ImageDown } from 'lucide-react'
 import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
+import { isFilterActive, buildLinkedTargets, matchesNodeFilters } from '../utils/nodeFilters'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
 import * as htmlToImage from 'html-to-image'
 import clsx from 'clsx'
@@ -193,7 +194,7 @@ function GraphView() {
           try { return JSON.stringify(curr) === JSON.stringify(saved) } catch { return false }
         })()
         if (!same || lastRestoredForTabRef.current !== tab.id) {
-          setFilters(prev => ({ ...prev, ...saved }))
+          setFilters({ ...DEFAULT_FILTERS, ...saved })
           lastRestoredForTabRef.current = tab.id
         }
       }
@@ -663,95 +664,10 @@ function GraphView() {
         }
         return true
       }
-      // Helper function to check if a node matches the filters
-      const nodeMatchesFilters = (node: any): boolean => {
-        const normalizeId = (s: string) => String(s || '').replace(/^node-/, '')
-        const meta = node.metadata || {}
-        
-        // Check if any filters are active
-        const usingFilters = (
-          (filters.tags || []).length > 0 || filters.nameKeyword || filters.descriptionKeyword || filters.startsWith || filters.endsWith ||
-          filters.startDateFrom || filters.startDateTo || filters.dueDateFrom || filters.dueDateTo || filters.hasAttachments || (filters.linkedFromNodeTags || []).length > 0
-        )
-        if (!usingFilters) return true
-
-        // Get metadata
-        const title = String(meta?.title || node.name || '')
-        const description = String(meta?.description || '')
-        const tags: string[] = Array.isArray(meta?.tags) ? meta.tags.map(String) : []
-        const startDate = String(meta?.task?.startDate || '')
-        const dueDate = String(meta?.task?.dueDate || '')
-        const files = Array.isArray(meta?.task?.files) ? meta.task.files : []
-        const nodeId = String(meta?.id || '')
-
-        // name keyword (case-insensitive)
-        if (filters.nameKeyword) {
-          const q = filters.nameKeyword.toLowerCase()
-          if (!title.toLowerCase().includes(q)) return false
-        }
-
-        // description keyword (case-insensitive)
-        if (filters.descriptionKeyword) {
-          const q = filters.descriptionKeyword.toLowerCase()
-          if (!description.toLowerCase().includes(q)) return false
-        }
-
-        // starts/ends with on title with case sensitivity option
-        if (filters.startsWith) {
-          if (filters.startsEndsCaseSensitive) {
-            if (!title.startsWith(filters.startsWith)) return false
-          } else {
-            if (!title.toLowerCase().startsWith(filters.startsWith.toLowerCase())) return false
-          }
-        }
-        if (filters.endsWith) {
-          if (filters.startsEndsCaseSensitive) {
-            if (!title.endsWith(filters.endsWith)) return false
-          } else {
-            if (!title.toLowerCase().endsWith(filters.endsWith.toLowerCase())) return false
-          }
-        }
-
-        // tags ANY/ALL
-        if ((filters.tags || []).length > 0) {
-          const set = new Set(tags.map((t: string) => t.toLowerCase()))
-          const wanted = (filters.tags || []).map((t: string) => t.toLowerCase())
-          if (filters.tagsLogic === 'ANY') {
-            if (!wanted.some((t: string) => set.has(t))) return false
-          } else {
-            if (!wanted.every((t: string) => set.has(t))) return false
-          }
-        }
-
-        // date ranges (inclusive)
-        if (filters.startDateFrom && (!startDate || startDate < filters.startDateFrom)) return false
-        if (filters.startDateTo && (!startDate || startDate > filters.startDateTo)) return false
-        if (filters.dueDateFrom && (!dueDate || dueDate < filters.dueDateFrom)) return false
-        if (filters.dueDateTo && (!dueDate || dueDate > filters.dueDateTo)) return false
-
-        // attachments
-        if (filters.hasAttachments) {
-          if (!Array.isArray(files) || files.length === 0) return false
-        }
-
-        // linked-from sources: include only if this node's id is a target
-        if ((filters.linkedFromNodeTags || []).length > 0) {
-          const sourceIds = new Set<string>((filters.linkedFromNodeTags || []).map(normalizeId).filter(Boolean))
-          const outgoingTargetIds = new Set<string>()
-          if (sourceIds.size > 0) {
-            for (const n of verbweaverNodes.values()) {
-              const nid = n?.metadata?.id
-              if (nid && sourceIds.has(String(nid))) {
-                const links: string[] = Array.isArray(n?.metadata?.links) ? n.metadata.links : []
-                links.forEach(id => { if (id) outgoingTargetIds.add(String(id)) })
-              }
-            }
-          }
-          if (!nodeId || !outgoingTargetIds.has(nodeId)) return false
-        }
-
-        return true
-      }
+      // Helper function to check if a node matches the filters (shared rules, #34)
+      const usingFilters = isFilterActive(filters)
+      const linkedTargets = usingFilters ? buildLinkedTargets(filters, verbweaverNodes.values()) : null
+      const nodeMatchesFilters = (node: any): boolean => !usingFilters || matchesNodeFilters(node, filters, linkedTargets)
 
       // Convert VerbweaverNodes to React Flow nodes and edges
       const flowNodes: Node[] = []
@@ -2053,7 +1969,7 @@ function GraphView() {
                 <button
                   className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent flex items-center gap-2"
                   onClick={() => setFiltersOpen(true)}
-                  title="Filter visible nodes by tags, keywords, dates, and more"
+                  title="Filter visible nodes by path, tags, keywords, dates, and more"
                 >
                   <Filter className="w-4 h-4" />
                   <span>Filters</span>
