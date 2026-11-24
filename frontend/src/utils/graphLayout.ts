@@ -64,167 +64,128 @@ export function getLayoutedElements(
   return { nodes: layoutedNodes, edges }
 }
 
-// Helper to determine which handles to use based on relative positions and layout type
-function getHandleIds(
-  sourcePos: { x: number; y: number }, 
-  targetPos: { x: number; y: number },
-  sourceNode: Node,
-  targetNode: Node,
-  layoutType: string = 'default'
-) {
-  const dx = targetPos.x - sourcePos.x;
-  const dy = targetPos.y - sourcePos.y;
+// Folder lines ("contains") are built in Graph.tsx with ids `hard-<parent>-<child>`; soft links use `soft_`.
+// Match on the id, not the line colour, which follows the theme (#160)
+function isHardEdge(edge: Edge): boolean {
+  return edge.id.startsWith('hard-')
+}
 
-  if (layoutType === 'expanded') {
-    // For Expanded layout, always use horizontal handles
-    if (dx > 0) {
-      return { sourceHandle: 'right', targetHandle: 'left' };
-    } else {
-      // Default to left-to-right if dx is 0 or negative, to prevent issues with overlapping nodes
-      return { sourceHandle: 'left', targetHandle: 'right' }; 
-    }
-  }
-  
-  // For all other layouts, use vertical handles as default
-  if (Math.abs(dy) >= Math.abs(dx)) { // Prefer vertical if similar delta
-    if (dy > 0) {
-      return { sourceHandle: 'bottom', targetHandle: 'top' };
-    } else {
-      return { sourceHandle: 'top', targetHandle: 'bottom' };
-    }
-  } else { // Horizontal fallback for non-expanded if dx is significantly larger
-     if (dx > 0) {
-      return { sourceHandle: 'right', targetHandle: 'left' };
-    } else {
-      return { sourceHandle: 'left', targetHandle: 'right' };
-    }
+function isFolderNode(node: Node): boolean {
+  const data = node.data as { isDirectory?: boolean; type?: string } | undefined
+  return !!data?.isDirectory || data?.type === 'folder'
+}
+
+function compareChildren(a: Node, b: Node): number {
+  const aIsFolder = isFolderNode(a)
+  const bIsFolder = isFolderNode(b)
+  if (aIsFolder !== bIsFolder) return aIsFolder ? -1 : 1
+  return String(a.data?.label || '').localeCompare(String(b.data?.label || ''))
+}
+
+interface LayoutTree {
+  node: Node
+  children: LayoutTree[]
+  height: number // vertical space the subtree needs
+}
+
+// Rendered box size, with the same fallback as getLayoutedElements before React Flow has measured it
+function sizeOf(node: Node): { width: number; height: number } {
+  return {
+    width: node.measured?.width ?? node.width ?? 150,
+    height: node.measured?.height ?? node.height ?? 50,
   }
 }
 
-// Expanded layout that alternates folders left and right
+// Expanded layout: a sideways mind map. Each top-level item sits at the centre of its own tree,
+// its contents alternate to the right and left, and every deeper level sits further out.
+// Each branch gets as much vertical room as its contents need, so boxes never overlap.
 export function getExpandedLayout(
   nodes: Node[],
   edges: Edge[]
 ): { nodes: Node[]; edges: Edge[] } {
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
-  const childrenMap = new Map<string, Node[]>();
-  const parentMap = new Map<string, string>(); // To find parent of a node
+  const columnGap = 100 // horizontal gap between a column and the next level out
+  const rowGap = 24 // vertical gap between neighbouring boxes in a column
+  const treeGap = 120 // vertical gap between separate top-level trees
 
+  const nodeMap = new Map(nodes.map(n => [n.id, n]))
+  const childrenMap = new Map<string, Node[]>()
+  const hasParent = new Set<string>()
   edges.forEach(edge => {
-    if (edge.style?.stroke === '#6b7280') { // Hard links (parent-child)
-      const children = childrenMap.get(edge.source) || [];
-      const childNode = nodeMap.get(edge.target);
-      if (childNode) {
-        children.push(childNode);
-        childrenMap.set(edge.source, children);
-        parentMap.set(edge.target, edge.source);
-      }
-    }
-  });
-  
-  const rootNodes = nodes.filter(node => 
-    node.id === 'nodes' || 
-    !edges.some(edge => edge.target === node.id && edge.style?.stroke === '#6b7280')
-  );
-  
-  const layoutedNodes: Node[] = [];
-  const nodePositions = new Map<string, { x: number; y: number }>();
-  const verticalSpacing = 80; // Reduced vertical spacing for a more compact horizontal layout
-  const horizontalSpacing = 250; // Increased horizontal spacing
-  let currentY = 50;
-  const laidOutHorizontally = new Set<string>(); // Track nodes already part of horizontal chain
+    if (!isHardEdge(edge) || edge.source === edge.target) return
+    const child = nodeMap.get(edge.target)
+    if (!child || !nodeMap.has(edge.source) || hasParent.has(child.id)) return
+    hasParent.add(child.id)
+    const children = childrenMap.get(edge.source) || []
+    children.push(child)
+    childrenMap.set(edge.source, children)
+  })
 
-  function layoutNode(node: Node, x: number, y: number, level: number, isLeftChild?: boolean) {
-    const position = { x, y }; 
-    layoutedNodes.push({ ...node, position });
-    nodePositions.set(node.id, position);
-    laidOutHorizontally.add(node.id);
-
-    const children = (childrenMap.get(node.id) || []).sort((a, b) => {
-      const aIsFolder = a.data?.isDirectory || a.data?.type === 'folder';
-      const bIsFolder = b.data?.isDirectory || b.data?.type === 'folder';
-      if (aIsFolder && !bIsFolder) return -1;
-      if (!aIsFolder && bIsFolder) return 1;
-      return String(a.data?.label || '').localeCompare(String(b.data?.label || ''));
-    });
-
-    let childX;
-    let childY = y; // Keep children at the same Y level initially
-    let childrenOnLevel = 0;
-
-    // Group children by whether they are folders or files for separate horizontal layout passes
-    const folderChildren = children.filter(c => c.data?.isDirectory || c.data?.type === 'folder');
-    const fileChildren = children.filter(c => !(c.data?.isDirectory || c.data?.type === 'folder'));
-
-    // Layout folder children horizontally first
-    folderChildren.forEach((child, index) => {
-      if (laidOutHorizontally.has(child.id)) return; // Already processed
-      // Alternate left and right from the parent
-      if (index % 2 === 0) { // Place to the right
-        childX = x + horizontalSpacing * (Math.floor(index / 2) + 1);
-      } else { // Place to the left
-        childX = x - horizontalSpacing * (Math.floor(index / 2) + 1);
-      }
-      layoutNode(child, childX, childY, level + 1, childX < x);
-      childrenOnLevel++;
-    });
-    
-    // Layout file children horizontally after folders, slightly offset vertically if needed
-    if (folderChildren.length > 0 && fileChildren.length > 0) {
-        childY += verticalSpacing; // Move files down a bit if folders are present on the same line
-    }
-    
-    fileChildren.forEach((child, index) => {
-        if (laidOutHorizontally.has(child.id)) return;
-        // Alternate left and right from the parent
-        if (index % 2 === 0) { // Place to the right
-            childX = x + horizontalSpacing * (Math.floor(index / 2) + 1);
-        } else { // Place to the left
-            childX = x - horizontalSpacing * (Math.floor(index / 2) + 1);
-        }
-        layoutNode(child, childX, childY, level + 1, childX < x);
-        childrenOnLevel++;
-    });
-
-    // If this node itself was a child and had its own children, adjust its parent's Y if needed to avoid overlap
-    if (level > 0 && childrenOnLevel > 0 && nodePositions.has(parentMap.get(node.id)!)) {
-        const parentNode = nodeMap.get(parentMap.get(node.id)!);
-        if (parentNode) {
-            const parentPos = nodePositions.get(parentNode.id)!;
-            // This logic is complex and might need refinement for deep trees.
-            // For now, simple Y shift to demonstrate intent.
-            // if (isLeftChild && parentPos.y === y) parentPos.y -= verticalSpacing / 2;
-            // if (!isLeftChild && parentPos.y === y) parentPos.y -= verticalSpacing / 2;
-        }
-    }
+  function stackHeight(trees: LayoutTree[]): number {
+    if (trees.length === 0) return 0
+    return trees.reduce((sum, t) => sum + t.height, 0) + rowGap * (trees.length - 1)
   }
-  
-  rootNodes.forEach((rootNode) => {
-    if (!laidOutHorizontally.has(rootNode.id)){
-        layoutNode(rootNode, 0, currentY, 0);
-        currentY += verticalSpacing * 3; // Space out different root branches significantly
-    }
-  });
-  
-  const finalNodes = nodes.map(node => {
-    const layoutedNode = layoutedNodes.find(n => n.id === node.id);
-    return layoutedNode || { ...node, position: { x: Math.random() * 200, y: Math.random() * 200 } }; // Fallback position
-  });
-  
-  const updatedEdges = edges.map(edge => {
-    const sourceNode = nodeMap.get(edge.source);
-    const targetNode = nodeMap.get(edge.target);
-    const sourcePos = nodePositions.get(edge.source);
-    const targetPos = nodePositions.get(edge.target);
-    
-    if (sourceNode && targetNode && sourcePos && targetPos) {
-      const { sourceHandle, targetHandle } = getHandleIds(sourcePos, targetPos, sourceNode, targetNode, 'expanded');
-      return { ...edge, sourceHandle, targetHandle };
-    }
-    return { ...edge }; // Return original edge if nodes/positions not found
-  });
-  
-  return { nodes: finalNodes, edges: updatedEdges };
+
+  // Place each node once, even if the folder lines contain a loop
+  const visited = new Set<string>()
+  function buildTree(node: Node): LayoutTree {
+    visited.add(node.id)
+    const children = (childrenMap.get(node.id) || [])
+      .filter(c => !visited.has(c.id))
+      .sort(compareChildren)
+      .map(buildTree)
+    return { node, children, height: Math.max(sizeOf(node).height, stackHeight(children)) }
+  }
+
+  // Widest box at each level of one side of a tree, so each level forms a tidy column
+  function columnWidths(trees: LayoutTree[], depth = 0, widths: number[] = []): number[] {
+    trees.forEach(t => {
+      widths[depth] = Math.max(widths[depth] ?? 0, sizeOf(t.node).width)
+      columnWidths(t.children, depth + 1, widths)
+    })
+    return widths
+  }
+
+  const positions = new Map<string, { x: number; y: number }>()
+
+  // Stack trees in one column, centred on centerY, then place their children one column further out.
+  // edgeX is the column's inner edge: its left edge on the right side, its right edge on the left side.
+  function placeColumn(trees: LayoutTree[], edgeX: number, centerY: number, direction: 1 | -1, widths: number[], depth: number) {
+    if (trees.length === 0) return
+    const nextEdgeX = edgeX + direction * (widths[depth] + columnGap)
+    let top = centerY - stackHeight(trees) / 2
+    trees.forEach(t => {
+      const { width, height } = sizeOf(t.node)
+      const childCenter = top + t.height / 2
+      positions.set(t.node.id, { x: direction === 1 ? edgeX : edgeX - width, y: childCenter - height / 2 })
+      placeColumn(t.children, nextEdgeX, childCenter, direction, widths, depth + 1)
+      top += t.height + rowGap
+    })
+  }
+
+  // Top-level items: nodes with no folder line coming in, with the project's 'nodes' folder first.
+  // Any node left over afterwards (only possible inside a loop) starts its own tree.
+  const roots = nodes.filter(n => !hasParent.has(n.id))
+  roots.sort((a, b) => (a.id === 'nodes' ? -1 : b.id === 'nodes' ? 1 : 0))
+  const startOrder = [...roots, ...nodes.filter(n => hasParent.has(n.id))]
+
+  let nextTop: number | null = null
+  startOrder.forEach(rootNode => {
+    if (visited.has(rootNode.id)) return
+    const tree = buildTree(rootNode)
+    const right = tree.children.filter((_, i) => i % 2 === 0)
+    const left = tree.children.filter((_, i) => i % 2 === 1)
+    const root = sizeOf(rootNode)
+    const halfHeight = Math.max(root.height, stackHeight(right), stackHeight(left)) / 2
+    // The first tree's root sits at (0, 0); later trees go below the previous one
+    const centerY = nextTop === null ? root.height / 2 : nextTop + halfHeight
+    positions.set(rootNode.id, { x: 0, y: centerY - root.height / 2 })
+    placeColumn(right, root.width + columnGap, centerY, 1, columnWidths(right), 0)
+    placeColumn(left, -columnGap, centerY, -1, columnWidths(left), 0)
+    nextTop = centerY + halfHeight + treeGap
+  })
+
+  const layoutedNodes = nodes.map(node => ({ ...node, position: positions.get(node.id) || node.position }))
+  return { nodes: layoutedNodes, edges }
 }
 
 // Helper to get a centered layout
