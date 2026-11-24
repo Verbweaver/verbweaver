@@ -63,6 +63,8 @@ type GroupViewStore = {
   addGroup: (group: GroupDefinition) => void
   updateGroup: (groupId: string, updates: Partial<GroupDefinition>) => void
   removeGroup: (groupId: string) => void
+  // Deletes every group and forgets their box positions (#154)
+  clearGroups: () => void
 
   setOptions: (options: Partial<GroupViewOptions>) => void
   setBoxLayout: (boxId: string, pos: { x: number; y: number; w?: number; h?: number }) => void
@@ -86,6 +88,7 @@ export const useGroupViewStore = create<GroupViewStore>((set, get) => ({
     groups: s.groups.map(g => (g.id === groupId ? { ...g, ...updates } : g)),
   })),
   removeGroup: (groupId) => set((s) => ({ groups: s.groups.filter(g => g.id !== groupId) })),
+  clearGroups: () => set({ groups: [], layout: { boxes: {} } }),
 
   setOptions: (options) => set((s) => ({ options: { ...s.options, ...options } })),
   setBoxLayout: (boxId, pos) => set((s) => ({ layout: { ...s.layout, boxes: { ...s.layout.boxes, [boxId]: pos } } })),

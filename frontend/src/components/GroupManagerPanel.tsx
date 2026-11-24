@@ -19,6 +19,7 @@ export default function GroupManagerPanel({ className }: Props) {
   const addGroup = useGroupViewStore(s => s.addGroup)
   const updateGroup = useGroupViewStore(s => s.updateGroup)
   const removeGroup = useGroupViewStore(s => s.removeGroup)
+  const clearGroups = useGroupViewStore(s => s.clearGroups)
   const nodes = useNodeStore(s => s.nodes)
 
   // Which filter of which group the dialog is editing (#68)
@@ -27,6 +28,8 @@ export default function GroupManagerPanel({ className }: Props) {
   const [renameValue, setRenameValue] = useState<string>('')
   // Group being deleted, waiting for confirmation (#99)
   const [confirmRemove, setConfirmRemove] = useState<GroupDefinition | null>(null)
+  // Waiting for confirmation to delete every group (#154)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const handleAdd = () => {
     if (groups.length >= MAX_GROUPS) {
@@ -133,6 +136,14 @@ export default function GroupManagerPanel({ className }: Props) {
           <button className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-input rounded hover:bg-accent" onClick={handleAdd}>
             <Plus className="w-3 h-3" /> Add
           </button>
+          <button
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-input rounded hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50 disabled:pointer-events-none"
+            onClick={() => setConfirmClear(true)}
+            disabled={groups.length === 0}
+            title="Delete all groups"
+          >
+            <Trash2 className="w-3 h-3" /> Clear
+          </button>
         </div>
       </div>
       <div className="flex flex-col gap-1 max-h-80 overflow-auto pr-1">
@@ -219,6 +230,14 @@ export default function GroupManagerPanel({ className }: Props) {
         message={`Delete the group "${confirmRemove?.name || ''}"? Your pages are not affected.`}
         onConfirm={() => { if (confirmRemove) removeGroup(confirmRemove.id); setConfirmRemove(null) }}
         onCancel={() => setConfirmRemove(null)}
+      />
+      <ConfirmDialog
+        isOpen={confirmClear}
+        title="Clear all groups"
+        message={`Delete all ${groups.length} group${groups.length === 1 ? '' : 's'}? Your pages are not affected.`}
+        confirmLabel="Clear"
+        onConfirm={() => { clearGroups(); setConfirmClear(false) }}
+        onCancel={() => setConfirmClear(false)}
       />
     </div>
   )

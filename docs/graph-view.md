@@ -109,6 +109,8 @@ To make one group for each tag your pages use, click **By tag**. Each new group 
 
 Use the checkbox next to a group to show or hide it. The bin icon deletes the group after you confirm. Your pages are not affected.
 
+To start over, click **Clear** to delete every group at once. If you might want them back, click **Export JSON** first.
+
 ### Reading the boxes
 
 - Each box shows the group's name and how many pages it holds.
