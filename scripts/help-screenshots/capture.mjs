@@ -242,7 +242,8 @@ async function captureAll(win, tmp) {
   await importJson(win, NOVEL, 'group-view.json');
   await fitView(win);
   await zoomOut(win, 2);
-  await panBy(win, -90, 40);
+  // Low enough to clear the Options tray and the Groups list
+  await panBy(win, -90, 90);
   await shot(win, 'graph-group');
 
   // --- Tasks -----------------------------------------------------------------------------------

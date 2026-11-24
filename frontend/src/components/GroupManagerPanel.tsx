@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Plus, Trash2, Edit, Filter as FilterIcon, ToggleLeft, X } from 'lucide-react'
+import { Plus, Trash2, Edit, Filter as FilterIcon, ToggleLeft, X, Tags } from 'lucide-react'
 import NodeFiltersDialog, { DEFAULT_FILTERS, NodeFilterState } from './NodeFiltersDialog'
-import { useGroupViewStore, MAX_FILTERS_PER_GROUP, type GroupDefinition } from '../store/groupViewState'
+import { useGroupViewStore, MAX_FILTERS_PER_GROUP, MAX_GROUPS, type GroupDefinition } from '../store/groupViewState'
+import { useNodeStore } from '../store/nodeStore'
+import { buildTagGroups } from '../utils/grouping'
 import toast from 'react-hot-toast'
 import ConfirmDialog from './ConfirmDialog'
 
@@ -17,6 +19,7 @@ export default function GroupManagerPanel({ className }: Props) {
   const addGroup = useGroupViewStore(s => s.addGroup)
   const updateGroup = useGroupViewStore(s => s.updateGroup)
   const removeGroup = useGroupViewStore(s => s.removeGroup)
+  const nodes = useNodeStore(s => s.nodes)
 
   // Which filter of which group the dialog is editing (#68)
   const [filtersOpenFor, setFiltersOpenFor] = useState<{ groupId: string; index: number } | null>(null)
@@ -26,8 +29,8 @@ export default function GroupManagerPanel({ className }: Props) {
   const [confirmRemove, setConfirmRemove] = useState<GroupDefinition | null>(null)
 
   const handleAdd = () => {
-    if (groups.length >= 50) {
-      toast.error('Maximum of 50 groups reached')
+    if (groups.length >= MAX_GROUPS) {
+      toast.error(`Maximum of ${MAX_GROUPS} groups reached`)
       return
     }
     const next: GroupDefinition = {
@@ -37,6 +40,24 @@ export default function GroupManagerPanel({ className }: Props) {
       filters: [{ ...DEFAULT_FILTERS }],
     }
     addGroup(next)
+  }
+
+  // Makes one group for each tag used by any page, skipping tags that already have one (#37)
+  const handleAddByTag = () => {
+    const { added, skipped, totalTags } = buildTagGroups(nodes.values(), groups, MAX_GROUPS, genId)
+    if (totalTags === 0) {
+      toast('No pages have tags yet')
+      return
+    }
+    if (added.length > 0) {
+      setGroups([...groups, ...added])
+      toast.success(`Added ${added.length} group${added.length === 1 ? '' : 's'}`)
+    } else if (skipped === 0) {
+      toast('Every tag already has a group')
+    }
+    if (skipped > 0) {
+      toast.error(`${skipped} tag${skipped === 1 ? '' : 's'} skipped: ${MAX_GROUPS}-group limit`)
+    }
   }
 
   const handleRename = (groupId: string) => {
@@ -105,9 +126,14 @@ export default function GroupManagerPanel({ className }: Props) {
     <div className={className}>
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-medium">Groups</div>
-        <button className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-input rounded hover:bg-accent" onClick={handleAdd}>
-          <Plus className="w-3 h-3" /> Add
-        </button>
+        <div className="flex items-center gap-1">
+          <button className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-input rounded hover:bg-accent" onClick={handleAddByTag} title="Make one group for each tag">
+            <Tags className="w-3 h-3" /> By tag
+          </button>
+          <button className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-input rounded hover:bg-accent" onClick={handleAdd}>
+            <Plus className="w-3 h-3" /> Add
+          </button>
+        </div>
       </div>
       <div className="flex flex-col gap-1 max-h-80 overflow-auto pr-1">
         {groups.length === 0 && (
