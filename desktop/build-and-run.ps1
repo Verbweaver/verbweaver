@@ -21,22 +21,22 @@ try {
 } catch {}
 $devRunning = ($devProcs.Count -gt 0)
 
-# Bootstrap workspace dependencies up-front (avoids conflicts with running dev servers)
+# Bootstrap Node dependencies (root and all workspaces) up-front (avoids conflicts with running dev servers)
 if ($devRunning -and -not ($env:FORCE_INSTALL -and ($env:FORCE_INSTALL.ToString().ToLower() -in @('1','true','yes')))) {
-    Write-Host "`nDetected running dev processes. Skipping workspace install to avoid file locks. Set FORCE_INSTALL=true to override." -ForegroundColor Yellow
+    Write-Host "`nDetected running dev processes. Skipping npm install to avoid file locks. Set FORCE_INSTALL=true to override." -ForegroundColor Yellow
 } else {
-    Write-Host "`nInstalling workspace dependencies..." -ForegroundColor Yellow
+    Write-Host "`nInstalling Node dependencies..." -ForegroundColor Yellow
     # Ensure devDependencies are installed regardless of external NODE_ENV
     $oldNodeEnv = $env:NODE_ENV
     $env:NODE_ENV = ""
     if (Test-Path (Join-Path $projectRoot 'package-lock.json')) {
-        npm ci --workspaces --include=dev
+        npm ci --include=dev
     } else {
-        npm install --workspaces --include=dev
+        npm install --include=dev
     }
     $env:NODE_ENV = $oldNodeEnv
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to install workspace dependencies" -ForegroundColor Red
+        Write-Host "Failed to install Node dependencies" -ForegroundColor Red
         exit 1
     }
 }
@@ -95,23 +95,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Ensure desktop dependencies (including Electron) are installed before starting frontend server
-if ($devRunning -and -not ($env:FORCE_INSTALL -and ($env:FORCE_INSTALL.ToString().ToLower() -in @('1','true','yes')))) {
-    Write-Host "`nSkipping desktop install due to running dev processes (FORCE_INSTALL=true to override)." -ForegroundColor Yellow
-} else {
-    Write-Host "`nEnsuring desktop dependencies are installed..." -ForegroundColor Yellow
-    Set-Location $projectRoot
-    if (Test-Path (Join-Path $projectRoot 'package-lock.json')) {
-        npm ci -w desktop --include=dev
-    } else {
-        npm install -w desktop --include=dev
-    }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to install desktop dependencies" -ForegroundColor Red
-        exit 1
-    }
-}
-
 # Ensure electron-vite is present locally for config resolution
 $desktopPath = Join-Path $projectRoot "desktop"
 $electronVitePkg = Join-Path $desktopPath "node_modules\electron-vite\package.json"
@@ -130,36 +113,8 @@ Set-Location $projectRoot
 # Build frontend (needed for desktop renderer)
 Write-Host "`nPreparing frontend..." -ForegroundColor Yellow
 $frontendPath = Join-Path $projectRoot "frontend"
-Set-Location $projectRoot
-
-if ($devRunning -and -not ($env:FORCE_INSTALL -and ($env:FORCE_INSTALL.ToString().ToLower() -in @('1','true','yes')))) {
-    Write-Host "`nSkipping frontend install due to running dev processes (FORCE_INSTALL=true to override)." -ForegroundColor Yellow
-} else {
-    # Ensure frontend devDependencies (vite, @vitejs/plugin-react, etc.) are installed
-    $frontendInstalled = $false
-    if (Test-Path (Join-Path $projectRoot 'package-lock.json')) {
-        npm ci -w frontend --include=dev
-        if ($LASTEXITCODE -eq 0) { $frontendInstalled = $true }
-    } else {
-        npm install -w frontend --include=dev
-        if ($LASTEXITCODE -eq 0) { $frontendInstalled = $true }
-    }
-
-    if (-not $frontendInstalled) {
-        Write-Host "Workspace-scoped frontend install failed; falling back to local install..." -ForegroundColor Yellow
-        Set-Location $frontendPath
-        if (Test-Path (Join-Path $frontendPath 'package-lock.json')) {
-            npm ci --include=dev
-        } else {
-            npm install --include=dev
-        }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Failed to install frontend dependencies" -ForegroundColor Red
-            exit 1
-        }
-    }
-}
-
+# Frontend dependencies come from the root install above. A second `npm ci -w frontend`
+# here would wipe node_modules again and drop the root and desktop dependencies.
 Set-Location $frontendPath
 
 # Clear stale Vite cache that can break module resolution in workspaces
