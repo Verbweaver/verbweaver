@@ -11,6 +11,7 @@ export type GroupDefinition = {
 }
 
 export const MAX_FILTERS_PER_GROUP = 20
+export const MAX_GROUPS = 50
 
 // Older saves and exports hold a single filter object; newer ones hold a list (#68)
 export const normalizeFilters = (raw: unknown): NodeFilterState[] => {
@@ -133,8 +134,8 @@ export const useGroupViewStore = create<GroupViewStore>((set, get) => ({
   },
   importConfig: (cfg) => {
     if (!cfg || cfg.version !== 1) return
-    // Enforce max 50 groups when importing
-    const groups = Array.isArray(cfg.groups) ? cfg.groups.slice(0, 50).map((g: any) => ({
+    // Enforce the group limit when importing
+    const groups = Array.isArray(cfg.groups) ? cfg.groups.slice(0, MAX_GROUPS).map((g: any) => ({
       id: String(g?.id || ''),
       name: String(g?.name || ''),
       enabled: !!g?.enabled,

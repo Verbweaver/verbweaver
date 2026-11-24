@@ -1,5 +1,6 @@
 // Lightweight tests for grouping utils. Run manually by importing and calling runGroupingTests() in dev.
-import { buildEquivalenceBoxes, computeCoverRelations, computeRemainder } from './grouping'
+import { buildEquivalenceBoxes, buildTagGroups, computeCoverRelations, computeRemainder } from './grouping'
+import { DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message)
@@ -41,6 +42,31 @@ export function runGroupingTests(): string {
   // Remainder
   const remainder = computeRemainder(['1', '2', '3', '4'], [['2', '3']])
   assert(remainder.sort().join(',') === ['1', '4'].join(','), 'Remainder should be 1,4')
+
+  // One group per tag (#37)
+  let n = 0
+  const genId = () => `t${++n}`
+  const pages = [
+    { metadata: { tags: ['Villain', 'north'] } },
+    { metadata: { tags: ['villain', 'south'] } },
+    { metadata: {} },
+    { isDirectory: true, metadata: { tags: ['folder-only'] } },
+  ]
+  const first = buildTagGroups(pages, [], 50, genId)
+  assert(first.totalTags === 3, 'Tags should be collected without regard to case, ignoring folders')
+  assert(first.added.map(g => g.name).join(',') === 'north,south,Villain', 'One group per tag, sorted, first spelling kept')
+  assert(first.added[2].filters.length === 1 && first.added[2].filters[0].tags.join(',') === 'Villain', 'Each group filters for its tag')
+  assert(first.skipped === 0, 'Nothing skipped under the limit')
+
+  const again = buildTagGroups(pages, first.added, 50, genId)
+  assert(again.added.length === 0 && again.skipped === 0, 'Running again adds nothing')
+
+  const handMade = { id: 'h', name: 'Mixed', enabled: true, filters: [{ ...DEFAULT_FILTERS, tags: ['north'], nameKeyword: 'x' }] }
+  const withHandMade = buildTagGroups(pages, [handMade], 50, genId)
+  assert(withHandMade.added.map(g => g.name).join(',') === 'north,south,Villain', 'A group with extra conditions does not count as a tag group')
+
+  const capped = buildTagGroups(pages, [handMade], 2, genId)
+  assert(capped.added.map(g => g.name).join(',') === 'north' && capped.skipped === 2, 'Stops at the group limit and counts the rest')
 
   return 'Grouping utils tests passed'
 }

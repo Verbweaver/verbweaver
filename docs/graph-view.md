@@ -105,6 +105,8 @@ The Group view sorts your pages into named collections and shows them as boxes, 
 
 To include pages that don't have anything in common, click the **+** next to the funnel to add another filter. A page joins the group if it matches any of the group's filters. For example, one filter for the name "Alice" and one for the name "Bob" puts both of them in the group. Use the **x** next to a filter to remove it.
 
+To make one group for each tag your pages use, click **By tag**. Each new group is named after its tag. If you add new tags later, click **By tag** again to add groups for just those tags.
+
 Use the checkbox next to a group to show or hide it. The bin icon deletes the group after you confirm. Your pages are not affected.
 
 ### Reading the boxes

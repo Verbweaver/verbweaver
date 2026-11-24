@@ -1,3 +1,6 @@
+import { DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
+import type { GroupDefinition } from '../store/groupViewState'
+
 export type EquivalenceBox = {
   boxId: string
   nodeIds: string[]
@@ -99,4 +102,52 @@ export const computeRemainder = (parent: string[], children: string[][]): string
   return Array.from(parentSet)
 }
 
+// The parts of a page that tag grouping reads
+type TaggedPage = { isDirectory?: boolean; metadata?: { tags?: unknown } }
 
+// Tags a page carries, read from its metadata
+const pageTags = (node: TaggedPage): string[] =>
+  Array.isArray(node?.metadata?.tags) ? node.metadata.tags.map((t: unknown) => String(t).trim()).filter(Boolean) : []
+
+// A group made by "By tag" holds exactly one filter for exactly one tag
+const singleTagOf = (group: GroupDefinition): string | null => {
+  if (group.filters.length !== 1) return null
+  const f = group.filters[0]
+  const tags = f.tags || []
+  if (tags.length !== 1) return null
+  const onlyTags = !f.nameKeyword && !f.descriptionKeyword && !f.startsWith && !f.endsWith &&
+    !f.startDateFrom && !f.startDateTo && !f.dueDateFrom && !f.dueDateTo && !f.hasAttachments &&
+    (f.linkedFromNodeTags || []).length === 0
+  return onlyTags ? tags[0].toLowerCase() : null
+}
+
+// Makes one group per tag used by any page, skipping tags that already have one (#37).
+// Stops at maxGroups in total; `skipped` counts tags that didn't fit.
+export const buildTagGroups = (
+  nodes: Iterable<TaggedPage>,
+  existingGroups: GroupDefinition[],
+  maxGroups: number,
+  genId: () => string,
+): { added: GroupDefinition[]; skipped: number; totalTags: number } => {
+  const byKey = new Map<string, string>()
+  for (const n of nodes) {
+    if (n?.isDirectory) continue
+    for (const tag of pageTags(n)) {
+      const key = tag.toLowerCase()
+      if (!byKey.has(key)) byKey.set(key, tag)
+    }
+  }
+  const covered = new Set(existingGroups.map(singleTagOf).filter((t): t is string => !!t))
+  const wanted = Array.from(byKey.entries())
+    .filter(([key]) => !covered.has(key))
+    .map(([, tag]) => tag)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  const room = Math.max(0, maxGroups - existingGroups.length)
+  const added = wanted.slice(0, room).map(tag => ({
+    id: genId(),
+    name: tag,
+    enabled: true,
+    filters: [{ ...DEFAULT_FILTERS, tags: [tag] }],
+  }))
+  return { added, skipped: wanted.length - added.length, totalTags: byKey.size }
+}
