@@ -64,6 +64,8 @@ declare global {
       openExternal: (url: string) => Promise<void>;
       checkForUpdates?: () => Promise<UpdateCheckOutcome>;
       showItemInFolder: (path: string) => Promise<void>;
+      /** Resolves to '' on success, or an error message (e.g. the file doesn't exist). */
+      openPath?: (path: string) => Promise<string>;
       
       // Window operations
       minimizeWindow: () => void;

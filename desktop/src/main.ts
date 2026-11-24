@@ -3017,8 +3017,16 @@ function setupIpcHandlers() {
   });
 
   ipc.handle('shell:openPath', async (_, anyPath: string) => {
-    // Open a folder or file path via shell.openPath
-    try { await shell.openPath(anyPath); } catch (e) { console.warn('openPath failed:', e); }
+    // Open a folder or file path via shell.openPath. It reports failure (e.g. a missing file) by
+    // returning an error message rather than throwing; pass it on ('' means success).
+    try {
+      const error = await shell.openPath(anyPath);
+      if (error) console.warn('openPath failed:', error);
+      return error;
+    } catch (e) {
+      console.warn('openPath failed:', e);
+      return String((e as Error)?.message || e);
+    }
   });
 
   // Window operations

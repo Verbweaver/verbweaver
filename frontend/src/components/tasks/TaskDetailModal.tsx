@@ -6,7 +6,7 @@ import { useTabStore } from '../../store/tabStore'
 import { TaskState, TaskPriority } from '@verbweaver/shared'
 import { FileStorage, StoredFile } from '../../utils/fileStorage'
 import { getLinkedNodes } from '../../utils/nodeLinks'
-import { uploadFilesForNode } from '../../utils/nodeAttachments'
+import { getNodeFiles, uploadFilesForNode } from '../../utils/nodeAttachments'
 import clsx from 'clsx'
 import SharedCreateLinkModal from '../common/CreateLinkModal'
 import { KanbanColumn } from './ColumnManager'
@@ -37,26 +37,6 @@ interface Comment {
   content: string
   // Persisted comments come back from front-matter as strings; new ones are stored as ISO strings
   timestamp: Date | string
-}
-
-/** Normalize a node's `task.files` (migrating the legacy format) into StoredFile entries. */
-function loadTaskFiles(n: VerbweaverNode): StoredFile[] {
-  const oldFiles = n.metadata?.task?.files || []
-  return oldFiles.map((file: any) => {
-    const migrated = FileStorage.migrateOldFileFormat(file)
-    if (migrated) return migrated
-    // Create a placeholder for old files that can't be recovered
-    return {
-      id: file.id || `old_${Date.now()}`,
-      name: file.name || 'Unknown File',
-      originalName: file.originalName || file.name || 'Unknown File',
-      size: file.size || 0,
-      uploadedAt: file.uploadedAt ? String(file.uploadedAt) : new Date().toISOString(),
-      uploadedBy: file.uploadedBy || 'Unknown User',
-      path: '', // Empty path indicates this file cannot be downloaded
-      mimeType: file.mimeType || 'application/octet-stream'
-    } as StoredFile
-  })
 }
 
 interface TaskDetailModalProps {
@@ -131,7 +111,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
     setLevelOfEffort(loe == null || (typeof loe === 'number' && Number.isNaN(loe)) ? '' : String(loe))
     setTags(n.metadata.tags || [])
     setNewTag('')
-    setFiles(loadTaskFiles(n))
+    setFiles(getNodeFiles(n))
     setDraftLinkIds(Array.isArray(n.softLinks) ? n.softLinks.map(String) : [])
     sessionUploadsRef.current = []
   }
@@ -251,7 +231,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
 
     // Removed attachments are deleted from disk only once the save succeeds
     const keptIds = new Set(files.map((f) => f.id))
-    for (const f of loadTaskFiles(saved).filter((f) => !keptIds.has(f.id))) {
+    for (const f of getNodeFiles(saved).filter((f) => !keptIds.has(f.id))) {
       try { await FileStorage.deleteFile(f) } catch (e) { console.error('Failed to delete removed file:', e) }
     }
     sessionUploadsRef.current = []
