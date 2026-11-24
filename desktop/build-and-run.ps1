@@ -21,22 +21,22 @@ try {
 } catch {}
 $devRunning = ($devProcs.Count -gt 0)
 
-# Bootstrap workspace dependencies up-front (avoids conflicts with running dev servers)
+# Bootstrap Node dependencies (root and all workspaces) up-front (avoids conflicts with running dev servers)
 if ($devRunning -and -not ($env:FORCE_INSTALL -and ($env:FORCE_INSTALL.ToString().ToLower() -in @('1','true','yes')))) {
-    Write-Host "`nDetected running dev processes. Skipping workspace install to avoid file locks. Set FORCE_INSTALL=true to override." -ForegroundColor Yellow
+    Write-Host "`nDetected running dev processes. Skipping npm install to avoid file locks. Set FORCE_INSTALL=true to override." -ForegroundColor Yellow
 } else {
-    Write-Host "`nInstalling workspace dependencies..." -ForegroundColor Yellow
+    Write-Host "`nInstalling Node dependencies..." -ForegroundColor Yellow
     # Ensure devDependencies are installed regardless of external NODE_ENV
     $oldNodeEnv = $env:NODE_ENV
     $env:NODE_ENV = ""
     if (Test-Path (Join-Path $projectRoot 'package-lock.json')) {
-        npm ci --workspaces --include=dev
+        npm ci --include=dev
     } else {
-        npm install --workspaces --include=dev
+        npm install --include=dev
     }
     $env:NODE_ENV = $oldNodeEnv
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to install workspace dependencies" -ForegroundColor Red
+        Write-Host "Failed to install Node dependencies" -ForegroundColor Red
         exit 1
     }
 }
@@ -95,71 +95,25 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Ensure desktop dependencies (including Electron) are installed before starting frontend server
-if ($devRunning -and -not ($env:FORCE_INSTALL -and ($env:FORCE_INSTALL.ToString().ToLower() -in @('1','true','yes')))) {
-    Write-Host "`nSkipping desktop install due to running dev processes (FORCE_INSTALL=true to override)." -ForegroundColor Yellow
-} else {
-    Write-Host "`nEnsuring desktop dependencies are installed..." -ForegroundColor Yellow
-    Set-Location $projectRoot
-    if (Test-Path (Join-Path $projectRoot 'package-lock.json')) {
-        npm ci -w desktop --include=dev
-    } else {
-        npm install -w desktop --include=dev
-    }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to install desktop dependencies" -ForegroundColor Red
-        exit 1
-    }
-}
-
-# Ensure electron-vite is present locally for config resolution
+# Find electron-vite. npm usually hoists it to the root node_modules, so check there as well
+# as desktop\node_modules. Don't `npm install` it here: that rewrites desktop/package.json and
+# package-lock.json (e.g. turns the exact Electron pin into a ^ range).
 $desktopPath = Join-Path $projectRoot "desktop"
-$electronVitePkg = Join-Path $desktopPath "node_modules\electron-vite\package.json"
-if (-not (Test-Path $electronVitePkg)) {
-    Write-Host "`nelectron-vite not found locally. Installing in desktop workspace..." -ForegroundColor Yellow
-    Set-Location $desktopPath
-    npm install electron-vite --save-dev
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to install electron-vite in desktop workspace" -ForegroundColor Red
-        exit 1
-    }
-    Set-Location $projectRoot
+$electronViteBin = @(
+    (Join-Path $desktopPath "node_modules\.bin\electron-vite.cmd"),
+    (Join-Path $projectRoot "node_modules\.bin\electron-vite.cmd")
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $electronViteBin) {
+    Write-Host "electron-vite not found. Run 'npm ci' in $projectRoot (or rerun this script with FORCE_INSTALL=true)." -ForegroundColor Red
+    exit 1
 }
 Set-Location $projectRoot
 
 # Build frontend (needed for desktop renderer)
 Write-Host "`nPreparing frontend..." -ForegroundColor Yellow
 $frontendPath = Join-Path $projectRoot "frontend"
-Set-Location $projectRoot
-
-if ($devRunning -and -not ($env:FORCE_INSTALL -and ($env:FORCE_INSTALL.ToString().ToLower() -in @('1','true','yes')))) {
-    Write-Host "`nSkipping frontend install due to running dev processes (FORCE_INSTALL=true to override)." -ForegroundColor Yellow
-} else {
-    # Ensure frontend devDependencies (vite, @vitejs/plugin-react, etc.) are installed
-    $frontendInstalled = $false
-    if (Test-Path (Join-Path $projectRoot 'package-lock.json')) {
-        npm ci -w frontend --include=dev
-        if ($LASTEXITCODE -eq 0) { $frontendInstalled = $true }
-    } else {
-        npm install -w frontend --include=dev
-        if ($LASTEXITCODE -eq 0) { $frontendInstalled = $true }
-    }
-
-    if (-not $frontendInstalled) {
-        Write-Host "Workspace-scoped frontend install failed; falling back to local install..." -ForegroundColor Yellow
-        Set-Location $frontendPath
-        if (Test-Path (Join-Path $frontendPath 'package-lock.json')) {
-            npm ci --include=dev
-        } else {
-            npm install --include=dev
-        }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Failed to install frontend dependencies" -ForegroundColor Red
-            exit 1
-        }
-    }
-}
-
+# Frontend dependencies come from the root install above. A second `npm ci -w frontend`
+# here would wipe node_modules again and drop the root and desktop dependencies.
 Set-Location $frontendPath
 
 # Clear stale Vite cache that can break module resolution in workspaces
@@ -244,16 +198,7 @@ if ($ensureExit -ne 0) {
 
 # Start Electron (visible cmd window) and wait for it to exit
 try {
-    $electronViteBin = Join-Path $desktopPath "node_modules\.bin\electron-vite.cmd"
-    if (Test-Path $electronViteBin) {
-        $electronProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$electronViteBin`" dev" -WorkingDirectory $desktopPath -PassThru -WindowStyle Normal
-    } else {
-        # Fallback to npx to resolve electron-vite; ensure local electron-vite and electron are installed first
-        Set-Location $desktopPath
-        npm install electron-vite electron --save-dev --include=dev
-        Set-Location $projectRoot
-        $electronProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npx --yes electron-vite dev" -WorkingDirectory $desktopPath -PassThru -WindowStyle Normal
-    }
+    $electronProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$electronViteBin`" dev" -WorkingDirectory $desktopPath -PassThru -WindowStyle Normal
 } catch {
     Write-Host "Failed to start Electron dev process: $_" -ForegroundColor Red
     if ($frontendProcess) { try { Stop-Process -Id $frontendProcess.Id -Force } catch {} }

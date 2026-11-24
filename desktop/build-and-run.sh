@@ -3,7 +3,7 @@
 # Counterpart to desktop/build-and-run.ps1.
 #
 # Environment toggles:
-#   SKIP_INSTALL=true       skip `npm ci` for the workspaces
+#   SKIP_INSTALL=true       skip `npm ci` for the project and its workspaces
 #   REINSTALL_BACKEND=true  re-run `pip install -r backend/requirements.txt` into .venv
 #   START_BACKEND=false     don't let Electron spawn the backend (run it yourself on :8000)
 #   KEEP_FRONTEND=true      leave the Vite dev server running after Electron exits
@@ -28,16 +28,16 @@ for cmd in node npm curl; do
   command -v "$cmd" >/dev/null 2>&1 || { err "Required command not found: $cmd"; exit 1; }
 done
 
-# --- Workspace dependencies -------------------------------------------------
+# --- Node dependencies (root and all workspaces) --------------------------
 if is_true "${SKIP_INSTALL:-}"; then
-  info "Skipping workspace install (SKIP_INSTALL=true)."
+  info "Skipping npm install (SKIP_INSTALL=true)."
 else
-  info "Installing workspace dependencies..."
+  info "Installing Node dependencies..."
   # Ensure devDependencies are installed regardless of an external NODE_ENV
   if [ -f package-lock.json ]; then
-    NODE_ENV= npm ci --workspaces --include=dev
+    NODE_ENV= npm ci --include=dev
   else
-    NODE_ENV= npm install --workspaces --include=dev
+    NODE_ENV= npm install --include=dev
   fi
 fi
 
