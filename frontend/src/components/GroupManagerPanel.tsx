@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Plus, Trash2, Edit, Filter as FilterIcon, ToggleLeft, X, Tags } from 'lucide-react'
 import NodeFiltersDialog, { DEFAULT_FILTERS, NodeFilterState } from './NodeFiltersDialog'
+import { summarizeFilters } from '../utils/nodeFilters'
 import { useGroupViewStore, MAX_FILTERS_PER_GROUP, MAX_GROUPS, type GroupDefinition } from '../store/groupViewState'
 import { useNodeStore } from '../store/nodeStore'
 import { buildTagGroups } from '../utils/grouping'
@@ -109,21 +110,6 @@ export default function GroupManagerPanel({ className }: Props) {
 
   const activeGroup = useMemo(() => groups.find(g => g.id === filtersOpenFor?.groupId) || null, [filtersOpenFor, groups])
   const activeFilters = activeGroup && filtersOpenFor ? activeGroup.filters[filtersOpenFor.index] : undefined
-
-  const summarizeFilters = (filters: NodeFilterState): string | null => {
-    const parts: string[] = []
-    if ((filters.tags || []).length > 0) parts.push(`tags(${filters.tagsLogic}): ${filters.tags.join(', ')}`)
-    if (filters.nameKeyword) parts.push(`name:"${filters.nameKeyword}"`)
-    if (filters.descriptionKeyword) parts.push(`desc:"${filters.descriptionKeyword}"`)
-    if (filters.startsWith) parts.push(`starts:${filters.startsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
-    if (filters.endsWith) parts.push(`ends:${filters.endsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
-    if (filters.startDateFrom || filters.startDateTo) parts.push(`start:${filters.startDateFrom || ''}..${filters.startDateTo || ''}`)
-    if (filters.dueDateFrom || filters.dueDateTo) parts.push(`due:${filters.dueDateFrom || ''}..${filters.dueDateTo || ''}`)
-    if (filters.hasAttachments) parts.push('attachments')
-    if ((filters.linkedFromNodeTags || []).length > 0) parts.push(`linkedFrom(${filters.linkedFromNodeTags.length})`)
-    if (parts.length === 0) return null
-    return parts.join('  •  ')
-  }
 
   return (
     <div className={className}>

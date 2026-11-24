@@ -6,6 +6,7 @@ import clsx from 'clsx'
 import { useNodeStore } from '../store/nodeStore'
 import toast from 'react-hot-toast'
 import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from './NodeFiltersDialog'
+import { isFilterActive, needsMetadata, buildLinkedTargets, matchesNodeFilters, summarizeFilters } from '../utils/nodeFilters'
 
 interface FileNode {
   id: string
@@ -458,107 +459,16 @@ function NodeSelector({
   // Filter a tree by the active filters. Kept separate from the memo below so that
   // Select All / Clear All / Expand All can apply it to a freshly loaded tree (#113).
   const applyFilters = useCallback((tree: FileNode[]): FileNode[] => {
-    const normalizeId = (s: string) => String(s || '').replace(/^node-/, '')
-    const active = filters
-    const usingFilters = (
-      (active.tags || []).length > 0 || active.nameKeyword || active.descriptionKeyword || active.startsWith || active.endsWith ||
-      active.startDateFrom || active.startDateTo || active.dueDateFrom || active.dueDateTo || active.hasAttachments || (active.linkedFromNodeTags || []).length > 0
-    )
-    if (!usingFilters) return tree
+    if (!isFilterActive(filters)) return tree
+    const linkedTargets = buildLinkedTargets(filters, nodeMap.values())
+    const metadataNeeded = needsMetadata(filters)
 
-    // Precompute set of target IDs from linked-from sources
-    const sourceIds = new Set<string>((active.linkedFromNodeTags || []).map(normalizeId).filter(Boolean))
-    const outgoingTargetIds = new Set<string>()
-    if (sourceIds.size > 0) {
-      for (const n of nodeMap.values()) {
-        const nid = n?.metadata?.id
-        if (nid && sourceIds.has(String(nid))) {
-          const links: string[] = Array.isArray(n?.metadata?.links) ? n.metadata.links : []
-          links.forEach(id => { if (id) outgoingTargetIds.add(String(id)) })
-        }
-      }
-    }
-
+    // Tree paths are already project-relative (normalizeToProjectRelative)
     const matches = (path: string, name: string): boolean => {
-      // Get metadata for path
       const metaNode = nodeMap.get(path)
-      const meta: any = metaNode?.metadata || {}
-
-      // Title/name
-      const title = String(meta?.title || name || '')
-      // Description
-      const description = String(meta?.description || '')
-      // Tags
-      const tags: string[] = Array.isArray(meta?.tags) ? meta.tags.map(String) : []
-      // Dates
-      const startDate = String(meta?.task?.startDate || '')
-      const dueDate = String(meta?.task?.dueDate || '')
-      // Attachments
-      const files = Array.isArray(meta?.task?.files) ? meta.task.files : []
-      // Node id
-      const nodeId = String(meta?.id || '')
-
-      // If metadata not available and filters require metadata, skip
-      if (!metaNode && (active.tags.length>0 || active.nameKeyword || active.descriptionKeyword || active.startsWith || active.endsWith || active.startDateFrom || active.startDateTo || active.dueDateFrom || active.dueDateTo || active.hasAttachments || active.linkedFromNodeTags.length>0)) {
-        return false
-      }
-
-      // name keyword (case-insensitive)
-      if (active.nameKeyword) {
-        const q = active.nameKeyword.toLowerCase()
-        if (!title.toLowerCase().includes(q)) return false
-      }
-
-      // description keyword (case-insensitive)
-      if (active.descriptionKeyword) {
-        const q = active.descriptionKeyword.toLowerCase()
-        if (!description.toLowerCase().includes(q)) return false
-      }
-
-      // starts/ends with on title with case sensitivity option
-      if (active.startsWith) {
-        if (active.startsEndsCaseSensitive) {
-          if (!title.startsWith(active.startsWith)) return false
-        } else {
-          if (!title.toLowerCase().startsWith(active.startsWith.toLowerCase())) return false
-        }
-      }
-      if (active.endsWith) {
-        if (active.startsEndsCaseSensitive) {
-          if (!title.endsWith(active.endsWith)) return false
-        } else {
-          if (!title.toLowerCase().endsWith(active.endsWith.toLowerCase())) return false
-        }
-      }
-
-      // tags ANY/ALL
-      if ((active.tags || []).length > 0) {
-        const set = new Set(tags.map(t=>t.toLowerCase()))
-        const wanted = (active.tags || []).map(t=>t.toLowerCase())
-        if (active.tagsLogic === 'ANY') {
-          if (!wanted.some(t => set.has(t))) return false
-        } else {
-          if (!wanted.every(t => set.has(t))) return false
-        }
-      }
-
-      // date ranges (inclusive)
-      if (active.startDateFrom && (!startDate || startDate < active.startDateFrom)) return false
-      if (active.startDateTo && (!startDate || startDate > active.startDateTo)) return false
-      if (active.dueDateFrom && (!dueDate || dueDate < active.dueDateFrom)) return false
-      if (active.dueDateTo && (!dueDate || dueDate > active.dueDateTo)) return false
-
-      // attachments
-      if (active.hasAttachments) {
-        if (!Array.isArray(files) || files.length === 0) return false
-      }
-
-      // linked-from sources: include only if this node's id is a target
-      if (sourceIds.size > 0) {
-        if (!nodeId || !outgoingTargetIds.has(nodeId)) return false
-      }
-
-      return true
+      // If metadata isn't loaded and a filter needs it, skip. A path-only filter doesn't.
+      if (!metaNode && metadataNeeded) return false
+      return matchesNodeFilters({ path, name, metadata: metaNode?.metadata }, filters, linkedTargets)
     }
 
     const filterNodes = (nodes: FileNode[]): FileNode[] => {
@@ -758,20 +668,11 @@ function NodeSelector({
       </div>
       {/* Live filter summary */}
       {(() => {
-        const parts: string[] = []
-        if (filters.tags.length > 0) parts.push(`tags(${filters.tagsLogic}): ${filters.tags.join(', ')}`)
-        if (filters.nameKeyword) parts.push(`name:"${filters.nameKeyword}"`)
-        if (filters.descriptionKeyword) parts.push(`desc:"${filters.descriptionKeyword}"`)
-        if (filters.startsWith) parts.push(`starts:${filters.startsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
-        if (filters.endsWith) parts.push(`ends:${filters.endsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
-        if (filters.startDateFrom || filters.startDateTo) parts.push(`start:${filters.startDateFrom || ''}..${filters.startDateTo || ''}`)
-        if (filters.dueDateFrom || filters.dueDateTo) parts.push(`due:${filters.dueDateFrom || ''}..${filters.dueDateTo || ''}`)
-        if (filters.hasAttachments) parts.push('attachments')
-        if (filters.linkedFromNodeTags.length > 0) parts.push(`linkedFrom(${filters.linkedFromNodeTags.length})`)
-        if (parts.length === 0) return null
+        const summary = summarizeFilters(filters)
+        if (!summary) return null
         return (
-          <div className="px-2 py-1 border-b border-border text-[11px] text-muted-foreground truncate" title={parts.join('  •  ')}>
-            Active filters: {parts.join('  •  ')}
+          <div className="px-2 py-1 border-b border-border text-[11px] text-muted-foreground truncate" title={summary}>
+            Active filters: {summary}
           </div>
         )
       })()}

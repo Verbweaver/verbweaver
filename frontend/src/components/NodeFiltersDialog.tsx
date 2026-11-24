@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { parseList } from '../utils/nodeFilters'
 
 export interface NodeFilterState {
   tags: string[]
@@ -14,6 +15,7 @@ export interface NodeFilterState {
   dueDateTo?: string
   hasAttachments: boolean
   linkedFromNodeTags: string[] // e.g., ['node-abc', 'node-xyz']
+  paths: string[] // path prefixes, e.g. ['characters', 'places/north']; a page matches any of them (#34)
 }
 
 export const DEFAULT_FILTERS: NodeFilterState = {
@@ -30,6 +32,30 @@ export const DEFAULT_FILTERS: NodeFilterState = {
   dueDateTo: undefined,
   hasAttachments: false,
   linkedFromNodeTags: [],
+  paths: [],
+}
+
+// A comma-separated list input. Keeps what the user typed (including a trailing comma)
+// and only resyncs when the list changes from outside, e.g. Clear.
+function ListInput({ value, onChange, placeholder, testId }: {
+  value: string[]
+  onChange: (next: string[]) => void
+  placeholder?: string
+  testId?: string
+}) {
+  const [text, setText] = useState(value.join(', '))
+  useEffect(() => {
+    setText(prev => (parseList(prev).join('\n') === value.join('\n') ? prev : value.join(', ')))
+  }, [value])
+  return (
+    <input
+      className="w-full px-2 py-1 border border-input rounded bg-background"
+      value={text}
+      onChange={(e) => { setText(e.target.value); onChange(parseList(e.target.value)) }}
+      placeholder={placeholder}
+      data-testid={testId}
+    />
+  )
 }
 
 interface NodeFiltersDialogProps {
@@ -70,10 +96,9 @@ export default function NodeFiltersDialog({
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="space-y-2">
             <label className="block text-xs font-medium">Tags (comma-separated)</label>
-            <input
-              className="w-full px-2 py-1 border border-input rounded bg-background"
-              value={filters.tags.join(', ')}
-              onChange={(e) => updateFilters({ tags: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+            <ListInput
+              value={filters.tags || []}
+              onChange={(tags) => updateFilters({ tags })}
               placeholder="e.g. design, api"
             />
             <label className="inline-flex items-center gap-2 text-xs mt-1">
@@ -127,6 +152,13 @@ export default function NodeFiltersDialog({
               />
               Case sensitive
             </label>
+            <label className="block text-xs font-medium">Path starts with (comma-separated)</label>
+            <ListInput
+              value={filters.paths || []}
+              onChange={(paths) => updateFilters({ paths })}
+              placeholder="e.g. characters, places/north"
+              testId="filter-paths"
+            />
           </div>
           <div className="space-y-2">
             <label className="block text-xs font-medium">Start date range (YYYY-MM-DD)</label>
@@ -187,10 +219,9 @@ export default function NodeFiltersDialog({
 
           <div className="space-y-2 col-span-2">
             <label className="block text-xs font-medium">Linked from node(s) (node ID tags, comma-separated)</label>
-            <input
-              className="w-full px-2 py-1 border border-input rounded bg-background"
-              value={filters.linkedFromNodeTags.join(', ')}
-              onChange={(e) => updateFilters({ linkedFromNodeTags: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+            <ListInput
+              value={filters.linkedFromNodeTags || []}
+              onChange={(linkedFromNodeTags) => updateFilters({ linkedFromNodeTags })}
               placeholder="e.g. node-123, node-456"
             />
             <p className="text-[10px] text-muted-foreground">

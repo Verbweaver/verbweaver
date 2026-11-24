@@ -484,4 +484,34 @@ test.describe('Graph view', () => {
     await expect(box).toContainText('2 nodes');
     await expect(win.getByRole('button', { name: 'Remove filter 3' })).toHaveCount(0);
   });
+
+  test('Filters: Path starts with shows only pages in those folders (#34)', async ({ graph }) => {
+    const { win, projectPath } = graph;
+    for (const [folder, file, title] of [['Alpha', 'a1.md', 'A One'], ['Alpha/Deep', 'a2.md', 'A Two'], ['Beta', 'b1.md', 'B One']]) {
+      await fs.mkdir(path.join(projectPath, 'nodes', folder), { recursive: true });
+      await fs.writeFile(path.join(projectPath, 'nodes', folder, file), `---\n${yaml.dump({ id: file, title, type: 'node' })}---\n\n# ${title}\n`);
+    }
+    await openGraphWithPages(graph);
+    const page = (id) => win.locator(`.react-flow__node[data-id="${id}"]`);
+    await expect(page('nodes/Beta/b1.md')).toHaveCount(1);
+
+    const dialog = win.locator('.fixed.inset-0').filter({ has: win.locator('h3', { hasText: 'Filters' }) });
+    const input = dialog.getByTestId('filter-paths');
+    await win.getByRole('button', { name: 'Filters' }).first().click();
+    // Typed key by key, so the comma must survive
+    await input.pressSequentially('alpha, nodes/one', { delay: 20 });
+    await expect(input).toHaveValue('alpha, nodes/one');
+    await dialog.getByRole('button', { name: 'Apply' }).click();
+    await expect(page('nodes/Alpha/a1.md')).toHaveCount(1);
+    await expect(page('nodes/Alpha/Deep/a2.md')).toHaveCount(1);
+    await expect(page('nodes/one.md')).toHaveCount(1);
+    await expect(page('nodes/Beta/b1.md')).toHaveCount(0);
+    await expect(page('nodes/two.md')).toHaveCount(0);
+
+    await win.getByRole('button', { name: 'Filters' }).first().click();
+    await dialog.getByRole('button', { name: 'Clear' }).click();
+    await expect(input).toHaveValue('');
+    await dialog.getByRole('button', { name: 'Apply' }).click();
+    await expect(page('nodes/Beta/b1.md')).toHaveCount(1);
+  });
 });

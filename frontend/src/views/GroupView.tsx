@@ -9,7 +9,7 @@ import NodeContextMenu from '../components/graph/NodeContextMenu'
 import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import RemoveLinksModal from '../components/common/RemoveLinksModal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import type { NodeFilterState } from '../components/NodeFiltersDialog'
+import { isFilterActive, buildLinkedTargets, matchesNodeFilters } from '../utils/nodeFilters'
 import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
 import { chooseHandleIds, type XY } from '../utils/edgeHandles'
@@ -82,71 +82,14 @@ function GroupViewInner() {
     const byId = new Map(enabled.map(g => [g.id, { name: g.name }]))
     const nodesArr = Array.from(verbweaverNodes.values() || [])
 
-    const normalizeId = (s: string) => String(s || '').replace(/^node-/, '')
-    const isFilterActive = (filters: NodeFilterState): boolean => !!(
-      (filters.tags || []).length > 0 || filters.nameKeyword || filters.descriptionKeyword || filters.startsWith || filters.endsWith ||
-      filters.startDateFrom || filters.startDateTo || filters.dueDateFrom || filters.dueDateTo || filters.hasAttachments || (filters.linkedFromNodeTags || []).length > 0
-    )
-    const matches = (node: any, filters: any): boolean => {
-      const meta = node?.metadata || {}
-      const title = String(meta?.title || node.name || '')
-      const description = String(meta?.description || '')
-      const tags: string[] = Array.isArray(meta?.tags) ? meta.tags.map(String) : []
-      const startDate = String(meta?.task?.startDate || '')
-      const dueDate = String(meta?.task?.dueDate || '')
-      const files = Array.isArray(meta?.task?.files) ? meta.task.files : []
-      const nodeId = String(meta?.id || '')
-      if (filters.nameKeyword && !title.toLowerCase().includes(String(filters.nameKeyword).toLowerCase())) return false
-      if (filters.descriptionKeyword && !description.toLowerCase().includes(String(filters.descriptionKeyword).toLowerCase())) return false
-      if (filters.startsWith) {
-        if (filters.startsEndsCaseSensitive) {
-          if (!title.startsWith(filters.startsWith)) return false
-        } else if (!title.toLowerCase().startsWith(String(filters.startsWith).toLowerCase())) return false
-      }
-      if (filters.endsWith) {
-        if (filters.startsEndsCaseSensitive) {
-          if (!title.endsWith(filters.endsWith)) return false
-        } else if (!title.toLowerCase().endsWith(String(filters.endsWith).toLowerCase())) return false
-      }
-      if ((filters.tags || []).length > 0) {
-        const set = new Set(tags.map((t: string) => t.toLowerCase()))
-        const wanted = (filters.tags || []).map((t: string) => t.toLowerCase())
-        if (filters.tagsLogic === 'ANY') {
-          if (!wanted.some((t: string) => set.has(t))) return false
-        } else if (!wanted.every((t: string) => set.has(t))) return false
-      }
-      if (filters.startDateFrom && (!startDate || startDate < filters.startDateFrom)) return false
-      if (filters.startDateTo && (!startDate || startDate > filters.startDateTo)) return false
-      if (filters.dueDateFrom && (!dueDate || dueDate < filters.dueDateFrom)) return false
-      if (filters.dueDateTo && (!dueDate || dueDate > filters.dueDateTo)) return false
-      if (filters.hasAttachments) {
-        if (!Array.isArray(files) || files.length === 0) return false
-      }
-      if ((filters.linkedFromNodeTags || []).length > 0) {
-        const sourceIds = new Set<string>((filters.linkedFromNodeTags || []).map(normalizeId).filter(Boolean))
-        const outgoingTargetIds = new Set<string>()
-        if (sourceIds.size > 0) {
-          for (const n of verbweaverNodes.values()) {
-            const nid = n?.metadata?.id
-            if (nid && sourceIds.has(String(nid))) {
-              const links: string[] = Array.isArray(n?.metadata?.links) ? n.metadata.links : []
-              links.forEach((id: string) => { if (id) outgoingTargetIds.add(String(id)) })
-            }
-          }
-        }
-        if (!nodeId || !outgoingTargetIds.has(nodeId)) return false
-      }
-      return true
-    }
-
     // A page is in a group if it matches any of the group's filters; blank filters are ignored,
     // and a group with no conditions at all holds every page (#68)
     const groupNodes = enabled.map(g => {
-      const active = g.filters.filter(isFilterActive)
+      const active = g.filters.filter(isFilterActive).map(f => ({ f, linked: buildLinkedTargets(f, nodesArr) }))
       return {
         groupId: g.id,
         nodeIds: nodesArr
-          .filter(n => !n.isDirectory && (active.length === 0 || active.some(f => matches(n, f))))
+          .filter(n => !n.isDirectory && (active.length === 0 || active.some(({ f, linked }) => matchesNodeFilters(n, f, linked))))
           .map(n => String(n?.metadata?.id || ''))
           .filter(Boolean),
       }
