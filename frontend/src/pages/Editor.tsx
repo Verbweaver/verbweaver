@@ -14,7 +14,8 @@ import { EDITOR_DEFAULT_FONT_SIZE, HELP_DOCS, STORAGE_KEYS } from '@verbweaver/s
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useNodeStore } from '../store/nodeStore'
 import { getLinkedNodes } from '../utils/nodeLinks'
-import { attachFilesToNode } from '../utils/nodeAttachments'
+import { attachFilesToNode, deleteAttachedFile, findNodesReferencingFile, getNodeFiles, unattachFileFromNode } from '../utils/nodeAttachments'
+import { FileStorage, StoredFile } from '../utils/fileStorage'
 import { useOpenHelp } from '../hooks/useOpenHelp'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
@@ -25,6 +26,10 @@ import RemoveLinksModal from '../components/common/RemoveLinksModal'
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined
 // Tooltip for node-only actions when the open file is not a node (#86)
 const NOT_A_NODE_TITLE = 'This file is not a node.'
+// Tooltip for actions that rewrite the node's front-matter while the editor has unsaved edits:
+// they reload the file from disk, which would discard the edits (#87)
+const SAVE_FIRST_TITLE = 'Save your changes first'
+const DESKTOP_ONLY_TITLE = 'Available in the desktop app'
 
 function EditorView() {
   const { nodeId, filePath } = useParams()
@@ -86,6 +91,13 @@ function EditorView() {
     } catch { return false }
   })
   const [createLinkOpen, setCreateLinkOpen] = useState(false)
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.EDITOR_ATTACHMENTS_EXPANDED) === 'true'
+    } catch { return false }
+  })
+  const [unattachTarget, setUnattachTarget] = useState<StoredFile | null>(null)
+  const [deleteFileTarget, setDeleteFileTarget] = useState<{ file: StoredFile; others: string[] } | null>(null)
 
   // Robust YAML frontmatter detection (handles BOM and leading blank lines)
   const FRONTMATTER_RE = /^\uFEFF?(?:\s*\r?\n)*---\s*[\r\n][\s\S]*?[\r\n]---\s*(?:[\r\n]|$)/
@@ -140,6 +152,10 @@ function EditorView() {
       .map(other => ({ path: other.path, name: other.name, title: other.metadata?.title || other.name, id: other.metadata?.id }))
   })
 
+  // Files attached to the current node (task.files)
+  const currentNode = useNodeStore((s) => (resolvedNodePath ? s.nodes.get(resolvedNodePath) : undefined))
+  const attachedFiles = useMemo(() => getNodeFiles(currentNode), [currentNode])
+
   // Ensure nodes are loaded (fix Links panel empty on Linux when Editor opens first)
   const { loadNodes, nodes: allNodes } = useNodeStore()
   useEffect(() => {
@@ -177,6 +193,21 @@ function EditorView() {
     }
     navigateToRelRef.current = navigateFn
   }, [openEditorForPath])
+
+  // Default expand Attachments when there are files and no saved preference yet
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.EDITOR_ATTACHMENTS_EXPANDED)
+      if (raw === null && attachedFiles.length > 0) {
+        setAttachmentsExpanded(true)
+        localStorage.setItem(STORAGE_KEYS.EDITOR_ATTACHMENTS_EXPANDED, 'true')
+      }
+    } catch { /* localStorage unavailable */ }
+  }, [attachedFiles.length])
+
+  // Actions that rewrite this node's front-matter need a node and no unsaved edits
+  const metadataActionDisabled = !isNode || isModified
+  const metadataActionTitle = (title: string) => (!isNode ? NOT_A_NODE_TITLE : isModified ? SAVE_FIRST_TITLE : title)
 
   // Default expand Links when there are links and no saved preference yet
   useEffect(() => {
@@ -248,6 +279,19 @@ function EditorView() {
       }
     } catch {}
   }, [isElectron, localFilePath, filePath, currentProject, resolvedNodePath])
+
+  const openAttachedFile = useCallback(async (file: StoredFile) => {
+    const api = window.electronAPI
+    if (!api?.openPath || !file.path) return
+    const error = await api.openPath(file.path)
+    if (error) toast.error(`Couldn't open ${file.originalName || file.name}: ${error}`)
+  }, [])
+
+  const showAttachedFileInFolder = useCallback(async (file: StoredFile) => {
+    const api = window.electronAPI
+    if (!api?.showItemInFolder || !file.path) return
+    await api.showItemInFolder(file.path)
+  }, [])
 
   // Handle clicks on links inside preview HTML
   const handlePreviewClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -887,8 +931,8 @@ function EditorView() {
             <button
               onClick={() => setCreateLinkOpen(true)}
               className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-              title={isNode ? 'Create link (Ctrl+Shift+L)' : NOT_A_NODE_TITLE}
-              disabled={!isNode}
+              title={metadataActionTitle('Create link (Ctrl+Shift+L)')}
+              disabled={metadataActionDisabled}
             >
               <LinkIcon className="w-4 h-4" />
             </button>
@@ -896,8 +940,8 @@ function EditorView() {
             <button
               onClick={() => setRemoveLinksOpen(true)}
               className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-              title={isNode ? 'Remove link(s)' : NOT_A_NODE_TITLE}
-              disabled={!isNode}
+              title={metadataActionTitle('Remove link(s)')}
+              disabled={metadataActionDisabled}
             >
               <Unlink className="w-4 h-4" />
             </button>
@@ -930,8 +974,8 @@ function EditorView() {
           <button
             onClick={() => setAttachOpen(true)}
             className="p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isNode ? 'Attach files' : NOT_A_NODE_TITLE}
-            disabled={!isNode}
+            title={metadataActionTitle('Attach files')}
+            disabled={metadataActionDisabled}
           >
             <Paperclip className="w-4 h-4" />
           </button>
@@ -988,8 +1032,8 @@ function EditorView() {
               }
             }}
             className={`p-1.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed ${trackingBusy ? 'opacity-60 pointer-events-none' : ''}`}
-            title={isNode ? 'Toggle tracking as Task' : NOT_A_NODE_TITLE}
-            disabled={!isNode}
+            title={metadataActionTitle('Toggle tracking as Task')}
+            disabled={metadataActionDisabled}
           >
             <span className="inline-flex items-center gap-1 text-xs">
               <svg
@@ -1145,7 +1189,11 @@ function EditorView() {
                     keybindings: [
                       (monaco as any).KeyMod.CtrlCmd | (monaco as any).KeyMod.Shift | (monaco as any).KeyCode.KeyL,
                     ],
-                    run: () => { if (isNodeRef.current) setCreateLinkOpen(true) },
+                    run: () => {
+                      if (!isNodeRef.current) return
+                      if (isModifiedRef.current) { toast.error('Save your changes before creating a link'); return }
+                      setCreateLinkOpen(true)
+                    },
                   })
                   editorInstance.addAction({
                     id: 'vw-toggle-preview',
@@ -1328,9 +1376,10 @@ function EditorView() {
                     title="Open Graph"
                   >Open Graph</button>
                   <button
-                    className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent text-destructive"
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent text-destructive disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => { setRemoveLinkTarget(ln.path); setRemoveLinkOpen(true) }}
-                    title="Remove Link"
+                    title={metadataActionTitle('Remove Link')}
+                    disabled={metadataActionDisabled}
                   >Remove</button>
                 </div>
               </li>
@@ -1339,6 +1388,67 @@ function EditorView() {
         )}
         {linksExpanded && linkedNodes.length === 0 && (
           <div className="text-xs text-muted-foreground mt-2">{isNode ? 'No links' : NOT_A_NODE_TITLE}</div>
+        )}
+      </div>
+      {/* Attached files list (#87): visible even when metadata is hidden */}
+      <div className="border-t border-border px-4 py-2 bg-muted/40">
+        <button
+          className="flex items-center gap-1 text-xs hover:underline"
+          onClick={() => setAttachmentsExpanded(v => { const next = !v; try { localStorage.setItem(STORAGE_KEYS.EDITOR_ATTACHMENTS_EXPANDED, String(next)) } catch { /* localStorage unavailable */ }; return next })}
+        >
+          {attachmentsExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          Attachments ({attachedFiles.length})
+        </button>
+        {attachmentsExpanded && attachedFiles.length > 0 && (
+          <ul className="mt-2 space-y-2">
+            {attachedFiles.map((file) => {
+              const label = file.originalName || file.name
+              const details = [FileStorage.formatFileSize(file.size), FileStorage.formatUploadDate(file.uploadedAt)].filter(Boolean).join(' • ')
+              const diskTitle = (title: string) => (!isElectron ? DESKTOP_ONLY_TITLE : !file.path ? 'File cannot be found (old format)' : title)
+              const diskDisabled = !isElectron || !file.path
+              return (
+                <li key={file.id || file.path} className="flex items-center justify-between border border-border rounded px-2 py-1 bg-background">
+                  <div className="flex-1 flex items-center gap-2 min-w-0" title={file.path || undefined}>
+                    <Paperclip className="w-3 h-3 shrink-0 text-muted-foreground" />
+                    <span className="text-xs truncate">{label}</span>
+                    {details && <span className="text-[10px] text-muted-foreground whitespace-nowrap">{details}</span>}
+                  </div>
+                  <div className="ml-2 flex items-center gap-1">
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => openAttachedFile(file)}
+                      title={diskTitle('Open File')}
+                      disabled={diskDisabled}
+                    >Open File</button>
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => showAttachedFileInFolder(file)}
+                      title={diskTitle('Show in Folder')}
+                      disabled={diskDisabled}
+                    >Show in Folder</button>
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => setUnattachTarget(file)}
+                      title={metadataActionTitle('Unattach (keeps the file)')}
+                      disabled={metadataActionDisabled}
+                    >Unattach</button>
+                    <button
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-accent text-destructive disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => {
+                        const others = findNodesReferencingFile(file.path, useNodeStore.getState().nodes.values(), resolvedNodePath || undefined)
+                        setDeleteFileTarget({ file, others })
+                      }}
+                      title={isModified || !isNode ? metadataActionTitle('') : diskTitle('Delete File from disk')}
+                      disabled={metadataActionDisabled || diskDisabled}
+                    >Delete File</button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        {attachmentsExpanded && attachedFiles.length === 0 && (
+          <div className="text-xs text-muted-foreground mt-2">{isNode ? 'No attached files' : NOT_A_NODE_TITLE}</div>
         )}
       </div>
       {createLinkOpen && isNode && resolvedNodePath && (
@@ -1431,6 +1541,61 @@ function EditorView() {
             setRemoveLinksSelected(new Set())
           }
         }}
+      />
+
+      {/* Unattach file confirmation */}
+      <ConfirmDialog
+        isOpen={!!unattachTarget}
+        title="Unattach file"
+        message={`Remove "${unattachTarget?.originalName || unattachTarget?.name || 'this file'}" from this node? The file stays in the uploads folder.`}
+        confirmLabel="Unattach"
+        onConfirm={async () => {
+          const file = unattachTarget
+          const current = resolvedNodePathRef.current
+          setUnattachTarget(null)
+          if (!file || !current) return
+          try {
+            await unattachFileFromNode(current, file)
+            try { await useNodeStore.getState().loadNodes() } catch { /* list refreshes on the next load */ }
+            await refreshCurrentEditorContent()
+            toast.success('File unattached')
+          } catch (err) {
+            console.error('Unattach file failed', err)
+            toast.error('Failed to unattach file')
+          }
+        }}
+        onCancel={() => setUnattachTarget(null)}
+      />
+
+      {/* Delete attached file confirmation */}
+      <ConfirmDialog
+        isOpen={!!deleteFileTarget}
+        title="Delete file"
+        message={
+          `Delete "${deleteFileTarget?.file.originalName || deleteFileTarget?.file.name || 'this file'}" from disk? This can't be undone.` +
+          (deleteFileTarget?.others.length ? ' It is also attached to the nodes below, and will be removed from them too.' : '')
+        }
+        items={deleteFileTarget?.others.map((p) => {
+          const n = useNodeStore.getState().nodes.get(p)
+          return { label: n?.metadata?.title || n?.name || p, subLabel: p }
+        })}
+        confirmLabel="Delete"
+        onConfirm={async () => {
+          const target = deleteFileTarget
+          const current = resolvedNodePathRef.current
+          setDeleteFileTarget(null)
+          if (!target || !current) return
+          try {
+            await deleteAttachedFile(current, target.file)
+            try { await useNodeStore.getState().loadNodes() } catch { /* list refreshes on the next load */ }
+            await refreshCurrentEditorContent()
+            toast.success('File deleted')
+          } catch (err) {
+            console.error('Delete attached file failed', err)
+            toast.error('Failed to delete file. If it no longer exists, use Unattach instead.')
+          }
+        }}
+        onCancel={() => setDeleteFileTarget(null)}
       />
 
       {/* Hidden file input for attachments */}

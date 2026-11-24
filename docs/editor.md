@@ -28,6 +28,23 @@ Above the page:
 
 On a Mac, use **⌘** instead of **Ctrl**.
 
+If you have unsaved changes, save them before you add or remove links or attachments, or switch the task on or off. Until you save, those buttons are greyed out.
+
+## Links and attachments
+
+Below the page are two lists you can open and close: **Links** shows the pages this one is linked to, and **Attachments** shows the files attached to it. The lists stay visible when **Hide Metadata** is on.
+
+When you attach a file that's already in the project's `uploads` folder, Verbweaver uses that file instead of making a copy.
+
+For each attached file you can:
+
+- **Open File** in its usual app.
+- **Show in Folder** to find it on your computer.
+- **Unattach** it from this page. The file stays in the `uploads` folder.
+- **Delete File** to remove it from your computer. If other pages have the same file attached, Verbweaver tells you which ones and removes it from them too.
+
+Opening, showing and deleting files only work in the desktop app.
+
 ## Formatting your writing
 
 Verbweaver uses [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown). The basics:
