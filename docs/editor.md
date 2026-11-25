@@ -67,6 +67,26 @@ Verbweaver uses [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdow
 
 **Ctrl+B** makes the selected text bold, **Ctrl+I** makes it italic, and **Ctrl+K** inserts a link.
 
+### Fonts
+
+To put some words in a different font, wrap them in square brackets and name the font:
+
+```markdown
+She wrote [Dear Sir,]{font="Comfortaa"} at the top of the letter.
+```
+
+To change the font of whole paragraphs, put them between two `:::` lines:
+
+```markdown
+::: {font="Caladea"}
+This paragraph is in Caladea.
+
+So is this one.
+:::
+```
+
+The font shows up when you export to PDF, HTML, EPUB, Word or OpenDocument. The Editor itself keeps its usual font. Use the font's name exactly as it appears in **Settings → Dependencies → Fonts**. See [Fonts](fonts.md) for installing new fonts.
+
 ## Linking to other pages
 
 The easiest way to connect pages is **Create link**. You can also write a link in the text:

@@ -770,9 +770,20 @@ papersize: a4          # a4, a5, letter, ... (PDF)
 fontsize: 11pt         # 10pt, 11pt or 12pt for PDF; any CSS size for HTML
 geometry: margin=2.5cm # page margins (PDF)
 linestretch: 1.2       # line spacing (PDF and HTML)
+mainfont: Georgia      # main font (PDF, HTML, EPUB, Word, OpenDocument)
 ```
 
 The **Layout** settings in the Compiler override these. Leave a setting on **Template default** to keep the template's value.
+
+### Font
+
+`mainfont` sets the font for the whole document. When you choose the template in the Compiler, its **Font** setting is filled in with this font. Picking another font there replaces it for that export.
+
+- Use the font's name as listed in **Settings → Dependencies → Fonts**.
+- For PDF, the font must be installed on the computer that exports the document, or the export stops with a message saying so.
+- Font names can contain letters, numbers, spaces, dots, hyphens and `+` only. Other names are ignored.
+
+Writers can also change the font of some words or paragraphs inside a page with `[words]{font="Name"}` or a `::: {font="Name"}` block. See [Editor](editor.md#fonts).
 
 ## Error Handling
 

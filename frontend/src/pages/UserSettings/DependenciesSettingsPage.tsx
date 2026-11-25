@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Download, ExternalLink, CheckCircle, RefreshCw } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
+import InstalledFontsCard from '../../components/InstalledFontsCard';
 
 interface Dependency {
   name: string;
@@ -60,6 +61,7 @@ export default function DependenciesSettingsPage() {
             Dependency checking is only available in the desktop application.
           </p>
         </div>
+        <InstalledFontsCard />
       </div>
     );
   }
@@ -185,6 +187,8 @@ export default function DependenciesSettingsPage() {
           <p className="text-muted-foreground">No dependencies found to check.</p>
         </div>
       )}
+
+      <InstalledFontsCard />
 
       {/* Information Section */}
       <div className="mt-8 p-4 rounded-lg border border-border bg-muted/50">

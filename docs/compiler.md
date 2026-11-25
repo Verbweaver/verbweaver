@@ -30,6 +30,7 @@ On the right:
 - **Export Format:** pick Markdown, HTML, PDF, Word Document, OpenDocument, or EPUB.
 - **Template** (optional): pick a ready-made layout if your project has one for that format. Some templates ask you to fill in extra details, such as a subtitle or a version number.
 - **Options:** choose whether to include a table of contents, page details, and attached files such as images.
+- **Font** (PDF, HTML, EPUB, Word and OpenDocument): the main font for the whole document. The list shows the fonts installed on your computer. If the template names a font, it's chosen for you. **Template default** keeps the template's font. See [Fonts](fonts.md).
 - **Layout** (PDF and HTML): choose the page size (PDF only), font size, margins, and line spacing. **Template default** keeps whatever the template sets. Any other choice replaces the template's setting.
 
 ## 4. Export

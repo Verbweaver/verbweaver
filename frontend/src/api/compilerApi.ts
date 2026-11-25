@@ -26,6 +26,8 @@ interface TemplateContent {
   custom_variables: string[]
   schema?: any
   messages?: string[]
+  // Layout values from the template's front matter, used to pre-fill the Compiler (#52)
+  layout_defaults?: { mainfont?: string | null }
 }
 
 interface CompileResult {
@@ -49,6 +51,12 @@ export const compilerApi = {
   async getTemplateContent(projectId: string, templatePath: string): Promise<TemplateContent> {
     const response = await apiClient.get(`/compiler/${projectId}/templates/${templatePath}`)
     return response.data
+  },
+
+  /** Fonts installed on the machine that runs exports (#52). */
+  async getFonts(refresh = false): Promise<string[]> {
+    const response = await apiClient.get('/compiler/fonts', { params: refresh ? { refresh: true } : {} })
+    return Array.isArray(response.data?.fonts) ? response.data.fonts : []
   },
 
   async preview(projectId: string, nodeId: string, format: string): Promise<string> {

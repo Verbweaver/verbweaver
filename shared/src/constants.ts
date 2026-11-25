@@ -36,6 +36,7 @@ export const HELP_DOCS = {
   VERSION_CONTROL: 'version-control.md',
   COMPILER: 'compiler.md',
   SETTINGS: 'settings.md',
+  FONTS: 'fonts.md',
 } as const;
 export type HelpDoc = typeof HELP_DOCS[keyof typeof HELP_DOCS];
 

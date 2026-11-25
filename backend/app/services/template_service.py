@@ -11,6 +11,16 @@ import subprocess
 import tempfile
 import logging
 
+from app.services.font_service import (
+    FONT_FILTER,
+    FONT_FORMATS,
+    apply_fonts_to_office_file,
+    clean_font_name,
+    epub_font_css,
+    friendly_font_error,
+    front_matter_mainfont,
+)
+
 logger = logging.getLogger(__name__)
 
 # LaTeX preamble added to every PDF export so long lines in code blocks wrap
@@ -130,6 +140,19 @@ def layout_variable_args(options: Optional[Dict[str, Any]], output_format: str) 
         for variable in values.get(chosen, []):
             args.extend(["-V", variable])
     return args
+
+
+def layout_font(options: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The Compiler's Font choice (#52) if it's a usable font name, else None."""
+    return clean_font_name((options or {}).get("layoutFont"))
+
+
+def font_variable_args(options: Optional[Dict[str, Any]], output_format: str) -> List[str]:
+    """Pandoc `-V mainfont=...` for the Compiler's Font choice, for PDF and HTML."""
+    font = layout_font(options)
+    if font and output_format in ("pdf", "html"):
+        return ["-V", f"mainfont={font}"]
+    return []
 
 
 def _write_temp_file(content: str, suffix: str) -> str:
@@ -1023,7 +1046,7 @@ class TemplateService:
                                            delete=False, encoding='utf-8') as temp_file:
                 temp_file.write(markdown_content)
                 temp_file_path = temp_file.name
-            pdf_support_files: List[str] = []
+            support_files: List[str] = []
             
             try:
                 # Ensure temp_file_path is absolute for cross-platform compatibility
@@ -1054,15 +1077,37 @@ class TemplateService:
                 # Page size, font size, margins and line spacing chosen in the Compiler
                 cmd.extend(layout_variable_args(options, output_format))
 
+                # Fonts (#52): the Compiler's Font choice wins over the template's
+                # `mainfont`. Pandoc applies `mainfont` itself for PDF and HTML only.
+                mainfont = layout_font(options) or front_matter_mainfont(markdown_content)
+                cmd.extend(font_variable_args(options, output_format))
+                if output_format in FONT_FORMATS:
+                    font_filter_path = _write_temp_file(FONT_FILTER, '.lua')
+                    support_files.append(font_filter_path)
+                    cmd.append(f'--lua-filter={font_filter_path}')
+                if output_format == 'epub' and mainfont:
+                    # --css replaces Pandoc's default EPUB stylesheet, so pass both
+                    default_css = subprocess.run(
+                        ['pandoc', '--print-default-data-file', 'epub.css'],
+                        capture_output=True, text=True,
+                    )
+                    if default_css.returncode == 0 and default_css.stdout:
+                        default_css_path = _write_temp_file(default_css.stdout, '.css')
+                        support_files.append(default_css_path)
+                        cmd.append(f'--css={default_css_path}')
+                    font_css_path = _write_temp_file(epub_font_css(mainfont), '.css')
+                    support_files.append(font_css_path)
+                    cmd.append(f'--css={font_css_path}')
+
                 # Add format-specific options
                 if output_format == 'pdf':
                     # Wrap long code-block lines and inline code spans instead of
                     # letting them overflow the page (#42)
                     header_file_path = _write_temp_file(PDF_CODE_WRAP_HEADER, '.tex')
-                    pdf_support_files.append(header_file_path)
+                    support_files.append(header_file_path)
                     cmd.append(f'--include-in-header={header_file_path}')
                     filter_file_path = _write_temp_file(PDF_INLINE_CODE_WRAP_FILTER, '.lua')
-                    pdf_support_files.append(filter_file_path)
+                    support_files.append(filter_file_path)
                     cmd.append(f'--lua-filter={filter_file_path}')
                     # Prefer tectonic if available on PATH (bundled or system), otherwise xelatex/pdflatex
                     try:
@@ -1113,15 +1158,24 @@ class TemplateService:
                             result = subprocess.run(cmd, capture_output=True, text=True)
                         if result.returncode != 0:
                             logger.error(f"Pandoc PDF conversion failed with pdflatex: {result.stderr}")
-                            return False, f"Pandoc PDF conversion failed: {result.stderr}"
+                            return False, (friendly_font_error(error_msg) or friendly_font_error(result.stderr)
+                                           or f"Pandoc PDF conversion failed: {result.stderr}")
                     else:
-                        return False, f"Pandoc conversion failed: {error_msg}"
-                
+                        return False, friendly_font_error(error_msg) or f"Pandoc conversion failed: {error_msg}"
+
+                # Word and OpenDocument have no Pandoc font setting: set the fonts
+                # in the file's styles instead
+                if output_format in ('docx', 'odt'):
+                    try:
+                        apply_fonts_to_office_file(output_file, output_format, mainfont)
+                    except Exception as e:
+                        logger.warning(f"Could not apply fonts to {output_format}: {e}")
+
                 return True, "Conversion successful"
                 
             finally:
                 # Clean up temporary files
-                for path in [temp_file_path, *pdf_support_files]:
+                for path in [temp_file_path, *support_files]:
                     try:
                         if path and os.path.exists(path):
                             os.unlink(path)

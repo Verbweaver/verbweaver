@@ -310,6 +310,48 @@ test.describe('Compiler', () => {
         await loadConfiguration(win, tmp, { options: reset });
       }
     });
+
+    test('Font setting: pre-filled from the template, reaches the export, shown for font formats (#52)', async ({ stress }) => {
+      const { win, tmp, projectPath } = stress;
+      const nodes = ['nodes/Findings/SQL Injection.md', 'nodes/Findings/XSS.md'];
+      const templateFile = path.join(projectPath, 'templates', 'compiler', 'html', 'font-test.md');
+      await fs.mkdir(path.dirname(templateFile), { recursive: true });
+      await fs.writeFile(templateFile, '---\ntitle: $title$\nmainfont: Font From Template\n---\n\n$for(nodes)$\n## $nodes.title$\n\nSome [styled words]{font="Span Font"} here.\n\n$endfor$\n');
+      try {
+        await chooseFormat(win, 'markdown');
+        await expect(win.getByTestId('compiler-font')).toHaveCount(0);
+
+        await chooseFormat(win, 'html');
+        await loadConfiguration(win, tmp, { selectedNodes: nodes, orderedNodes: nodes, selectedFormat: 'html', options: { layoutFont: '' } });
+        await chooseTemplate(win, 'html/font-test.md');
+        const font = win.getByLabel('Font', { exact: true });
+        // Pre-filled with the template's font, which isn't installed here
+        await expect(font).toHaveValue('Font From Template');
+        await expect(win.getByTestId('compiler-font').getByRole('alert')).toContainText("isn't installed");
+
+        // Pick an installed font: it replaces the template's
+        const installed = await font.locator('option').evaluateAll((opts) =>
+          opts.map((o) => o.value).filter((v) => v && v !== 'Font From Template'));
+        expect(installed.length).toBeGreaterThan(0);
+        await font.selectOption(installed[0]);
+        await expect(win.getByTestId('compiler-font').getByRole('alert')).toHaveCount(0);
+        const html = await compile(win);
+        expect(html.status).toBe(200);
+        const text = html.body.toString('utf8');
+        expect(text).toContain(`font-family: ${installed[0]};`);
+        expect(text).toMatch(/<span style="font-family: &#39;Span Font&#39;">styled\s+words<\/span>/);
+
+        // "No template" clears it back to Template default; Word gets the Font setting too
+        await chooseTemplate(win, '');
+        await expect(font).toHaveValue('');
+        await chooseFormat(win, 'docx');
+        await expect(win.getByTestId('compiler-font')).toHaveCount(1);
+        await expect(win.getByTestId('compiler-layout')).toHaveCount(0);
+      } finally {
+        await fs.rm(templateFile, { force: true });
+        await loadConfiguration(win, tmp, { options: { layoutFont: '' } });
+      }
+    });
   });
 });
 

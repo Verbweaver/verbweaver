@@ -4,6 +4,7 @@ import { useProjectStore } from '../store/projectStore'
 import { useTabStore } from '../store/tabStore'
 import { EXPORT_FORMATS, HELP_DOCS } from '@verbweaver/shared'
 import HelpButton from '../components/HelpButton'
+import { useOpenHelp } from '../hooks/useOpenHelp'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
 import { compilerApi } from '../api/compilerApi'
@@ -73,6 +74,8 @@ type LayoutLineSpacing = 'default' | 'single' | '1.5' | 'double'
 
 // Formats whose Pandoc output reads the layout settings
 const LAYOUT_FORMATS = ['pdf', 'html']
+// Formats that can carry fonts (#52). Markdown output is plain text.
+const FONT_FORMATS = ['pdf', 'html', 'epub', 'docx', 'odt']
 
 interface CompileOptions {
   includeMetadata: boolean
@@ -87,6 +90,8 @@ interface CompileOptions {
   layoutFontSize: LayoutFontSize
   layoutMargins: LayoutMargins
   layoutLineSpacing: LayoutLineSpacing
+  // Document font (#52). '' keeps the template's `mainfont`, or the format's default.
+  layoutFont: string
   // Advanced
   maxVariablePasses?: number
   reprocessNodesInPasses?: boolean
@@ -132,6 +137,9 @@ function CompilerView() {
   const [docVarErrors, setDocVarErrors] = useState<Record<string, string>>({})
   const [openTableVar, setOpenTableVar] = useState<string | null>(null)
   const [templateMessages, setTemplateMessages] = useState<string[]>([])
+  // Fonts installed where exports run; null until loaded (or if loading failed)
+  const [installedFonts, setInstalledFonts] = useState<string[] | null>(null)
+  const openHelp = useOpenHelp()
   const [isCompiling, setIsCompiling] = useState(false)
   const [compileProgress, setCompileProgress] = useState(0)
   const [options, setOptions] = useState<CompileOptions>({
@@ -144,6 +152,7 @@ function CompilerView() {
     layoutFontSize: 'default',
     layoutMargins: 'default',
     layoutLineSpacing: 'default',
+    layoutFont: '',
     maxVariablePasses: 5,
     reprocessNodesInPasses: true,
     showUnresolvedMarkers: false
@@ -298,6 +307,15 @@ function CompilerView() {
     }
   }, [currentProject, selectedFormat])
 
+  // Load installed fonts for the Font setting (#52)
+  useEffect(() => {
+    let cancelled = false
+    compilerApi.getFonts()
+      .then((fonts) => { if (!cancelled) setInstalledFonts(fonts) })
+      .catch((error) => console.error('Failed to load installed fonts:', error))
+    return () => { cancelled = true }
+  }, [])
+
   // Check dependencies on mount (desktop only)
   useEffect(() => {
     const checkDependencies = async () => {
@@ -366,6 +384,7 @@ function CompilerView() {
       setTemplateMessages([])
       setNodeVariables({})
       setDocVars({})
+      setOptions(prev => ({ ...prev, layoutFont: '' }))
     }
   }
 
@@ -376,6 +395,11 @@ function CompilerView() {
     const schema = (templateContent && (templateContent as any).schema) || null
     setTemplateSchema(schema)
     setTemplateMessages(Array.isArray((templateContent as any).messages) ? (templateContent as any).messages : [])
+    // Pre-fill the Font with the template's own font (#52)
+    if (!preserveExisting) {
+      const templateFont = templateContent?.layout_defaults?.mainfont || ''
+      setOptions(prev => ({ ...prev, layoutFont: templateFont }))
+    }
 
     // Merge/initialize custom variables by name
     const names: string[] = (templateContent.custom_variables || []).filter((name: string) => !(name === 'it' || String(name).startsWith('it.')))
@@ -1230,6 +1254,43 @@ function CompilerView() {
               <span className="text-sm">Embed uploaded files (if supported by format)</span>
             </label>
           </div>
+
+          {/* Font (#52) */}
+          {FONT_FORMATS.includes(selectedFormat) && (
+            <div className="space-y-2" data-testid="compiler-font">
+              <h3 className="font-semibold">Font</h3>
+              <label className="flex items-center gap-3">
+                <span className="text-sm w-28">Main font</span>
+                <select
+                  aria-label="Font"
+                  className="px-2 py-1 border border-input rounded bg-background text-sm max-w-[14rem]"
+                  value={options.layoutFont ?? ''}
+                  onChange={(e) => updateOption('layoutFont', e.target.value)}
+                >
+                  <option value="">Template default</option>
+                  {options.layoutFont && !(installedFonts ?? []).includes(options.layoutFont) && (
+                    <option value={options.layoutFont}>
+                      {installedFonts ? `${options.layoutFont} (not installed)` : options.layoutFont}
+                    </option>
+                  )}
+                  {(installedFonts ?? []).map((font) => (
+                    <option key={font} value={font}>{font}</option>
+                  ))}
+                </select>
+              </label>
+              {options.layoutFont && installedFonts && !installedFonts.includes(options.layoutFont) && (
+                <p className="text-xs text-amber-600 dark:text-amber-400" role="alert">
+                  "{options.layoutFont}" isn't installed on this computer, so the export may fail or use another font.{' '}
+                  <button type="button" className="underline" onClick={() => openHelp(HELP_DOCS.FONTS)}>
+                    How to install fonts
+                  </button>
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                The main font for the document. "Template default" keeps the template's font.
+              </p>
+            </div>
+          )}
 
           {/* Layout (PDF and HTML) */}
           {LAYOUT_FORMATS.includes(selectedFormat) && (

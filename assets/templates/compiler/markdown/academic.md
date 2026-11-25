@@ -8,6 +8,7 @@ papersize: a4
 fontsize: 12pt
 geometry: margin=2.5cm
 linestretch: 1.5
+# mainfont: Georgia   # main font; the font must be installed
 variables:
   includeMetadata:
     type: boolean

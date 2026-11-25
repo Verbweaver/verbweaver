@@ -20,6 +20,7 @@ from app.models.user import User
 from app.core.security import get_current_user
 from app.services.git_service import GitService
 from app.services.template_service import TemplateService
+from app.services.font_service import front_matter_mainfont, list_installed_fonts
 
 router = APIRouter()
 
@@ -1147,6 +1148,13 @@ async def get_supported_formats():
         ]
     }
 
+@router.get("/fonts")
+async def get_installed_fonts(refresh: bool = False, current_user: User = Depends(get_current_user)):
+    """Fonts installed on the machine that runs exports (#52), for the Compiler and Settings."""
+    import asyncio
+    fonts = await asyncio.to_thread(list_installed_fonts, refresh)
+    return {"fonts": fonts}
+
 @router.get("/{project_id}/templates")
 async def get_templates(
     project_id: str,
@@ -1254,5 +1262,7 @@ async def get_template_content(
         "is_valid": is_valid,
         "custom_variables": custom_variables,
         "schema": schema,
-        "messages": validation_messages
+        "messages": validation_messages,
+        # Layout values the Compiler pre-fills from the template's front matter (#52)
+        "layout_defaults": {"mainfont": front_matter_mainfont(final_content)},
     } 

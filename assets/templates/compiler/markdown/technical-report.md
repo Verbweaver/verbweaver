@@ -9,6 +9,7 @@ papersize: a4
 fontsize: 11pt
 geometry: margin=2cm
 linestretch: 1.15
+# mainfont: Georgia   # main font; the font must be installed
 variables:
   summary:
     type: string
