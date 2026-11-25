@@ -4,9 +4,11 @@ import { useProjectStore } from '../store/projectStore'
 import { useTabStore } from '../store/tabStore'
 import { EXPORT_FORMATS, HELP_DOCS } from '@verbweaver/shared'
 import HelpButton from '../components/HelpButton'
+import { useOpenHelp } from '../hooks/useOpenHelp'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
-import { compilerApi } from '../api/compilerApi'
+import { compilerApi, type InstalledFonts } from '../api/compilerApi'
+import FontSelect from '../components/FontSelect'
 import NodeSelector, { NodeFilterState } from '../components/NodeSelector'
 import NodeOrderingPanel from '../components/NodeOrderingPanel'
 import { editorApi } from '../api/editorApi'
@@ -73,6 +75,8 @@ type LayoutLineSpacing = 'default' | 'single' | '1.5' | 'double'
 
 // Formats whose Pandoc output reads the layout settings
 const LAYOUT_FORMATS = ['pdf', 'html']
+// Formats that can carry fonts (#52). Markdown output is plain text.
+const FONT_FORMATS = ['pdf', 'html', 'epub', 'docx', 'odt']
 
 interface CompileOptions {
   includeMetadata: boolean
@@ -87,6 +91,10 @@ interface CompileOptions {
   layoutFontSize: LayoutFontSize
   layoutMargins: LayoutMargins
   layoutLineSpacing: LayoutLineSpacing
+  // Document font (#52). '' keeps the template's `mainfont`, or the format's default.
+  layoutFont: string
+  // Font for the page details ("Metadata") sections. '' = same as the main font.
+  metadataFont: string
   // Advanced
   maxVariablePasses?: number
   reprocessNodesInPasses?: boolean
@@ -132,6 +140,9 @@ function CompilerView() {
   const [docVarErrors, setDocVarErrors] = useState<Record<string, string>>({})
   const [openTableVar, setOpenTableVar] = useState<string | null>(null)
   const [templateMessages, setTemplateMessages] = useState<string[]>([])
+  // Fonts installed where exports run; null until loaded (or if loading failed)
+  const [installedFonts, setInstalledFonts] = useState<InstalledFonts | null>(null)
+  const openHelp = useOpenHelp()
   const [isCompiling, setIsCompiling] = useState(false)
   const [compileProgress, setCompileProgress] = useState(0)
   const [options, setOptions] = useState<CompileOptions>({
@@ -144,6 +155,8 @@ function CompilerView() {
     layoutFontSize: 'default',
     layoutMargins: 'default',
     layoutLineSpacing: 'default',
+    layoutFont: '',
+    metadataFont: '',
     maxVariablePasses: 5,
     reprocessNodesInPasses: true,
     showUnresolvedMarkers: false
@@ -298,6 +311,15 @@ function CompilerView() {
     }
   }, [currentProject, selectedFormat])
 
+  // Load installed fonts for the Font setting (#52)
+  useEffect(() => {
+    let cancelled = false
+    compilerApi.getFonts()
+      .then((fonts) => { if (!cancelled) setInstalledFonts(fonts) })
+      .catch((error) => console.error('Failed to load installed fonts:', error))
+    return () => { cancelled = true }
+  }, [])
+
   // Check dependencies on mount (desktop only)
   useEffect(() => {
     const checkDependencies = async () => {
@@ -366,6 +388,7 @@ function CompilerView() {
       setTemplateMessages([])
       setNodeVariables({})
       setDocVars({})
+      setOptions(prev => ({ ...prev, layoutFont: '', metadataFont: '' }))
     }
   }
 
@@ -376,6 +399,11 @@ function CompilerView() {
     const schema = (templateContent && (templateContent as any).schema) || null
     setTemplateSchema(schema)
     setTemplateMessages(Array.isArray((templateContent as any).messages) ? (templateContent as any).messages : [])
+    // Pre-fill the Font with the template's own font (#52)
+    if (!preserveExisting) {
+      const defaults = templateContent?.layout_defaults || {}
+      setOptions(prev => ({ ...prev, layoutFont: defaults.mainfont || '', metadataFont: defaults.metadatafont || '' }))
+    }
 
     // Merge/initialize custom variables by name
     const names: string[] = (templateContent.custom_variables || []).filter((name: string) => !(name === 'it' || String(name).startsWith('it.')))
@@ -819,11 +847,11 @@ function CompilerView() {
         }
 
         // Classify and surface helpful guidance
-        if (/Pandoc conversion failed:.*rerunfilecheck\.sty/i.test(detail)) {
+        if (/Pandoc (PDF )?conversion failed:.*rerunfilecheck\.sty/i.test(detail)) {
           toast.error('PDF export failed: LaTeX package rerunfilecheck.sty is missing. Enable "Install missing packages on-the-fly" in MiKTeX Console (Settings → General → Always), then retry.')
-        } else if (/Pandoc conversion failed:.*xelatex/i.test(detail)) {
+        } else if (/Pandoc (PDF )?conversion failed:.*xelatex/i.test(detail)) {
           toast.error('PDF export failed: xelatex not found. Install a LaTeX distribution (MiKTeX/TeX Live) and ensure it is on PATH.')
-        } else if (/Pandoc conversion failed:.*pdflatex/i.test(detail)) {
+        } else if (/Pandoc (PDF )?conversion failed:.*pdflatex/i.test(detail)) {
           toast.error('PDF export failed: pdflatex not found. Install a LaTeX distribution (MiKTeX/TeX Live) and ensure it is on PATH.')
         } else if (/Template not found/i.test(detail)) {
           toast.error('Template not found. Please reselect a template or reseed templates in project settings.')
@@ -1230,6 +1258,39 @@ function CompilerView() {
               <span className="text-sm">Embed uploaded files (if supported by format)</span>
             </label>
           </div>
+
+          {/* Fonts (#52) */}
+          {FONT_FORMATS.includes(selectedFormat) && (
+            <div className="space-y-2" data-testid="compiler-font">
+              <h3 className="font-semibold">Font</h3>
+              <FontSelect
+                label="Main font"
+                ariaLabel="Font"
+                value={options.layoutFont ?? ''}
+                onChange={(font) => updateOption('layoutFont', font)}
+                fonts={installedFonts}
+                emptyLabel="Template default"
+                forPdf={selectedFormat === 'pdf'}
+                onOpenHelp={() => openHelp(HELP_DOCS.FONTS)}
+              />
+              {options.includeMetadata && (
+                <FontSelect
+                  label="Metadata font"
+                  ariaLabel="Metadata font"
+                  value={options.metadataFont ?? ''}
+                  onChange={(font) => updateOption('metadataFont', font)}
+                  fonts={installedFonts}
+                  emptyLabel="Same as main font"
+                  forPdf={selectedFormat === 'pdf'}
+                  onOpenHelp={() => openHelp(HELP_DOCS.FONTS)}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                "Template default" keeps the template's font.
+                {options.includeMetadata && ' The metadata font is used for each page\'s Metadata section.'}
+              </p>
+            </div>
+          )}
 
           {/* Layout (PDF and HTML) */}
           {LAYOUT_FORMATS.includes(selectedFormat) && (

@@ -17,7 +17,8 @@ const settingsTabs = [
   { name: 'Project', href: '/settings/project', icon: FolderOpen, exact: false },
   { name: 'Collaboration', href: '/settings/collaboration', icon: GitBranch, exact: false },
   { name: 'Templates', href: '/settings/templates', icon: FileCode, exact: false },
-  ...(isElectron ? [{ name: 'Dependencies', href: '/settings/dependencies', icon: AlertTriangle, exact: false }] : []),
+  // Desktop checks the export tools here; both versions list the installed fonts (#52)
+  { name: 'Dependencies', href: '/settings/dependencies', icon: AlertTriangle, exact: false },
 ];
 
 export default function Settings() {

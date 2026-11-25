@@ -37,6 +37,10 @@ def _filter_arg(cmd):
     return _flag_arg(cmd, "--lua-filter")
 
 
+def _filter_args(cmd):
+    return [a for a in cmd if a.startswith("--lua-filter=")]
+
+
 class FakeRun:
     """Stand-in for subprocess.run that records pandoc invocations."""
 
@@ -57,12 +61,16 @@ class FakeRun:
             path = header.split("=", 1)[1]
             with open(path, encoding="utf-8") as f:
                 self.header_contents.append(f.read())
-        lua = _filter_arg(cmd)
-        if lua:
+        # Every Lua filter (the font filter (#52) runs for all formats but Markdown)
+        for lua in _filter_args(cmd):
             with open(lua.split("=", 1)[1], encoding="utf-8") as f:
                 self.filter_contents.append(f.read())
         if self.fail_first_pdf and len(self.pandoc_cmds) == 1:
             return SimpleNamespace(returncode=43, stdout="", stderr="xelatex not found")
+        # Write a complete-looking file: PDF exports are checked before they're returned
+        out = cmd[cmd.index("-o") + 1]
+        with open(out, "wb") as f:
+            f.write(b"%PDF-1.7\n" + b"0" * 300 + b"\n%%EOF\n")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
 
@@ -92,10 +100,10 @@ def test_pdf_export_includes_inline_code_wrap_filter(tmp_path, monkeypatch):
     fake = FakeRun()
     _convert(tmp_path, monkeypatch, "pdf", fake)
 
-    lua = _filter_arg(fake.pandoc_cmds[0])
-    assert lua is not None
-    assert fake.filter_contents == [PDF_INLINE_CODE_WRAP_FILTER]
-    assert not os.path.exists(lua.split("=", 1)[1])
+    luas = _filter_args(fake.pandoc_cmds[0])
+    assert luas
+    assert PDF_INLINE_CODE_WRAP_FILTER in fake.filter_contents
+    assert not any(os.path.exists(lua.split("=", 1)[1]) for lua in luas)
 
 
 @pytest.mark.parametrize("fmt", ["docx", "html", "epub", "odt"])
@@ -103,7 +111,7 @@ def test_non_pdf_exports_do_not_get_latex_header(tmp_path, monkeypatch, fmt):
     fake = FakeRun()
     _convert(tmp_path, monkeypatch, fmt, fake)
     assert _header_arg(fake.pandoc_cmds[0]) is None
-    assert _filter_arg(fake.pandoc_cmds[0]) is None
+    assert PDF_INLINE_CODE_WRAP_FILTER not in fake.filter_contents
 
 
 def test_pdflatex_fallback_keeps_original_options(tmp_path, monkeypatch):
@@ -118,6 +126,7 @@ def test_pdflatex_fallback_keeps_original_options(tmp_path, monkeypatch):
     assert "--resource-path" in retry
     assert _header_arg(retry) is not None
     assert _filter_arg(retry) is not None
+    assert fake.filter_contents.count(PDF_INLINE_CODE_WRAP_FILTER) == 2
     assert "breaklines" in fake.header_contents[1]
 
 

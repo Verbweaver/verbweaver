@@ -66,7 +66,7 @@ Advanced: [Compiler Template System](compiler-template-system.md) explains how e
 
 ## Dependencies
 
-Desktop app only. Shows whether the extra software needed to export documents is installed:
+In the desktop app, this shows whether the extra software needed to export documents is installed:
 
 - **Pandoc**, used for all export formats and previews;
 - a **PDF engine**, used for exporting to PDF.
@@ -74,3 +74,5 @@ Desktop app only. Shows whether the extra software needed to export documents is
 ![Settings, Dependencies: Pandoc and the PDF engine, both installed](images/settings-dependencies.png)
 
 If something is missing, click its **Install** button and follow the installer. Then click **Check Again**. See the [Compiler](compiler.md) guide for more about exporting.
+
+Below that, **Fonts** lists the fonts you can use in exported documents, each shown in its own style. In the web version, this page shows only the Fonts list, and it lists the fonts on the server. Type in the search box to find one. After you install a new font, click **Refresh**. See [Fonts](fonts.md).

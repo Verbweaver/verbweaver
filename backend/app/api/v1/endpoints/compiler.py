@@ -20,6 +20,7 @@ from app.models.user import User
 from app.core.security import get_current_user
 from app.services.git_service import GitService
 from app.services.template_service import TemplateService
+from app.services.font_service import front_matter_font, front_matter_mainfont, list_installed_fonts, variable_only_fonts
 
 router = APIRouter()
 
@@ -764,11 +765,15 @@ class ContentAggregator:
                     in_front_matter = False
                     # Format the front matter nicely only if metadata should be included
                     if front_matter_lines and include_metadata:
+                        # Wrapped in a `metadata` div so the Compiler's Metadata font can
+                        # find it (#52); Markdown exports drop the wrapper again
+                        cleaned_lines.append("::: {.metadata}")
                         cleaned_lines.append("### Metadata")
                         cleaned_lines.append("")
                         cleaned_lines.append("```yaml")
                         cleaned_lines.extend(front_matter_lines)
                         cleaned_lines.append("```")
+                        cleaned_lines.append(":::")
                         cleaned_lines.append("")
                     continue
             
@@ -1005,7 +1010,7 @@ class PandocExporter:
             print(f"PandocExporter: Conversion result - Success: {success}, Message: {message}")
             
             if not success:
-                raise ValueError(f"Pandoc conversion failed: {message}")
+                raise ValueError(message)  # already says what failed
             
             # Read the converted file
             with open(output_file, 'rb') as f:
@@ -1147,6 +1152,15 @@ async def get_supported_formats():
         ]
     }
 
+@router.get("/fonts")
+async def get_installed_fonts(refresh: bool = False, current_user: User = Depends(get_current_user)):
+    """Fonts installed on the machine that runs exports (#52), for the Compiler and Settings."""
+    import asyncio
+    fonts = await asyncio.to_thread(list_installed_fonts, refresh)
+    # Fonts installed only as variable fonts, which PDF export may not be able to use
+    variable_only = await asyncio.to_thread(variable_only_fonts)
+    return {"fonts": fonts, "variable_only": [f for f in variable_only if f in set(fonts)]}
+
 @router.get("/{project_id}/templates")
 async def get_templates(
     project_id: str,
@@ -1254,5 +1268,10 @@ async def get_template_content(
         "is_valid": is_valid,
         "custom_variables": custom_variables,
         "schema": schema,
-        "messages": validation_messages
+        "messages": validation_messages,
+        # Layout values the Compiler pre-fills from the template's front matter (#52)
+        "layout_defaults": {
+            "mainfont": front_matter_mainfont(final_content),
+            "metadatafont": front_matter_font(final_content, "metadatafont"),
+        },
     } 
