@@ -24,6 +24,7 @@ export interface CompilerState {
     layoutMargins?: 'default' | 'narrow' | 'normal' | 'wide'
     layoutLineSpacing?: 'default' | 'single' | '1.5' | 'double'
     layoutFont?: string
+    metadataFont?: string
   }
 }
 

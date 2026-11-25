@@ -341,15 +341,32 @@ test.describe('Compiler', () => {
         expect(text).toContain(`font-family: ${installed[0]};`);
         expect(text).toMatch(/<span style="font-family: &#39;Span Font&#39;">styled\s+words<\/span>/);
 
-        // "No template" clears it back to Template default; Word gets the Font setting too
+        // "No template" clears it back to Template default
         await chooseTemplate(win, '');
         await expect(font).toHaveValue('');
+
+        // Metadata font: only offered while Include metadata is ticked, and used for each
+        // page's Metadata section
+        const metaFont = win.getByLabel('Metadata font', { exact: true });
+        const includeMetadata = win.getByLabel('Include metadata');
+        await includeMetadata.uncheck();
+        await expect(metaFont).toHaveCount(0);
+        await includeMetadata.check();
+        await expect(metaFont).toHaveValue('');
+        await metaFont.selectOption(installed[0]);
+        const withMeta = await compile(win);
+        expect(withMeta.status).toBe(200);
+        const metaHtml = withMeta.body.toString('utf8');
+        const escaped = installed[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        expect(metaHtml).toMatch(new RegExp(`<section[^>]*class="metadata"[^>]*style="font-family: &#39;${escaped}&#39;"`));
+
+        // Word gets the Font settings too
         await chooseFormat(win, 'docx');
         await expect(win.getByTestId('compiler-font')).toHaveCount(1);
         await expect(win.getByTestId('compiler-layout')).toHaveCount(0);
       } finally {
         await fs.rm(templateFile, { force: true });
-        await loadConfiguration(win, tmp, { options: { layoutFont: '' } });
+        await loadConfiguration(win, tmp, { options: { layoutFont: '', metadataFont: '', includeMetadata: true } });
       }
     });
   });

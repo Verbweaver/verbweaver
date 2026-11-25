@@ -12,13 +12,19 @@ import tempfile
 import logging
 
 from app.services.font_service import (
-    FONT_FILTER,
     FONT_FORMATS,
+    MARKDOWN_METADATA_UNWRAP_FILTER,
     apply_fonts_to_office_file,
+    check_pdf_fonts,
     clean_font_name,
     epub_font_css,
+    font_filter,
+    fonts_used_in,
     friendly_font_error,
+    front_matter_font,
     front_matter_mainfont,
+    pdf_is_complete,
+    variable_only_error,
 )
 
 logger = logging.getLogger(__name__)
@@ -145,6 +151,11 @@ def layout_variable_args(options: Optional[Dict[str, Any]], output_format: str) 
 def layout_font(options: Optional[Dict[str, Any]]) -> Optional[str]:
     """The Compiler's Font choice (#52) if it's a usable font name, else None."""
     return clean_font_name((options or {}).get("layoutFont"))
+
+
+def metadata_font(options: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The Compiler's Metadata font choice (#52) if it's a usable font name, else None."""
+    return clean_font_name((options or {}).get("metadataFont"))
 
 
 def font_variable_args(options: Optional[Dict[str, Any]], output_format: str) -> List[str]:
@@ -1080,11 +1091,33 @@ class TemplateService:
                 # Fonts (#52): the Compiler's Font choice wins over the template's
                 # `mainfont`. Pandoc applies `mainfont` itself for PDF and HTML only.
                 mainfont = layout_font(options) or front_matter_mainfont(markdown_content)
+                # Font for the page details ("Metadata") sections; none = the main font
+                meta_font = metadata_font(options) or front_matter_font(markdown_content, 'metadatafont')
                 cmd.extend(font_variable_args(options, output_format))
+                latex_specs: Dict[str, Dict[str, Any]] = {}
+                variable_only: List[str] = []
+                if output_format == 'pdf':
+                    # Fonts that have static files next to a variable one are loaded from
+                    # the static files; the PDF engine can't always embed variable fonts.
+                    pdf_fonts = [f for f in [mainfont, meta_font, *fonts_used_in(markdown_content)] if f]
+                    variable_only, latex_specs = check_pdf_fonts(list(dict.fromkeys(pdf_fonts)))
+                    if mainfont and mainfont in latex_specs:
+                        spec = latex_specs[mainfont]
+                        # Replace the Compiler's `-V mainfont=<name>` (if any) with the file
+                        if f'mainfont={mainfont}' in cmd:
+                            i = cmd.index(f'mainfont={mainfont}')
+                            del cmd[i - 1:i + 1]
+                        cmd.extend(['-V', f"mainfont={spec['file']}"])
+                        for opt in spec['options']:
+                            cmd.extend(['-V', f'mainfontoptions={opt}'])
                 if output_format in FONT_FORMATS:
-                    font_filter_path = _write_temp_file(FONT_FILTER, '.lua')
+                    font_filter_path = _write_temp_file(font_filter(meta_font, latex_specs), '.lua')
                     support_files.append(font_filter_path)
                     cmd.append(f'--lua-filter={font_filter_path}')
+                elif output_format == 'markdown':
+                    unwrap_path = _write_temp_file(MARKDOWN_METADATA_UNWRAP_FILTER, '.lua')
+                    support_files.append(unwrap_path)
+                    cmd.append(f'--lua-filter={unwrap_path}')
                 if output_format == 'epub' and mainfont:
                     # --css replaces Pandoc's default EPUB stylesheet, so pass both
                     default_css = subprocess.run(
@@ -1162,6 +1195,17 @@ class TemplateService:
                                            or f"Pandoc PDF conversion failed: {result.stderr}")
                     else:
                         return False, friendly_font_error(error_msg) or f"Pandoc conversion failed: {error_msg}"
+
+                # Some PDF engines (MiKTeX's xelatex) report success but leave an
+                # unreadable stub, e.g. when a font can't be embedded. Don't hand that
+                # file to the user as a finished PDF.
+                if output_format == 'pdf' and not pdf_is_complete(output_file):
+                    stderr_text = (result.stderr or '') + (result.stdout or '')
+                    logger.error(f"PDF engine produced an incomplete PDF: {stderr_text}")
+                    return False, ((variable_only and variable_only_error(variable_only))
+                                   or friendly_font_error(stderr_text)
+                                   or "The PDF engine didn't finish the PDF, so it would be unreadable. "
+                                      f"Details: {stderr_text.strip()[-1500:] or 'no message'}")
 
                 # Word and OpenDocument have no Pandoc font setting: set the fonts
                 # in the file's styles instead

@@ -7,7 +7,8 @@ import HelpButton from '../components/HelpButton'
 import { useOpenHelp } from '../hooks/useOpenHelp'
 import toast from 'react-hot-toast'
 import { api } from '../services/auth'
-import { compilerApi } from '../api/compilerApi'
+import { compilerApi, type InstalledFonts } from '../api/compilerApi'
+import FontSelect from '../components/FontSelect'
 import NodeSelector, { NodeFilterState } from '../components/NodeSelector'
 import NodeOrderingPanel from '../components/NodeOrderingPanel'
 import { editorApi } from '../api/editorApi'
@@ -92,6 +93,8 @@ interface CompileOptions {
   layoutLineSpacing: LayoutLineSpacing
   // Document font (#52). '' keeps the template's `mainfont`, or the format's default.
   layoutFont: string
+  // Font for the page details ("Metadata") sections. '' = same as the main font.
+  metadataFont: string
   // Advanced
   maxVariablePasses?: number
   reprocessNodesInPasses?: boolean
@@ -138,7 +141,7 @@ function CompilerView() {
   const [openTableVar, setOpenTableVar] = useState<string | null>(null)
   const [templateMessages, setTemplateMessages] = useState<string[]>([])
   // Fonts installed where exports run; null until loaded (or if loading failed)
-  const [installedFonts, setInstalledFonts] = useState<string[] | null>(null)
+  const [installedFonts, setInstalledFonts] = useState<InstalledFonts | null>(null)
   const openHelp = useOpenHelp()
   const [isCompiling, setIsCompiling] = useState(false)
   const [compileProgress, setCompileProgress] = useState(0)
@@ -153,6 +156,7 @@ function CompilerView() {
     layoutMargins: 'default',
     layoutLineSpacing: 'default',
     layoutFont: '',
+    metadataFont: '',
     maxVariablePasses: 5,
     reprocessNodesInPasses: true,
     showUnresolvedMarkers: false
@@ -384,7 +388,7 @@ function CompilerView() {
       setTemplateMessages([])
       setNodeVariables({})
       setDocVars({})
-      setOptions(prev => ({ ...prev, layoutFont: '' }))
+      setOptions(prev => ({ ...prev, layoutFont: '', metadataFont: '' }))
     }
   }
 
@@ -397,8 +401,8 @@ function CompilerView() {
     setTemplateMessages(Array.isArray((templateContent as any).messages) ? (templateContent as any).messages : [])
     // Pre-fill the Font with the template's own font (#52)
     if (!preserveExisting) {
-      const templateFont = templateContent?.layout_defaults?.mainfont || ''
-      setOptions(prev => ({ ...prev, layoutFont: templateFont }))
+      const defaults = templateContent?.layout_defaults || {}
+      setOptions(prev => ({ ...prev, layoutFont: defaults.mainfont || '', metadataFont: defaults.metadatafont || '' }))
     }
 
     // Merge/initialize custom variables by name
@@ -843,11 +847,11 @@ function CompilerView() {
         }
 
         // Classify and surface helpful guidance
-        if (/Pandoc conversion failed:.*rerunfilecheck\.sty/i.test(detail)) {
+        if (/Pandoc (PDF )?conversion failed:.*rerunfilecheck\.sty/i.test(detail)) {
           toast.error('PDF export failed: LaTeX package rerunfilecheck.sty is missing. Enable "Install missing packages on-the-fly" in MiKTeX Console (Settings → General → Always), then retry.')
-        } else if (/Pandoc conversion failed:.*xelatex/i.test(detail)) {
+        } else if (/Pandoc (PDF )?conversion failed:.*xelatex/i.test(detail)) {
           toast.error('PDF export failed: xelatex not found. Install a LaTeX distribution (MiKTeX/TeX Live) and ensure it is on PATH.')
-        } else if (/Pandoc conversion failed:.*pdflatex/i.test(detail)) {
+        } else if (/Pandoc (PDF )?conversion failed:.*pdflatex/i.test(detail)) {
           toast.error('PDF export failed: pdflatex not found. Install a LaTeX distribution (MiKTeX/TeX Live) and ensure it is on PATH.')
         } else if (/Template not found/i.test(detail)) {
           toast.error('Template not found. Please reselect a template or reseed templates in project settings.')
@@ -1255,39 +1259,35 @@ function CompilerView() {
             </label>
           </div>
 
-          {/* Font (#52) */}
+          {/* Fonts (#52) */}
           {FONT_FORMATS.includes(selectedFormat) && (
             <div className="space-y-2" data-testid="compiler-font">
               <h3 className="font-semibold">Font</h3>
-              <label className="flex items-center gap-3">
-                <span className="text-sm w-28">Main font</span>
-                <select
-                  aria-label="Font"
-                  className="px-2 py-1 border border-input rounded bg-background text-sm max-w-[14rem]"
-                  value={options.layoutFont ?? ''}
-                  onChange={(e) => updateOption('layoutFont', e.target.value)}
-                >
-                  <option value="">Template default</option>
-                  {options.layoutFont && !(installedFonts ?? []).includes(options.layoutFont) && (
-                    <option value={options.layoutFont}>
-                      {installedFonts ? `${options.layoutFont} (not installed)` : options.layoutFont}
-                    </option>
-                  )}
-                  {(installedFonts ?? []).map((font) => (
-                    <option key={font} value={font}>{font}</option>
-                  ))}
-                </select>
-              </label>
-              {options.layoutFont && installedFonts && !installedFonts.includes(options.layoutFont) && (
-                <p className="text-xs text-amber-600 dark:text-amber-400" role="alert">
-                  "{options.layoutFont}" isn't installed on this computer, so the export may fail or use another font.{' '}
-                  <button type="button" className="underline" onClick={() => openHelp(HELP_DOCS.FONTS)}>
-                    How to install fonts
-                  </button>
-                </p>
+              <FontSelect
+                label="Main font"
+                ariaLabel="Font"
+                value={options.layoutFont ?? ''}
+                onChange={(font) => updateOption('layoutFont', font)}
+                fonts={installedFonts}
+                emptyLabel="Template default"
+                forPdf={selectedFormat === 'pdf'}
+                onOpenHelp={() => openHelp(HELP_DOCS.FONTS)}
+              />
+              {options.includeMetadata && (
+                <FontSelect
+                  label="Metadata font"
+                  ariaLabel="Metadata font"
+                  value={options.metadataFont ?? ''}
+                  onChange={(font) => updateOption('metadataFont', font)}
+                  fonts={installedFonts}
+                  emptyLabel="Same as main font"
+                  forPdf={selectedFormat === 'pdf'}
+                  onOpenHelp={() => openHelp(HELP_DOCS.FONTS)}
+                />
               )}
               <p className="text-xs text-muted-foreground">
-                The main font for the document. "Template default" keeps the template's font.
+                "Template default" keeps the template's font.
+                {options.includeMetadata && ' The metadata font is used for each page\'s Metadata section.'}
               </p>
             </div>
           )}

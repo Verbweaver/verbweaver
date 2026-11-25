@@ -67,6 +67,10 @@ class FakeRun:
                 self.filter_contents.append(f.read())
         if self.fail_first_pdf and len(self.pandoc_cmds) == 1:
             return SimpleNamespace(returncode=43, stdout="", stderr="xelatex not found")
+        # Write a complete-looking file: PDF exports are checked before they're returned
+        out = cmd[cmd.index("-o") + 1]
+        with open(out, "wb") as f:
+            f.write(b"%PDF-1.7\n" + b"0" * 300 + b"\n%%EOF\n")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
 

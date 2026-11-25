@@ -27,7 +27,13 @@ interface TemplateContent {
   schema?: any
   messages?: string[]
   // Layout values from the template's front matter, used to pre-fill the Compiler (#52)
-  layout_defaults?: { mainfont?: string | null }
+  layout_defaults?: { mainfont?: string | null; metadatafont?: string | null }
+}
+
+export interface InstalledFonts {
+  fonts: string[]
+  /** Fonts installed only as variable fonts, which PDF export may not be able to use */
+  variableOnly: string[]
 }
 
 interface CompileResult {
@@ -54,9 +60,12 @@ export const compilerApi = {
   },
 
   /** Fonts installed on the machine that runs exports (#52). */
-  async getFonts(refresh = false): Promise<string[]> {
+  async getFonts(refresh = false): Promise<InstalledFonts> {
     const response = await apiClient.get('/compiler/fonts', { params: refresh ? { refresh: true } : {} })
-    return Array.isArray(response.data?.fonts) ? response.data.fonts : []
+    return {
+      fonts: Array.isArray(response.data?.fonts) ? response.data.fonts : [],
+      variableOnly: Array.isArray(response.data?.variable_only) ? response.data.variable_only : [],
+    }
   },
 
   async preview(projectId: string, nodeId: string, format: string): Promise<string> {

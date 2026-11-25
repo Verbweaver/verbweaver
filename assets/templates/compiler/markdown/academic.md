@@ -9,6 +9,7 @@ fontsize: 12pt
 geometry: margin=2.5cm
 linestretch: 1.5
 # mainfont: Georgia   # main font; the font must be installed
+# metadatafont: Carlito   # font for the Metadata sections
 variables:
   includeMetadata:
     type: boolean
@@ -31,10 +32,12 @@ $endif$
 
 $if(includeMetadata)$
 $if(nodes.metadata)$
+::: {.metadata}
 ### Metadata
 $for(nodes.metadata)$
 - **$it.key$:** $it.value$
 $endfor$
+:::
 $endif$
 $endif$
 

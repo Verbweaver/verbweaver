@@ -10,6 +10,7 @@ Fonts for Compiler exports (#52).
   Pandoc writes them, since Pandoc has no font setting for those formats.
 """
 
+import json
 import logging
 import os
 import re
@@ -19,7 +20,7 @@ import sys
 import tempfile
 import threading
 import zipfile
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 from xml.sax.saxutils import escape as _xml_escape
 
 import yaml
@@ -53,6 +54,11 @@ def clean_font_name(name: object) -> Optional[str]:
 
 def front_matter_mainfont(markdown: str) -> Optional[str]:
     """The `mainfont` from a document's or template's leading YAML block, if valid."""
+    return front_matter_font(markdown, "mainfont")
+
+
+def front_matter_font(markdown: str, key: str) -> Optional[str]:
+    """A font named in a document's or template's leading YAML block (e.g. `metadatafont`)."""
     if not markdown:
         return None
     text = markdown.lstrip("\ufeff")
@@ -65,7 +71,7 @@ def front_matter_mainfont(markdown: str) -> Optional[str]:
         return None
     if not isinstance(data, dict):
         return None
-    value = data.get("mainfont")
+    value = data.get(key)
     if isinstance(value, str) and "$" in value:
         return None  # unresolved template placeholder
     return clean_font_name(value)
@@ -145,6 +151,9 @@ def list_installed_fonts(refresh: bool = False) -> List[str]:
     """Font family names installed on this machine, sorted, cached until refresh."""
     global _font_cache
     with _font_lock:
+        if refresh:
+            global _font_files_cache
+            _font_files_cache = None
         if _font_cache is None or refresh:
             fonts = _fonts_from_fc_list()
             if not fonts:
@@ -155,11 +164,165 @@ def list_installed_fonts(refresh: bool = False) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
+# Font files for PDF (variable fonts)
+# ---------------------------------------------------------------------------
+#
+# The PDF writer used by xelatex and tectonic (xdvipdfmx) can't embed variable
+# fonts. Some fonts are installed both as static files and as one variable file
+# (e.g. Cantarell on Fedora), and fontconfig may hand LaTeX the variable one. With
+# MiKTeX that silently produces a 15-byte, unreadable PDF. When fontconfig can tell
+# us the files, we point LaTeX at the static files instead.
+
+_SAFE_PATH_RE = re.compile(r"^[A-Za-z0-9 /._+-]+$")
+_STYLE_ROLES = {
+    "UprightFont": ("regular", "book", "normal", "roman", "medium"),
+    "BoldFont": ("bold",),
+    "ItalicFont": ("italic", "oblique"),
+    "BoldItalicFont": ("bold italic", "bold oblique", "bolditalic"),
+}
+
+_font_files_cache: Optional[List[tuple]] = None
+
+
+def _font_files(refresh: bool = False) -> List[tuple]:
+    """(family, style, is_variable, file) for every installed font face, via fontconfig."""
+    global _font_files_cache
+    with _font_lock:
+        if _font_files_cache is not None and not refresh:
+            return _font_files_cache
+        rows: List[tuple] = []
+        exe = shutil.which("fc-list")
+        if exe:
+            try:
+                out = subprocess.run(
+                    [exe, "--format", "%{family[0]}\t%{style[0]}\t%{variable}\t%{file}\n"],
+                    capture_output=True, text=True, timeout=30,
+                ).stdout
+                for line in out.splitlines():
+                    parts = line.split("\t")
+                    if len(parts) == 4 and parts[0]:
+                        family, style, variable, path = parts
+                        rows.append((family.strip(), style.strip().lower(), variable.strip() in ("True", "1"), path))
+            except Exception as e:
+                logger.warning(f"fc-list failed: {e}")
+        _font_files_cache = rows
+        return rows
+
+
+def pdf_font_spec(name: str) -> Optional[Dict[str, object]]:
+    """How LaTeX should load `name` when its default lookup could pick a variable font.
+
+    Returns None when nothing special is needed (or fontconfig isn't available),
+    {"variable_only": True} when the font only exists as a variable font, or
+    {"file": "Name-Regular.otf", "options": ["Path=/dir/", "BoldFont=...", ...]}.
+    """
+    faces = [r for r in _font_files() if r[0].casefold() == name.casefold()]
+    if not faces or not any(r[2] for r in faces):
+        return None
+    # A variable file also lists its named styles (Bold, Light, ...) as separate,
+    # non-variable faces, so leave out every face from a file that is variable.
+    variable_files = {r[3] for r in faces if r[2]}
+    static = [r for r in faces if r[3] not in variable_files and r[3].lower().endswith((".otf", ".ttf"))]
+    if not static:
+        return {"variable_only": True}
+
+    def pick(role: str) -> Optional[str]:
+        for wanted in _STYLE_ROLES[role]:
+            for _fam, style, _var, path in static:
+                if style == wanted:
+                    return path
+        return None
+
+    upright = pick("UprightFont") or static[0][3]
+    folder = os.path.dirname(upright)
+    if not _SAFE_PATH_RE.match(upright):
+        return None
+    options = [f"Path={folder}/"]
+    for role in ("BoldFont", "ItalicFont", "BoldItalicFont"):
+        path = pick(role)
+        if path and os.path.dirname(path) == folder and _SAFE_PATH_RE.match(path):
+            options.append(f"{role}={os.path.basename(path)}")
+    return {"file": os.path.basename(upright), "options": options}
+
+
+def variable_only_error(fonts: List[str]) -> str:
+    names = ", ".join(f"'{f}'" for f in fonts)
+    return (f"The PDF couldn't be made because {names} is only installed as a \"variable\" font, "
+            "which the PDF engine can't always use. Pick another font, or install the font's "
+            "standard (static) version. See Help \u2192 Fonts.")
+
+
+def check_pdf_fonts(names: List[str]) -> Tuple[List[str], Dict[str, Dict[str, object]]]:
+    """(variable-only fonts, {font: file spec}) for the fonts a PDF export will use.
+
+    Variable-only fonts aren't refused up front: some work and some don't, depending
+    on the font and the PDF engine. They're named if the PDF comes out unreadable.
+    """
+    variable_only: List[str] = []
+    specs: Dict[str, Dict[str, object]] = {}
+    for name in names:
+        spec = pdf_font_spec(name)
+        if spec is None:
+            continue
+        if spec.get("variable_only"):
+            variable_only.append(name)
+        else:
+            specs[name] = spec
+    return variable_only, specs
+
+
+def variable_only_fonts() -> List[str]:
+    """Installed fonts that exist only as variable fonts (may not work in PDFs)."""
+    families = {r[0] for r in _font_files()}
+    return sorted((f for f in families if (pdf_font_spec(f) or {}).get("variable_only")), key=str.casefold)
+
+
+def latex_fontspec(name: str, specs: Dict[str, Dict[str, object]]) -> str:
+    """`[options]{file}` or `{name}` for \\fontspec."""
+    spec = specs.get(name)
+    if spec:
+        return "[" + ",".join(spec["options"]) + "]{" + str(spec["file"]) + "}"  # type: ignore[arg-type]
+    return "{" + name + "}"
+
+
+def pdf_is_complete(path: str) -> bool:
+    """True if `path` looks like a whole PDF (starts with %PDF and ends with %%EOF)."""
+    try:
+        size = os.path.getsize(path)
+        if size < 200:
+            return False
+        with open(path, "rb") as f:
+            head = f.read(5)
+            f.seek(max(0, size - 2048))
+            tail = f.read()
+        return head == b"%PDF-" and b"%%EOF" in tail
+    except OSError:
+        return False
+
+
+FONT_ATTR_RE = re.compile(r"""\bfont\s*=\s*"([^"\n]*)\"""")
+
+
+def fonts_used_in(markdown: str) -> List[str]:
+    """Valid font names used by `{font="..."}` attributes in the document."""
+    names = []
+    for raw in FONT_ATTR_RE.findall(markdown or ""):
+        name = clean_font_name(raw)
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+# ---------------------------------------------------------------------------
 # Lua filter for [text]{font="X"} and ::: {font="X"}
 # ---------------------------------------------------------------------------
 
 FONT_FILTER = r"""
 local SUFFIX = '__SUFFIX__'
+-- Set by font_filter(): the metadata font (or nil), and \fontspec arguments for
+-- fonts that must be loaded from their files in PDFs.
+local METADATA_FONT = __METADATA_FONT__
+local LATEX_SPECS = __LATEX_SPECS__
 
 local function take_font(el)
   local f = el.attributes['font']
@@ -180,13 +343,16 @@ local function add_style(el, f)
   end
 end
 
-local LATEX_FONT = '\\ifcsname fontspec\\endcsname\\fontspec{%s}\\fi{}'
+local function latex_font(f)
+  local arg = LATEX_SPECS[f] or ('{' .. f .. '}')
+  return '\\ifcsname fontspec\\endcsname\\fontspec' .. arg .. '\\fi{}'
+end
 
 function Span(el)
   local f = take_font(el)
   if not f then return f == false and el or nil end
   if FORMAT:match('latex') then
-    local out = { pandoc.RawInline('latex', '{' .. string.format(LATEX_FONT, f)) }
+    local out = { pandoc.RawInline('latex', '{' .. latex_font(f)) }
     for _, x in ipairs(el.content) do out[#out + 1] = x end
     out[#out + 1] = pandoc.RawInline('latex', '}')
     el.content = out
@@ -198,20 +364,79 @@ function Span(el)
   return el
 end
 
+-- A code block's text as plain lines, so it takes the surrounding font.
+-- Leading spaces become no-break spaces to keep YAML indentation.
+local function as_lines(code)
+  local lines = {}
+  for line in (code.text .. '\n'):gmatch('(.-)\r?\n') do
+    local indent, rest = line:match('^( *)(.*)$')
+    local inl = pandoc.Inlines(rest)
+    if #indent > 0 then inl:insert(1, pandoc.Str(string.rep('\u{00A0}', #indent))) end
+    lines[#lines + 1] = inl
+  end
+  return pandoc.LineBlock(lines)
+end
+
 function Div(el)
+  -- The page details ("Metadata") section, when a metadata font is chosen
+  if METADATA_FONT and el.classes:includes('metadata') and el.attributes['font'] == nil then
+    el.attributes['font'] = METADATA_FONT
+    el.content = el.content:walk({ CodeBlock = as_lines })
+  end
   local f = take_font(el)
   if not f then return f == false and el or nil end
   if FORMAT:match('latex') then
-    table.insert(el.content, 1, pandoc.RawBlock('latex', '\\begingroup' .. string.format(LATEX_FONT, f)))
+    table.insert(el.content, 1, pandoc.RawBlock('latex', '\\begingroup' .. latex_font(f)))
     el.content[#el.content + 1] = pandoc.RawBlock('latex', '\\endgroup')
   elseif FORMAT:match('html') or FORMAT:match('epub') then
     add_style(el, f)
   elseif FORMAT == 'docx' or FORMAT == 'odt' then
-    el.attributes['custom-style'] = 'Font ' .. f .. SUFFIX
+    -- Word and ODT don't apply a block's paragraph style to headings or line
+    -- blocks, so give the text of each paragraph, heading and line the font's
+    -- character style instead. Code blocks keep their own font.
+    local function wrap(inlines)
+      return { pandoc.Span(inlines, pandoc.Attr('', {}, { { 'custom-style', 'Font ' .. f } })) }
+    end
+    local function wrap_content(b) b.content = wrap(b.content); return b end
+    el.content = el.content:walk({
+      Para = wrap_content,
+      Plain = wrap_content,
+      Header = wrap_content,
+      LineBlock = function(b)
+        for i, line in ipairs(b.content) do b.content[i] = wrap(line) end
+        return b
+      end,
+    })
   end
   return el
 end
 """.replace("__SUFFIX__", _BLOCK_STYLE_SUFFIX)
+
+# Markdown exports keep font notes, but drop the wrapper Verbweaver puts around
+# the page details section.
+MARKDOWN_METADATA_UNWRAP_FILTER = r"""
+function Div(el)
+  if el.classes:includes('metadata') and #el.classes == 1 and #el.attributes == 0 then
+    return el.content
+  end
+end
+"""
+
+
+def _lua_string(value: str) -> str:
+    return json.dumps(value)  # values are ASCII-safe (validated), so JSON quoting is valid Lua
+
+
+def font_filter(metadata_font: Optional[str] = None,
+                latex_specs: Optional[Dict[str, Dict[str, object]]] = None) -> str:
+    """The font Lua filter, set up with the metadata font and PDF font files."""
+    entries = ", ".join(
+        f"[{_lua_string(name)}] = {_lua_string(latex_fontspec(name, latex_specs or {}))}"
+        for name in sorted(latex_specs or {})
+    )
+    return (FONT_FILTER
+            .replace("__METADATA_FONT__", _lua_string(metadata_font) if metadata_font else "nil")
+            .replace("__LATEX_SPECS__", "{" + entries + "}"))
 
 
 def epub_font_css(mainfont: str) -> str:
@@ -226,7 +451,7 @@ def friendly_font_error(stderr: str) -> Optional[str]:
         return (f"The font '{m.group(1)}' isn't installed on this computer. "
                 "Install it, or pick another font. See Help \u2192 Fonts.")
     # xdvipdfmx (tectonic/xelatex) can't embed variable fonts
-    if "Maybe variable font" in stderr:
+    if "Maybe variable font" in stderr or "Invalid font" in stderr:
         return ("A font in this document can't be used in PDFs because it is a \"variable\" font. "
                 "Pick another font, or install the font's standard (static) version. See Help \u2192 Fonts.")
     return None

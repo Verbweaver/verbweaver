@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { RefreshCw, Type } from 'lucide-react'
 import { HELP_DOCS } from '@verbweaver/shared'
 import { Button } from './ui/Button'
-import { compilerApi } from '../api/compilerApi'
+import { compilerApi, type InstalledFonts } from '../api/compilerApi'
 import { useOpenHelp } from '../hooks/useOpenHelp'
 
 /** Lists the fonts that exports can use, with a link to the guide on installing more (#52). */
 export default function InstalledFontsCard() {
-  const [fonts, setFonts] = useState<string[] | null>(null)
+  const [info, setInfo] = useState<InstalledFonts | null>(null)
+  const fonts = info?.fonts ?? null
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
@@ -17,7 +18,7 @@ export default function InstalledFontsCard() {
     setLoading(true)
     setError(false)
     try {
-      setFonts(await compilerApi.getFonts(refresh))
+      setInfo(await compilerApi.getFonts(refresh))
     } catch (e) {
       console.error('Failed to load installed fonts:', e)
       setError(true)
@@ -73,7 +74,14 @@ export default function InstalledFontsCard() {
           <ul className="max-h-64 overflow-y-auto rounded-lg border border-border divide-y divide-border">
             {shown.map((font) => (
               <li key={font} className="px-3 py-1.5 text-sm flex items-center justify-between gap-4">
-                <span className="truncate">{font}</span>
+                <span className="truncate">
+                  {font}
+                  {info?.variableOnly.includes(font) && (
+                    <span className="ml-2 text-xs text-amber-600 dark:text-amber-400" title="Installed only as a variable font, which PDF export can't always use">
+                      variable font, may not work in PDF
+                    </span>
+                  )}
+                </span>
                 {/* Sample in the font itself; symbol fonts show their symbols here */}
                 <span className="text-muted-foreground truncate" style={{ fontFamily: `'${font}', sans-serif` }} aria-hidden="true">
                   The quick brown fox

@@ -771,6 +771,7 @@ fontsize: 11pt         # 10pt, 11pt or 12pt for PDF; any CSS size for HTML
 geometry: margin=2.5cm # page margins (PDF)
 linestretch: 1.2       # line spacing (PDF and HTML)
 mainfont: Georgia      # main font (PDF, HTML, EPUB, Word, OpenDocument)
+metadatafont: Carlito  # font for the Metadata sections (same formats)
 ```
 
 The **Layout** settings in the Compiler override these. Leave a setting on **Template default** to keep the template's value.
@@ -782,6 +783,21 @@ The **Layout** settings in the Compiler override these. Leave a setting on **Tem
 - Use the font's name as listed in **Settings → Dependencies → Fonts**.
 - For PDF, the font must be installed on the computer that exports the document, or the export stops with a message saying so.
 - Font names can contain letters, numbers, spaces, dots, hyphens and `+` only. Other names are ignored.
+
+`metadatafont` sets the font of each page's **Metadata** section, and fills in the Compiler's **Metadata font**. Without it, the Metadata section uses the main font and shows the page details as code. With a metadata font, they're shown as plain lines in that font.
+
+The Metadata font applies to sections wrapped in a `metadata` block. The Metadata section Verbweaver adds to each page's text (`$nodes.content$`) is already wrapped, and so is the Academic template's. If your own template lists page details, wrap that section like this:
+
+```markdown
+::: {.metadata}
+### Metadata
+$for(nodes.metadata)$
+- **$it.key$:** $it.value$
+$endfor$
+:::
+```
+
+Markdown exports leave the wrapper out.
 
 Writers can also change the font of some words or paragraphs inside a page with `[words]{font="Name"}` or a `::: {font="Name"}` block. See [Editor](editor.md#fonts).
 

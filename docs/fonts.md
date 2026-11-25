@@ -4,7 +4,8 @@ You can choose the fonts used in the documents you export from the [Compiler](co
 
 ## Where you can choose a font
 
-- **For a whole document:** pick a **Font** in the Compiler. If your template already names a font, it's chosen for you.
+- **For a whole document:** pick a **Main font** in the Compiler. If your template already names a font, it's chosen for you.
+- **For the Metadata sections:** when **Include metadata** is ticked, pick a **Metadata font** in the Compiler.
 - **For a template:** add `mainfont: Font Name` to the template's settings. See [Compiler Template System](compiler-template-system.md).
 - **For some words or paragraphs:** write `[your words]{font="Font Name"}`, or put paragraphs between `::: {font="Font Name"}` and `:::`. See [Editor](editor.md).
 
@@ -31,6 +32,6 @@ Then go back to **Settings → Dependencies** and click **Refresh** under **Font
 ## Things to know
 
 - **PDF:** the font has to be installed on the computer that makes the PDF. If it isn't, the export stops and tells you which font is missing.
-- **Variable fonts:** some fonts come as a single "variable" file. PDF export can't use these. If you see a message about a variable font, install the font's standard (static) files instead. Most font downloads include them in a `static` folder.
+- **Variable fonts:** some fonts come as a single "variable" file, which PDF export can't always use. In the Fonts list and the PDF font choices, these are marked "variable font". If a font is installed both ways, Verbweaver uses the standard files for PDFs. If a PDF can't be made because of a variable font, install the font's standard (static) files. Most font downloads include them in a `static` folder.
 - **Word, OpenDocument, EPUB and HTML:** these files name the font but don't include it. Anyone who opens the document needs the font installed too. Otherwise their app shows a similar font instead.
 - **Font names:** use the name exactly as it appears in the Fonts list. Names can contain letters, numbers, spaces, dots, hyphens and `+`. Fonts with other characters in their names can't be chosen.
