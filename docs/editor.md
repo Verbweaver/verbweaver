@@ -6,6 +6,8 @@ The Editor is where you write. Each page is a Markdown file: plain text with a f
 
 ## Files
 
+Each page you open gets its own tab along the top. Clicking **Editor** in the sidebar opens your project's `README.md`, or an empty Editor tab if there isn't one; the next page you open replaces the empty tab.
+
 The **Files** list shows your project's folders and pages. Click a page to open it. Select a folder, then use the buttons at the top of the list to:
 
 - **Create node in** the folder: add a new page, starting from a template.
@@ -24,7 +26,7 @@ Above the page:
 - **Toggle preview** (the eye icon, or **Ctrl+P**): see the page formatted, as it will look when exported. **Hide Metadata** hides the details block at the top.
 - **Attach files**: add files, such as images, to this page.
 - **Save** (**Ctrl+S**).
-- Make the text smaller or larger, **Duplicate file**, **Close file**, or **Delete node**.
+- Make the text smaller or larger, **Duplicate file**, **Close file** (closes its tab), or **Delete node**.
 
 On a Mac, use **⌘** instead of **Ctrl**.
 

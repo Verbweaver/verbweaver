@@ -19,7 +19,9 @@ function Layout() {
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false)
   const [showDonationPrompt, setShowDonationPrompt] = useState(false)
   const { setCurrentProjectPath, currentProject, currentProjectPath } = useProjectStore()
-  const tabStore = useTabStore()
+  // Tabs are saved per project: by folder on desktop (known at once and never changes; the id can
+  // briefly be the folder path while the backend starts), by project id on web
+  const projectKey = isElectron ? currentProjectPath : (currentProject?.id || null)
   const navigate = useNavigate()
   // One-time donation prompt on 5th app open (idempotent per session)
   useEffect(() => {
@@ -62,31 +64,42 @@ function Layout() {
 
   useEffect(() => {
     // Per-project tab persistence: on project change, load tab set for that project from localStorage
-    const projectKey = currentProject?.id || currentProjectPath || null
     if (!projectKey) return
+    const { setTabs } = useTabStore.getState()
     try {
+      // Older desktop versions saved tabs under the project id
+      const legacyId = isElectron && currentProject?.id && currentProject.id !== projectKey ? currentProject.id : null
       const raw = localStorage.getItem(`verbweaver_tabs_${projectKey}`)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (parsed && Array.isArray(parsed.tabs)) {
-          tabStore.setTabs(parsed.tabs as Tab[], parsed.activeTabId as string | null)
-          return
-        }
+        ?? (legacyId ? localStorage.getItem(`verbweaver_tabs_${legacyId}`) : null)
+      const parsed = raw ? JSON.parse(raw) : null
+      if (parsed && Array.isArray(parsed.tabs)) {
+        setTabs(parsed.tabs as Tab[], parsed.activeTabId as string | null)
+      } else {
+        // No saved tabs for this project: ensure a dashboard
+        setTabs([])
       }
-      // No saved tabs for this project: ensure a dashboard
-      tabStore.setTabs([])
-    } catch {}
-  }, [currentProject?.id, currentProjectPath])
+    } catch {
+      setTabs([])
+    }
+    // Show the restored active tab, so the page matches the highlighted tab
+    const active = useTabStore.getState().getActiveTab()
+    if (active) navigate(active.path)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectKey])
 
+  // Save the open project's tabs whenever they change. A store subscription rather than a render
+  // dependency, so the whole app shell doesn't re-render on every tab change (e.g. each keystroke
+  // in the Editor, which keeps unsaved text on its tab). Set up after the restore above, so a
+  // project's restored tabs are never saved under another project.
   useEffect(() => {
-    // Persist tabs for current project whenever tabs or active tab change
-    const projectKey = currentProject?.id || currentProjectPath || null
     if (!projectKey) return
-    try {
-      const state = { tabs: tabStore.tabs, activeTabId: tabStore.activeTabId }
-      localStorage.setItem(`verbweaver_tabs_${projectKey}`, JSON.stringify(state))
-    } catch {}
-  }, [tabStore.tabs, tabStore.activeTabId, currentProject?.id, currentProjectPath])
+    return useTabStore.subscribe((state, prev) => {
+      if (state.tabs === prev.tabs && state.activeTabId === prev.activeTabId) return
+      try {
+        localStorage.setItem(`verbweaver_tabs_${projectKey}`, JSON.stringify({ tabs: state.tabs, activeTabId: state.activeTabId }))
+      } catch { /* storage full or unavailable */ }
+    })
+  }, [projectKey])
 
   useEffect(() => {
     if (!isElectron || !window.electronAPI) return
@@ -103,14 +116,13 @@ function Layout() {
       handleOpenProject()
     })
 
+    // Switch to the view's tab (as the sidebar does), so the tab bar matches the page
     const unsubscribeSettings = window.electronAPI.onMenuSettings?.(() => {
-      console.log('Settings menu clicked')
-      navigate('/settings')
+      navigate(useTabStore.getState().openViewTab('settings', '/settings', 'Settings'))
     })
 
     const unsubscribeHelpDocumentation = window.electronAPI.onMenuHelpDocumentation?.(() => {
-      console.log('Help Documentation menu clicked')
-      navigate('/help')
+      navigate(useTabStore.getState().openViewTab('help', '/help', 'Help'))
     })
 
     // Cleanup
@@ -134,25 +146,14 @@ function Layout() {
         // Open the project using the Electron API
         await window.electronAPI.openProject?.(projectPath)
         
-        // Update the project store with the current project path
+        // Update the project store with the current project path. Layout then restores this
+        // project's tabs and shows its active tab.
         await setCurrentProjectPath(projectPath)
-        
-        // Navigate to dashboard after opening project
-        navigate('/dashboard')
       }
     } catch (error) {
       console.error('Error opening project:', error)
       alert('Failed to open project: ' + error)
     }
-  }
-
-  const handleTabChange = (path: string) => {
-    // Implement tab change logic
-  }
-
-  const handleNewTab = () => {
-    // Default to graph view for new tabs
-    // Implement new tab logic
   }
 
   const handleToggleSidebar = () => {

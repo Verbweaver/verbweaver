@@ -11,17 +11,11 @@ import { useTabStore } from '../store/tabStore'
  */
 export function useOpenHelp() {
   const navigate = useNavigate()
-  const { tabs, addTab, setActiveTab } = useTabStore()
+  const openViewTab = useTabStore(s => s.openViewTab)
 
   return useCallback((doc: HelpDoc, section?: string) => {
-    const helpTab = tabs.find(tab => tab.type === 'help')
-    if (helpTab) {
-      setActiveTab(helpTab.id)
-    } else {
-      addTab({ path: '/help', title: 'Help', type: 'help' })
-    }
     const params = new URLSearchParams({ doc })
     if (section) params.set('section', section)
-    navigate(`/help?${params.toString()}`)
-  }, [tabs, addTab, setActiveTab, navigate])
+    navigate(openViewTab('help', `/help?${params.toString()}`, 'Help', { override: true }))
+  }, [openViewTab, navigate])
 }

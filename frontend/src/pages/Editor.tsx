@@ -6,7 +6,7 @@ import { editorApi } from '../api/editorApi'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
 import { useThemeStore } from '../store/themeStore'
-import { useTabStore } from '../store/tabStore'
+import { useTabStore, isEmptyEditorTab } from '../store/tabStore'
 import EditorSidebar from '../components/editor/EditorSidebar'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import toast from 'react-hot-toast'
@@ -40,13 +40,12 @@ function EditorView() {
   const { deleteNode } = useNodeStore()
   const { 
     currentFile, 
-    openFiles, 
     loadFile, 
     saveFile, 
     closeFile,
     updateFileContent 
   } = useEditorStore()
-  const { updateTab, findEditorTab } = useTabStore()
+  const { updateTab, findEditorTab } = useTabStore.getState()
   
   const [content, setContent] = useState('')
   const [isModified, setIsModified] = useState(false)
@@ -170,12 +169,10 @@ function EditorView() {
   }, [loadNodes])
 
   const openEditorForPath = useCallback((projectRelativePath: string) => {
-    if (isElectron && currentProjectPath) {
-      const abs = `${currentProjectPath.replace(/\\/g,'/')}/${projectRelativePath.replace(/\\/g,'/')}`
-      navigate(`/editor/${encodeURIComponent(abs)}`)
-    } else {
-      navigate(`/editor/${encodeURIComponent(projectRelativePath)}`)
-    }
+    const target = isElectron && currentProjectPath
+      ? `${currentProjectPath.replace(/\\/g,'/')}/${projectRelativePath.replace(/\\/g,'/')}`
+      : projectRelativePath
+    navigate(useTabStore.getState().openFileInTab(target))
   }, [navigate, currentProjectPath])
 
   // Now that dependencies exist, wire ref-updaters
@@ -406,8 +403,32 @@ function EditorView() {
     loadContent()
   }, [filePath, currentProject, loadFile, navigate, findEditorTab])
 
-  // Default open: if no file specified, try to open README.md in project root
+  // An Editor tab without a file must not keep showing the file from the tab you came from:
+  // the same Editor stays mounted for /editor and /editor/<file> (#164)
   useEffect(() => {
+    if (filePath) return
+    setLocalFilePath(null)
+    setLocalFileName(null)
+    setContent('')
+    setIsModified(false)
+    if (!isElectron && useEditorStore.getState().currentFile) useEditorStore.setState({ currentFile: null })
+  }, [filePath])
+
+  // Default open: with no file, open README.md from the project root in this tab (an empty
+  // Editor tab becomes the README tab). Without a README the tab shows "No File Open".
+  useEffect(() => {
+    let cancelled = false
+    const openReadme = (path: string, name: string) => {
+      const { tabs, activeTabId, openFileInTab, removeTab } = useTabStore.getState()
+      const emptyTab = tabs.find(t => t.id === activeTabId && isEmptyEditorTab(t))
+      const url = openFileInTab(path, name)
+      // README already had its own tab: switch to it and drop the empty one
+      if (emptyTab && emptyTab.id !== useTabStore.getState().activeTabId) removeTab(emptyTab.id)
+      navigate(url)
+      // Schedule decoration refresh post-navigation
+      setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
+      setTimeout(() => updateLinkDecorationsRef.current?.(), 50)
+    }
     const tryOpenReadme = async () => {
       if (!currentProject) return
       // Only when no file is open/targeted
@@ -417,21 +438,15 @@ function EditorView() {
         if (isElectron && window.electronAPI && currentProjectPath) {
           const items = await window.electronAPI.readDirectory(currentProjectPath)
           const readme = (items || []).find((it: any) => it.type === 'file' && it.name?.toLowerCase() === 'readme.md')
-          if (readme) {
-            const abs = `${currentProjectPath}/${readme.name}`.replace(/\\/g, '/').replace(/\//g, '/')
-            navigate(`/editor/${encodeURIComponent(abs)}`)
-            // Schedule decoration refresh post-navigation
-            setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
-            setTimeout(() => updateLinkDecorationsRef.current?.(), 50)
+          if (readme && !cancelled) {
+            openReadme(`${currentProjectPath}/${readme.name}`.replace(/\\/g, '/'), readme.name)
           }
         } else if (!isElectron && currentProject) {
           // Fetch root listing via editor API
           const tree = await editorApi.getFileTree(currentProject.id)
           const readme = (Array.isArray(tree) ? tree : []).find((n: any) => n?.name?.toLowerCase?.() === 'readme.md')
-          if (readme && readme.path) {
-            navigate(`/editor/${encodeURIComponent(readme.path)}`)
-            setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
-            setTimeout(() => updateLinkDecorationsRef.current?.(), 50)
+          if (readme && readme.path && !cancelled) {
+            openReadme(readme.path, readme.name)
           }
         }
       } catch (e) {
@@ -439,6 +454,7 @@ function EditorView() {
       }
     }
     tryOpenReadme()
+    return () => { cancelled = true }
   }, [currentProject, currentProjectPath, filePath, currentFile, localFilePath, navigate])
 
   // Update tab modified state and save unsaved content
@@ -742,18 +758,25 @@ function EditorView() {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [handleSave])
 
-  // Close file
-  const handleCloseFile = useCallback(() => {
-    if (currentFile) {
-      closeFile(currentFile.id)
-      const remainingFiles = openFiles.filter(f => f.id !== currentFile.id)
-      if (remainingFiles.length > 0) {
-        navigate(`/editor/${remainingFiles[0].id}`)
-      } else {
-        navigate('/editor')
-      }
+  // Close the open file's tab and show the tab that takes its place. When it is the only
+  // tab, it becomes an empty Editor tab instead.
+  const closeFileTab = useCallback((opts?: { confirmUnsaved?: boolean }) => {
+    const routePath = filePath ? (() => { try { return decodeURIComponent(filePath) } catch { return filePath } })() : null
+    const path = localFilePath || routePath || currentFile?.id || null
+    const { tabs, findEditorTab: findTab, removeTab, updateTab: patchTab, getActiveTab } = useTabStore.getState()
+    const tab = path ? findTab(path) : undefined
+    if (opts?.confirmUnsaved && isModified && !confirm(`"${tab?.title || path}" has unsaved changes. Close anyway?`)) return
+    if (currentFile) closeFile(currentFile.id)
+    if (tab && tabs.length > 1) {
+      removeTab(tab.id)
+      navigate(getActiveTab()?.path || '/editor')
+    } else {
+      if (tab) patchTab(tab.id, { path: '/editor', title: 'Editor', metadata: {} })
+      navigate('/editor')
     }
-  }, [currentFile, openFiles, closeFile, navigate])
+  }, [filePath, localFilePath, currentFile, isModified, closeFile, navigate])
+
+  const handleCloseFile = useCallback(() => closeFileTab({ confirmUnsaved: true }), [closeFileTab])
 
   const increaseFontSize = () => {
     setFontSize((prev: number) => Math.min(prev + 2, 32))
@@ -776,7 +799,7 @@ function EditorView() {
     )
   }
 
-  if (!isElectron && !currentFile && !filePath) {
+  if (!filePath && !(isElectron ? localFilePath : currentFile)) {
     return (
       <div className="h-full flex">
         <EditorSidebar />
@@ -818,9 +841,9 @@ function EditorView() {
 
   const displayFileName = isElectron ? localFileName : currentFile?.name
 
-  const handleRequestDelete = useCallback(() => {
+  const handleRequestDelete = () => {
     setConfirmState({ open: true })
-  }, [])
+  }
 
   const resolveDeletePath = (): string | null => {
     // Electron: use route filePath if present; compute relative to project if possible
@@ -863,7 +886,7 @@ function EditorView() {
     return null
   }
 
-  const handleConfirmDelete = useCallback(async () => {
+  const handleConfirmDelete = async () => {
     const path = resolveDeletePath()
     console.log('[Editor] Delete requested. Resolved path =', path, {
       isElectron,
@@ -882,19 +905,15 @@ function EditorView() {
       await deleteNode(path)
       // Notify the file tree to refresh
       window.dispatchEvent(new Event('refresh-file-tree'))
-      // Close the file/tab and navigate away
-      if (currentFile) {
-        handleCloseFile()
-      } else {
-        navigate('/editor')
-      }
+      // Close the deleted file's tab and show the tab that takes its place
+      closeFileTab()
     } catch (e) {
       // Error toast handled by store
       console.error('[Editor] deleteNode failed:', e)
     } finally {
       setConfirmState({ open: false })
     }
-  }, [deleteNode, currentFile, handleCloseFile, navigate])
+  }
 
   return (
     <div className="h-full flex flex-col">

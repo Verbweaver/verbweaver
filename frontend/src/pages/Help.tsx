@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTabStore } from '../store/tabStore';
 import { FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -110,16 +111,15 @@ export default function Help() {
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchParams] = useSearchParams();
-  // Section picked by a link inside the docs ("guide.md#section"); '' = none. Takes over from the
-  // URL's ?section= until the URL changes again.
-  const [linkSection, setLinkSection] = useState<string | null>(null);
+  // The open page lives in the URL (?doc=, plus ?section= for a heading), so the Help tab
+  // remembers it and returns to it when you switch back (#163)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedDoc = searchParams.get('doc');
 
   const loadDocumentationStructure = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     setDocFiles([]);
-    setLinkSection(null);
     try {
       let files: DocFile[] = [];
       if (isElectron && window.electronAPI?.listDocs) {
@@ -129,30 +129,46 @@ export default function Help() {
         files = response.data;
       }
       setDocFiles(files);
-      const requested = searchParams.get('doc');
-      if (requested) {
-        const match = files.find(f => f.type === 'file' && f.path.toLowerCase() === requested.toLowerCase());
-        if (match) {
-          setSelectedDocPath(match.path);
-        } else if (files.length > 0 && files[0].type === 'file') {
-          setSelectedDocPath(files[0].path);
-        }
-      } else if (files.length > 0 && files[0].type === 'file') {
-        setSelectedDocPath(files[0].path);
-      } else if (files.length === 0) {
-        setError('No documentation files found.');
-      }
+      if (files.length === 0) setError('No documentation files found.');
     } catch (e: any) {
       console.error('Failed to load documentation structure:', e);
       const errorMsg = e.response?.data?.detail || e.message || 'Failed to load documentation structure.';
       setError(errorMsg);
     }
     setIsLoading(false);
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
     loadDocumentationStructure();
   }, [loadDocumentationStructure]);
+
+  // Show the page named in the URL, else the first page
+  useEffect(() => {
+    if (docFiles.length === 0) return;
+    const match = requestedDoc
+      ? docFiles.find(f => f.type === 'file' && f.path.toLowerCase() === requestedDoc.toLowerCase())
+      : undefined;
+    if (match) setSelectedDocPath(match.path);
+    else if (docFiles[0].type === 'file') setSelectedDocPath(docFiles[0].path);
+  }, [docFiles, requestedDoc]);
+
+  // Open a page (and optionally a heading in it) by putting it in the URL
+  const openDoc = useCallback((docPath: string, section?: string) => {
+    const params: Record<string, string> = { doc: docPath };
+    if (section) params.section = section;
+    setSearchParams(params, { replace: true });
+  }, [setSearchParams]);
+
+  // Name the Help tab after the open page, e.g. "Help - Graph View" (#163)
+  const selectedDoc = docFiles.find(f => f.path === selectedDocPath);
+  const selectedTitle = selectedDoc ? selectedDoc.title || selectedDoc.name : undefined;
+  useEffect(() => {
+    if (!selectedTitle) return;
+    const { tabs, activeTabId, updateTab } = useTabStore.getState();
+    const tab = tabs.find(t => t.id === activeTabId && t.type === 'help');
+    const title = `Help - ${selectedTitle}`;
+    if (tab && tab.title !== title) updateTab(tab.id, { title });
+  }, [selectedTitle]);
 
   const loadDocContent = useCallback(async (docPath: string | null) => {
     if (!docPath) {
@@ -186,7 +202,7 @@ export default function Help() {
   }, [selectedDocPath, loadDocContent]);
 
   // Scroll to the requested section (e.g. /help?doc=graph-view.md&section=group) once the doc is rendered
-  const requestedSection = linkSection ?? searchParams.get('section');
+  const requestedSection = searchParams.get('section');
   useEffect(() => {
     if (!requestedSection || isLoading || !docContent) return;
     const container = document.getElementById('help-doc-container');
@@ -299,7 +315,7 @@ export default function Help() {
           {docFiles.map((doc) => (
             <button
               key={doc.path}
-              onClick={() => { setLinkSection(''); setSelectedDocPath(doc.path); }}
+              onClick={() => openDoc(doc.path)}
               className={`flex items-center gap-2 py-1.5 px-2.5 hover:bg-accent rounded-md w-full text-left transition-colors duration-100 ease-in-out ${
                 selectedDocPath === doc.path ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'
               }`}
@@ -390,8 +406,7 @@ export default function Help() {
                           href={targetFile.path}
                           onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
                             e.preventDefault();
-                            setLinkSection(decodeURIComponent(anchor));
-                            setSelectedDocPath(targetFile.path);
+                            openDoc(targetFile.path, decodeURIComponent(anchor));
                           }}
                           className="text-primary hover:underline cursor-pointer"
                         >

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useProjectStore } from '../store/projectStore'
 import { useTabStore } from '../store/tabStore'
 import { useGroupViewStore } from '../store/groupViewState'
@@ -39,8 +40,13 @@ const rectsOverlap = (a: Rect, b: Rect, margin = 0) =>
 // Placeholder Group view. Will be replaced with React Flow Sub Flows implementation in subsequent tasks.
 function GroupViewInner() {
   const { currentProject } = useProjectStore()
-  const activeTabId = useTabStore(s => s.activeTabId)
-  const tabs = useTabStore(s => s.tabs)
+  const navigate = useNavigate()
+  // The Graph tab this view belongs to. Only its id matters, so other tab changes (titles,
+  // filters, editor keystrokes) don't reload the groups (and drop an edit waiting to be saved)
+  const graphTabId = useTabStore(s => {
+    const tab = s.tabs.find(t => t.id === s.activeTabId)
+    return tab && tab.type === 'graph' ? tab.id : undefined
+  })
   const loadFromStorage = useGroupViewStore(s => s.loadFromStorage)
   const saveToStorage = useGroupViewStore(s => s.saveToStorage)
   const groups = useGroupViewStore(s => s.groups)
@@ -49,7 +55,6 @@ function GroupViewInner() {
   const setBoxLayout = useGroupViewStore(s => s.setBoxLayout)
   const setExportImage = useGroupViewStore(s => s.setExportImage)
   const { nodes: verbweaverNodes, loadNodes, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
-  const { addEditorTab } = useTabStore()
   const flowWrapperRef = useRef<HTMLDivElement>(null)
   const { fitView, getViewport, setViewport } = useReactFlow()
 
@@ -57,17 +62,13 @@ function GroupViewInner() {
   const isElectron = typeof window !== 'undefined' && (window as any).electronAPI !== undefined
 
   useEffect(() => {
-    const tab = tabs.find(t => t.id === activeTabId)
-    const graphTabId = tab && tab.type === 'graph' ? tab.id : undefined
     if (currentProject?.id && graphTabId) {
       loadFromStorage(currentProject.id, graphTabId)
     }
-  }, [currentProject?.id, activeTabId, tabs, loadFromStorage])
+  }, [currentProject?.id, graphTabId, loadFromStorage])
 
   // Debounced persistence when groups/options/layout change
   useEffect(() => {
-    const tab = tabs.find(t => t.id === activeTabId)
-    const graphTabId = tab && tab.type === 'graph' ? tab.id : undefined
     if (!currentProject?.id || !graphTabId) return
     const h = window.setTimeout(() => {
       try { saveToStorage(currentProject.id!, graphTabId) } catch {}
@@ -510,12 +511,10 @@ function GroupViewInner() {
   const onNodeDragStop = useCallback((_: any, n: Node) => {
     if (!n?.id) return
     setBoxLayout(n.id, { x: n.position.x, y: n.position.y, w: n.measured?.width ?? undefined, h: n.measured?.height ?? undefined })
-    const tab = tabs.find(t => t.id === activeTabId)
-    const graphTabId = tab && tab.type === 'graph' ? tab.id : undefined
     if (currentProject?.id && graphTabId) {
       saveToStorage(currentProject.id, graphTabId)
     }
-  }, [setBoxLayout, saveToStorage, tabs, activeTabId, currentProject?.id])
+  }, [setBoxLayout, saveToStorage, graphTabId, currentProject?.id])
 
   const exportMapAsPng = useCallback(async () => {
     const toHide: HTMLElement[] = []
@@ -870,8 +869,8 @@ function GroupViewInner() {
     if (!underlyingId) return
     const path = idToPath.get(underlyingId)
     const meta = Array.from(verbweaverNodes.values()).find(v => String(v?.metadata?.id || '') === underlyingId)
-    if (path && meta) addEditorTab(path, meta.name)
-  }, [idToPath, verbweaverNodes, addEditorTab])
+    if (path && meta) navigate(useTabStore.getState().openFileInTab(path, meta.name))
+  }, [idToPath, verbweaverNodes, navigate])
 
   // Deleting a card's page asks first, as in the Mind Map (#99)
   const [confirmDelete, setConfirmDelete] = useState<{ path: string; name: string } | null>(null)

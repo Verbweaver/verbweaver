@@ -40,7 +40,7 @@ function EditorSidebar() {
   const [selectedNode, setSelectedNode] = useState<FileNode | null>(null) // Track selected file or folder
   const [draggedNode, setDraggedNode] = useState<FileNode | null>(null)
   const [dragOverNode, setDragOverNode] = useState<string | null>(null)
-  const { addEditorTab, retargetEditorTabs, findEditorTab } = useTabStore()
+  const { openFileInTab, retargetEditorTabs, findEditorTab } = useTabStore.getState()
   const [findOpen, setFindOpen] = useState(false)
   const [findQuery, setFindQuery] = useState('')
   const [findRegex, setFindRegex] = useState(false)
@@ -358,12 +358,8 @@ function EditorSidebar() {
   const handleFileClick = async (node: FileNode) => {
     if (node.type === 'file') {
       setSelectedNode(node)
-      // Create or switch to editor tab
-      const absolutePath = node.path.startsWith(currentProjectPath!) 
-        ? node.path 
-        : `${currentProjectPath}/${node.path}`
-      addEditorTab(absolutePath, node.name)
-      navigate(`/editor/${encodeURIComponent(absolutePath)}`)
+      // Create or switch to editor tab (paths become absolute on desktop)
+      navigate(openFileInTab(node.path, node.name))
     } else {
       // Set selected folder when a directory is clicked (use relative path)
       setSelectedFolder(node.path)
