@@ -72,6 +72,35 @@ test.describe('Tabs', () => {
     await expect(win.locator('#help-doc-container h1').first()).toHaveText('Graph View');
   });
 
+  test('the Help tab keeps how far down the page you scrolled', async ({ tabs }) => {
+    const { win, projectPath } = tabs;
+    await openProject(win, projectPath);
+    await openNav(win, 'Help');
+    await win.getByRole('button', { name: 'Graph View', exact: true }).click();
+    await expect(win.locator('#help-doc-container h1').first()).toHaveText('Graph View');
+    const container = win.locator('#help-doc-container');
+    const scrollTop = () => container.evaluate((el) => el.scrollTop);
+    await container.hover();
+    await win.mouse.wheel(0, 1500);
+    await expect.poll(scrollTop).toBeGreaterThan(1000);
+    const place = await scrollTop();
+    await sleep(500); // the place is saved shortly after scrolling stops
+
+    await openNav(win, 'Dashboard');
+    await clickTab(win, 'Help - Graph View');
+    await expect(win.locator('#help-doc-container h1').first()).toHaveText('Graph View');
+    await expect.poll(scrollTop).toBe(place);
+
+    // Another page opens at the top, and coming back to it doesn't use the old page's place
+    await win.getByRole('button', { name: 'Editor', exact: true }).first().click();
+    await expect(tab(win, 'Help - Editor')).toHaveCount(1);
+    await expect.poll(scrollTop).toBe(0);
+    await openNav(win, 'Dashboard');
+    await clickTab(win, 'Help - Editor');
+    await sleep(500);
+    expect(await scrollTop()).toBe(0);
+  });
+
   test('an Editor tab with no file can be switched to (#164)', async ({ tabs }) => {
     const { win, projectPath } = tabs;
     // Opening a project seeds README.md, so remove it afterwards

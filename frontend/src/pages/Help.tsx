@@ -35,6 +35,8 @@ const textOf = (children: React.ReactNode): string =>
     .map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : React.isValidElement<{ children?: React.ReactNode }>(c) ? textOf(c.props.children) : ''))
     .join('');
 
+type HelpScroll = { doc: string; section: string | null; top: number };
+
 const scrollToSection = (id: string, behavior: ScrollBehavior = 'smooth') => {
   document.getElementById(id)?.scrollIntoView({ behavior, block: 'start' });
 };
@@ -104,6 +106,7 @@ export default function Help() {
   const [docFiles, setDocFiles] = useState<DocFile[]>([]);
   const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [docContent, setDocContent] = useState<string>('');
+  const [loadedDocPath, setLoadedDocPath] = useState<string | null>(null);
   const [findQuery, setFindQuery] = useState<string>('');
   const [findIndex, setFindIndex] = useState<number>(0);
   const [findCount, setFindCount] = useState<number>(0);
@@ -186,6 +189,7 @@ export default function Help() {
         content = response.data;
       }
       setDocContent(content);
+      setLoadedDocPath(docPath);
     } catch (e: any) {
       console.error(`Error loading documentation content for ${docPath}:`, e);
       const errorMsg = e.response?.data?.detail || e.message || `Failed to load content for ${docPath}.`;
@@ -201,14 +205,69 @@ export default function Help() {
     }
   }, [selectedDocPath, loadDocContent]);
 
-  // Scroll to the requested section (e.g. /help?doc=graph-view.md&section=group) once the doc is rendered
+  // Each Help tab remembers how far down its page you scrolled, so switching tabs (or restarting)
+  // brings you back to the same place. The position is saved with the page and section it belongs to.
   const requestedSection = searchParams.get('section');
+  const helpTabId = useTabStore(s => {
+    const tab = s.tabs.find(t => t.id === s.activeTabId);
+    return tab?.type === 'help' ? tab.id : null;
+  });
+  const helpTabIdRef = useRef(helpTabId);
+  const selectedDocRef = useRef(selectedDocPath);
+  selectedDocRef.current = selectedDocPath;
+  const pendingRestore = useRef<HelpScroll | null>(null);
+  const saveTimer = useRef<number | undefined>(undefined);
+  const shownDocRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!requestedSection || isLoading || !docContent) return;
+    helpTabIdRef.current = helpTabId;
+    window.clearTimeout(saveTimer.current);
+    const tab = useTabStore.getState().tabs.find(t => t.id === helpTabId);
+    pendingRestore.current = (tab?.metadata?.helpScroll as HelpScroll | undefined) ?? null;
+  }, [helpTabId]);
+  useEffect(() => () => window.clearTimeout(saveTimer.current), []);
+
+  const handleDocScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const top = e.currentTarget.scrollTop;
+    const doc = selectedDocPath;
+    const section = requestedSection;
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      const tabId = helpTabIdRef.current;
+      // Skip scrolls from a page that has since been replaced, and the page's own jumps while its
+      // saved place is still to be restored
+      if (!tabId || !doc || doc !== selectedDocRef.current) return;
+      if (pendingRestore.current?.doc === doc) return;
+      pendingRestore.current = null;
+      useTabStore.getState().updateTabMetadata(tabId, prev => ({ ...prev, helpScroll: { doc, section, top } }));
+    }, 250);
+  };
+
+  // Once the page is shown, return to the saved place, or else to the requested section
+  // (e.g. /help?doc=graph-view.md&section=group)
+  useEffect(() => {
+    if (isLoading || !docContent || !selectedDocPath || loadedDocPath !== selectedDocPath) return;
     const container = document.getElementById('help-doc-container');
+    // While switching tabs the previous page can still be on screen; wait for the saved one
+    const saved = pendingRestore.current;
+    let restore: number | null = null;
+    if (saved && saved.doc === selectedDocPath) {
+      pendingRestore.current = null;
+      if ((saved.section ?? null) === requestedSection) restore = saved.top;
+    }
+    // A newly opened page starts at the top
+    const isNewPage = shownDocRef.current !== selectedDocPath;
+    shownDocRef.current = selectedDocPath;
+    if (restore === null && !requestedSection) {
+      if (isNewPage && container) container.scrollTop = 0;
+      return;
+    }
     const content = container?.querySelector('.prose');
     let done = false;
-    const jump = () => { if (!done) scrollToSection(requestedSection, 'auto'); };
+    const jump = () => {
+      if (done) return;
+      if (restore !== null) { if (container) container.scrollTop = restore; }
+      else if (requestedSection) scrollToSection(requestedSection, 'auto');
+    };
     const frame = requestAnimationFrame(jump);
     // Images load after the text and push the section down; keep it in view while the content
     // settles, until the reader scrolls or clicks, or a few seconds pass
@@ -224,7 +283,7 @@ export default function Help() {
       stop();
       userEvents.forEach((type) => container?.removeEventListener(type, stop));
     };
-  }, [requestedSection, isLoading, docContent]);
+  }, [requestedSection, isLoading, docContent, selectedDocPath, loadedDocPath]);
 
   // Basic Ctrl+F handling within this view (client-side search in rendered text)
   useEffect(() => {
@@ -328,7 +387,7 @@ export default function Help() {
         </div>
       </div>
 
-      <div className="flex-1 p-6 overflow-y-auto relative" id="help-doc-container">
+      <div className="flex-1 p-6 overflow-y-auto relative" id="help-doc-container" onScroll={handleDocScroll}>
         {showFind && (
           <div className="absolute top-2 right-2 z-10 bg-background border border-border rounded shadow p-2 flex items-center gap-2">
             <input
