@@ -51,7 +51,6 @@ interface TaskDetailModalProps {
 function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, onDelete }: TaskDetailModalProps) {
   const { updateNode, getNode, loadNodes } = useNodeStore()
   const nodesMap = useNodeStore((s) => s.nodes)
-  const { addEditorTab } = useTabStore()
   const navigate = useNavigate()
   const [isEditing, setIsEditing] = useState(false)
   const [title, setTitle] = useState('')
@@ -332,10 +331,7 @@ function TaskDetailModal({ node, onClose, onUpdate, availableStatuses, columns, 
 
   const handleOpenInEditor = () => {
     if (node) {
-      const tabId = addEditorTab(node.path, node.name)
-      // Set the new tab as active
-      useTabStore.getState().setActiveTab(tabId)
-      navigate(`/editor/${encodeURIComponent(node.path)}`) // Navigate to the editor path
+      navigate(useTabStore.getState().openFileInTab(node.path, node.name))
       void handleClose() // Close the modal after opening the editor
     }
   }

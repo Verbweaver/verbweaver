@@ -31,7 +31,7 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
   const navigate = useNavigate()
   const { currentProject } = useProjectStore()
   const { user } = useAuthStore()
-  const { tabs, addTab, setActiveTab } = useTabStore()
+  const openViewTab = useTabStore(s => s.openViewTab)
   const [faviconPath, setFaviconPath] = useState('/favicon.svg')
 
   // Get the favicon path dynamically
@@ -59,46 +59,15 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
     { name: 'Compiler', href: '/compiler', icon: Package, type: 'compiler' as const },
   ]
 
+  // Switch to the view's tab (back to where you were in it), or open one
   const handleNavClick = (e: React.MouseEvent, item: typeof navigation[0]) => {
     e.preventDefault()
-    
-    // Check if tab already exists
-    const existingTab = tabs.find(tab => tab.type === item.type && !tab.metadata?.filePath)
-    
-    if (existingTab) {
-      // Switch to existing tab
-      setActiveTab(existingTab.id)
-    } else {
-      // Create new tab
-      addTab({
-        path: item.href,
-        title: item.name,
-        type: item.type
-      })
-    }
-    
-    navigate(item.href)
+    navigate(openViewTab(item.type, item.href, item.name))
   }
 
   const handleBottomNavClick = (e: React.MouseEvent, href: string, name: string, type: 'help' | 'settings' | 'support') => {
     e.preventDefault()
-    
-    // Check if tab already exists
-    const existingTab = tabs.find(tab => tab.type === type)
-    
-    if (existingTab) {
-      // Switch to existing tab
-      setActiveTab(existingTab.id)
-    } else {
-      // Create new tab
-      addTab({
-        path: href,
-        title: name,
-        type: type
-      })
-    }
-    
-    navigate(href)
+    navigate(openViewTab(type, href, name))
   }
 
   return (

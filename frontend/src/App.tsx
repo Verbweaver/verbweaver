@@ -25,6 +25,7 @@ import DependencyChecker from './components/DependencyChecker'
 import { useProjectStore } from './store/projectStore'
 import { useThemeStore } from './store/themeStore'
 import { useAuthStore } from './services/auth'
+import { useTabStore, TabType } from './store/tabStore'
 
 // Legacy /threads/:taskPath URLs. <Navigate to="/tasks/:taskPath"> would not substitute the param.
 function ThreadsRedirect() {
@@ -82,6 +83,10 @@ function App() {
 
   // Global keyboard shortcuts to switch views
   useEffect(() => {
+    // Switch to the view's tab (as the sidebar does), so the tab bar matches the page
+    const openView = (type: TabType, href: string, title: string) => {
+      navigate(useTabStore.getState().openViewTab(type, href, title))
+    }
     const handler = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase()
       const active = document.activeElement as HTMLElement | null
@@ -90,7 +95,7 @@ function App() {
       // Ctrl+Alt+C → Compiler (avoid Chromium's Ctrl+Shift+C conflict)
       if ((e.ctrlKey || e.metaKey) && e.altKey && key === 'c') {
         e.preventDefault()
-        navigate('/compiler')
+        openView('compiler', '/compiler', 'Compiler')
         return
       }
 
@@ -99,30 +104,30 @@ function App() {
       switch (key) {
         case 'e':
           if (isTextInput) return
-          navigate('/editor'); e.preventDefault(); break
+          openView('editor', '/editor', 'Editor'); e.preventDefault(); break
         case 'g':
           if (isTextInput) return
-          navigate('/graph'); e.preventDefault(); break
+          openView('graph', '/graph', 'Graph'); e.preventDefault(); break
         case 'v':
           if (isTextInput) return
-          navigate('/version'); e.preventDefault(); break
+          openView('version', '/version', 'Version Control'); e.preventDefault(); break
         case 't':
           if (isTextInput) return
-          navigate('/tasks'); e.preventDefault(); break
+          openView('tasks', '/tasks', 'Tasks'); e.preventDefault(); break
         case 'h':
           if (isTextInput) return
-          navigate('/help'); e.preventDefault(); break
+          openView('help', '/help', 'Help'); e.preventDefault(); break
         case 's':
           if (isTextInput) return
-          navigate('/settings'); e.preventDefault(); break
+          openView('settings', '/settings', 'Settings'); e.preventDefault(); break
         case 'c':
         case 'm':
         case 'x':
           // Fallbacks for Compiler if Ctrl+Shift is used (may be intercepted by Chromium)
-          navigate('/compiler'); e.preventDefault(); break
+          openView('compiler', '/compiler', 'Compiler'); e.preventDefault(); break
         case 'd':
           if (isTextInput) return
-          navigate('/dashboard'); e.preventDefault(); break
+          openView('dashboard', '/dashboard', 'Dashboard'); e.preventDefault(); break
         default:
           break
       }

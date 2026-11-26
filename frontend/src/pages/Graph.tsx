@@ -84,10 +84,15 @@ function GraphView() {
   const focusAppliedRef = useRef<string | null>(null)
   const { currentProject, currentProjectPath } = useProjectStore()
   const { nodes: verbweaverNodes, loadNodes, updateNode, createNode, deleteNode, createSoftLink, removeSoftLink } = useNodeStore()
-  const { addEditorTab } = useTabStore()
-  // Tab selectors for persistence/restore
-  const activeTabId = useTabStore(s => s.activeTabId)
-  const tabs = useTabStore(s => s.tabs)
+  // The Graph tab this view is showing. Filters, sub-view and title are kept per Graph tab, and
+  // the same Graph stays mounted when you switch between two Graph tabs.
+  const activeGraphTabId = useTabStore(s => {
+    const tab = s.tabs.find(t => t.id === s.activeTabId)
+    return tab && tab.type === 'graph' ? tab.id : undefined
+  })
+  // The Graph tab whose state is on screen. Saving waits until it matches activeGraphTabId, so
+  // one tab's filters or sub-view are never written into another tab while switching.
+  const [restoredTabId, setRestoredTabId] = useState<string | undefined>(undefined)
   
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -173,33 +178,10 @@ function GraphView() {
 
   // Persist filters per tab so they survive tab switches
   useEffect(() => {
-    try {
-      const tab = useTabStore.getState().getActiveTab()
-      if (tab) {
-        useTabStore.getState().updateTabMetadata(tab.id, (prev: any) => ({ ...(prev || {}), graphFilters: filters } as any))
-      }
-    } catch {}
-  }, [filters])
-
-  // Restore filters when mounting/when active tab changes
-  const lastRestoredForTabRef = useRef<string | null>(null)
-  useEffect(() => {
-    try {
-      const tab = tabs.find(t => t.id === activeTabId)
-      if (!tab) return
-      const saved = (tab.metadata as any)?.graphFilters as NodeFilterState | undefined
-      if (saved && typeof saved === 'object') {
-        const curr = filters
-        const same = (() => {
-          try { return JSON.stringify(curr) === JSON.stringify(saved) } catch { return false }
-        })()
-        if (!same || lastRestoredForTabRef.current !== tab.id) {
-          setFilters({ ...DEFAULT_FILTERS, ...saved })
-          lastRestoredForTabRef.current = tab.id
-        }
-      }
-    } catch {}
-  }, [activeTabId, tabs])
+    if (!activeGraphTabId || restoredTabId !== activeGraphTabId) return
+    useTabStore.getState().updateTabMetadata(activeGraphTabId, (prev: any) => ({ ...(prev || {}), graphFilters: filters } as any))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, restoredTabId])
 
   // Task columns config (to determine completed status per project)
   const [taskColumns, setTaskColumns] = useState<any[]>([])
@@ -261,21 +243,13 @@ function GraphView() {
 
   // Outline subview state
   type GraphSubView = 'mindmap' | 'outline' | 'progression' | 'group'
-  const { getActiveTab, updateTab, updateTabMetadata } = useTabStore()
   const openHelp = useOpenHelp()
-  const activeGraphTabId = useMemo(() => {
-    const t = tabs.find(t => t.id === activeTabId)
-    return t && t.type === 'graph' ? t.id : undefined
-  }, [activeTabId, tabs])
-  const [subView, setSubView] = useState<GraphSubView>(() => {
-    try {
-      const tab = useTabStore.getState().getActiveTab()
-      const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
-      if (saved === 'outline' || saved === 'mindmap' || saved === 'progression' || saved === 'group') return saved
-    } catch {}
-    return 'mindmap'
-  })
-  const subViewLoadedRef = useRef(false)
+  const savedSubView = (tabId?: string): GraphSubView => {
+    const tab = tabId ? useTabStore.getState().getTabById(tabId) : undefined
+    const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
+    return saved === 'outline' || saved === 'mindmap' || saved === 'progression' || saved === 'group' ? saved : 'mindmap'
+  }
+  const [subView, setSubView] = useState<GraphSubView>(() => savedSubView(activeGraphTabId))
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['nodes']))
   const [outlineOrder, setOutlineOrder] = useState<Record<string, string[]>>({}) // parent -> ordered child ids
   const outlineFilePath = '.verbweaver/outline.yaml'
@@ -360,28 +334,11 @@ function GraphView() {
     loadTasksSettings()
   }, [currentProject?.id])
 
-  // Initialize subview from active tab metadata
+  // Persist the sub-view per Graph tab and name the tab after it
   useEffect(() => {
-    const tab = getActiveTab()
-    const saved = (tab?.metadata as any)?.graphSubView as GraphSubView | undefined
-    if (saved === 'outline' || saved === 'mindmap' || saved === 'progression' || saved === 'group') setSubView(saved)
-    subViewLoadedRef.current = true
-  }, [getActiveTab])
-
-  // Persist subview per tab (after initial load)
-  useEffect(() => {
-    if (!subViewLoadedRef.current) return
-    const tab = getActiveTab()
-    if (tab) {
-      console.log('[Graph] Persisting subView to tab metadata', { tabId: tab.id, subView })
-      updateTabMetadata(tab.id, (prev) => ({ ...(prev || {}), graphSubView: subView } as any))
-    }
-  }, [subView, getActiveTab, updateTab])
-
-  // Update tab title based on active subview
-  useEffect(() => {
-    const tab = getActiveTab()
-    if (!tab) return
+    if (!activeGraphTabId || restoredTabId !== activeGraphTabId) return
+    const { updateTabMetadata, updateTab, getTabById } = useTabStore.getState()
+    updateTabMetadata(activeGraphTabId, (prev) => ({ ...(prev || {}), graphSubView: subView } as any))
     const title = subView === 'mindmap'
       ? 'Graph - Mind Map'
       : subView === 'outline'
@@ -389,9 +346,20 @@ function GraphView() {
       : subView === 'progression'
       ? 'Graph - Progression'
       : 'Graph - Group'
-    console.log('[Graph] Updating tab title', { tabId: tab.id, title })
-    updateTab(tab.id, { title })
-  }, [subView, getActiveTab, updateTab])
+    if (getTabById(activeGraphTabId)?.title !== title) updateTab(activeGraphTabId, { title })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subView, restoredTabId])
+
+  // Show the saved filters and sub-view of the Graph tab you switch to. Declared after the
+  // saving effects so, on a switch, those run first and skip (restoredTabId is still the old tab).
+  useEffect(() => {
+    if (!activeGraphTabId) return
+    const saved = (useTabStore.getState().getTabById(activeGraphTabId)?.metadata as any)?.graphFilters as NodeFilterState | undefined
+    setFilters(saved && typeof saved === 'object' ? { ...DEFAULT_FILTERS, ...saved } : DEFAULT_FILTERS)
+    setSubView(savedSubView(activeGraphTabId))
+    setRestoredTabId(activeGraphTabId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGraphTabId])
 
   // Save the Outline order, leaving the other stored keys (positions, collapsed) as they are
   const saveOutline = async (map: Record<string, string[]>) => {
@@ -1409,12 +1377,11 @@ function GraphView() {
       const node = verbweaverNodes.get(nodeId)
       const nodeName = node?.name || nodeId.split('/').pop() || 'Untitled'
       
-      // Add editor tab and navigate
-      addEditorTab(nodeId, nodeName)
-      navigate(`/editor/${encodeURIComponent(nodeId)}`)
+      // Open (or switch to) the file's editor tab
+      navigate(useTabStore.getState().openFileInTab(nodeId, nodeName))
       setContextMenu(null)
     },
-    [navigate, verbweaverNodes, addEditorTab]
+    [navigate, verbweaverNodes]
   )
 
   const openRemoveLinksForNode = useCallback((nodePath: string) => {
@@ -1693,7 +1660,7 @@ function GraphView() {
                   {n.hasTask && (
                     <button className="text-xs px-2 py-0.5 rounded border border-border hover:bg-accent" onClick={()=>navigate(`/tasks/${encodeURIComponent(n.path)}`)}>See Task</button>
                   )}
-                  <button className="text-xs px-2 py-0.5 rounded border border-border hover:bg-accent" onClick={()=>{ addEditorTab(n.path, n.name); navigate(`/editor/${encodeURIComponent(n.path)}`) }}>Edit</button>
+                  <button className="text-xs px-2 py-0.5 rounded border border-border hover:bg-accent" onClick={()=>{ navigate(useTabStore.getState().openFileInTab(n.path, n.name)) }}>Edit</button>
                   <button className="text-xs px-2 py-0.5 rounded border border-border hover:bg-accent" onClick={async()=>{
                     try {
                       const prevTracked = (n.metadata as any)?.task?.tracked !== false

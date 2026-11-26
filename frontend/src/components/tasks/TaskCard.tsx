@@ -1,5 +1,6 @@
 import { Calendar, User, Tag, MoreVertical, MessageSquare, Link, FileText, AlertTriangle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useTabStore } from '../../store/tabStore'
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { format } from 'date-fns'
@@ -161,7 +162,7 @@ function TaskCard({ node, isDragging, onClick, onRequestDelete, hasInvalidStatus
                 className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
                 onClick={() => {
                   setMenuOpen(false)
-                  navigate(`/editor/${encodeURIComponent(node.path)}`)
+                  navigate(useTabStore.getState().openFileInTab(node.path, node.name))
                 }}
               >
                 Go to node in Editor

@@ -51,7 +51,7 @@ Your pages are ordinary text files, so you can back them up, sync them, or edit 
 
 ## Find your way around
 
-Use the sidebar on the left to move between pages. Each page opens in a tab along the top, so you can keep several open at once. Every page has a **Help** button that opens its guide.
+Use the sidebar on the left to move between pages. Each page opens in a tab along the top, so you can keep several open at once. A tab remembers where you were, such as the guide you were reading in Help and how far down it you had scrolled, or the Settings page you had open, and Verbweaver reopens your tabs the next time you open the project. Click **+** to open another Graph tab. Every page has a **Help** button that opens its guide.
 
 | Page | What it's for | Guide |
 |---|---|---|
