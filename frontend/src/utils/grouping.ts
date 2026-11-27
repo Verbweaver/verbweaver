@@ -1,4 +1,5 @@
 import { DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
+import { isExcludeFilter, hasActivePaths } from './nodeFilters'
 import type { GroupDefinition } from '../store/groupViewState'
 
 export type EquivalenceBox = {
@@ -113,6 +114,7 @@ const pageTags = (node: TaggedPage): string[] =>
 const singleTagOf = (group: GroupDefinition): string | null => {
   if (group.filters.length !== 1) return null
   const f = group.filters[0]
+  if (isExcludeFilter(f) || hasActivePaths(f)) return null
   const tags = f.tags || []
   if (tags.length !== 1) return null
   const onlyTags = !f.nameKeyword && !f.descriptionKeyword && !f.startsWith && !f.endsWith &&

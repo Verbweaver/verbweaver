@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { DEFAULT_FILTERS, type NodeFilterState } from '../components/NodeFiltersDialog'
+import type { NodeFilterState } from '../components/NodeFiltersDialog'
+import { normalizeFilters } from '../utils/nodeFilters'
 
 export type GroupDefinition = {
   id: string
@@ -10,18 +11,10 @@ export type GroupDefinition = {
   filters: NodeFilterState[]
 }
 
-export const MAX_FILTERS_PER_GROUP = 20
 export const MAX_GROUPS = 50
 
-// Older saves and exports hold a single filter object; newer ones hold a list (#68)
-export const normalizeFilters = (raw: unknown): NodeFilterState[] => {
-  const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : []
-  const filters = list
-    .filter((f): f is Partial<NodeFilterState> => !!f && typeof f === 'object')
-    .slice(0, MAX_FILTERS_PER_GROUP)
-    .map(f => ({ ...DEFAULT_FILTERS, ...f }))
-  return filters.length > 0 ? filters : [{ ...DEFAULT_FILTERS }]
-}
+// The filter list rules are shared with the Graph, Compiler and Progression chart (#167)
+export { MAX_FILTERS as MAX_FILTERS_PER_GROUP, normalizeFilters } from '../utils/nodeFilters'
 
 export type GroupViewOptions = {
   nestGroups: boolean

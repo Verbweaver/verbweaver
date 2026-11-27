@@ -10,7 +10,7 @@ import NodeContextMenu from '../components/graph/NodeContextMenu'
 import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import RemoveLinksModal from '../components/common/RemoveLinksModal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { isFilterActive, buildLinkedTargets, matchesNodeFilters } from '../utils/nodeFilters'
+import { filterEntries, matchesFilterSet } from '../utils/nodeFilters'
 import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
 import { chooseHandleIds, type XY } from '../utils/edgeHandles'
@@ -83,14 +83,14 @@ function GroupViewInner() {
     const byId = new Map(enabled.map(g => [g.id, { name: g.name }]))
     const nodesArr = Array.from(verbweaverNodes.values() || [])
 
-    // A page is in a group if it matches any of the group's filters; blank filters are ignored,
-    // and a group with no conditions at all holds every page (#68)
+    // A page is in a group if it matches any of the group's Include filters and none of its
+    // Exclude filters; blank filters are ignored, and a group with no conditions holds every page (#68, #35)
     const groupNodes = enabled.map(g => {
-      const active = g.filters.filter(isFilterActive).map(f => ({ f, linked: buildLinkedTargets(f, nodesArr) }))
+      const active = filterEntries(g.filters, nodesArr)
       return {
         groupId: g.id,
         nodeIds: nodesArr
-          .filter(n => !n.isDirectory && (active.length === 0 || active.some(({ f, linked }) => matchesNodeFilters(n, f, linked))))
+          .filter(n => !n.isDirectory && matchesFilterSet(n, active))
           .map(n => String(n?.metadata?.id || ''))
           .filter(Boolean),
       }

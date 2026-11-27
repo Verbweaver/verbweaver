@@ -10,6 +10,7 @@ import { api } from '../services/auth'
 import { compilerApi, type InstalledFonts } from '../api/compilerApi'
 import FontSelect from '../components/FontSelect'
 import NodeSelector, { NodeFilterState } from '../components/NodeSelector'
+import { normalizeFilters } from '../utils/nodeFilters'
 import NodeOrderingPanel from '../components/NodeOrderingPanel'
 import { editorApi } from '../api/editorApi'
 import Tooltip from '../components/ui/Tooltip'
@@ -118,7 +119,8 @@ function CompilerView() {
   const [author, setAuthor] = useState('')
   const [selectedNodes, setSelectedNodes] = useState<string[]>([])
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
-  const [filters, setFilters] = useState<NodeFilterState | undefined>(undefined)
+  // Several filters (#167); older saves hold a single object, see normalizeFilters
+  const [filters, setFilters] = useState<NodeFilterState[] | undefined>(undefined)
   const [dependencies, setDependencies] = useState<Array<{
     name: string;
     available: boolean;
@@ -228,7 +230,7 @@ function CompilerView() {
         if (state.docVars) setDocVars(state.docVars)
         if (state.options) setOptions(prev => ({ ...prev, ...state.options }))
         if (state.expandedDirs) setExpandedDirs(new Set(state.expandedDirs))
-        if ((state as any).filters) setFilters((state as any).filters as NodeFilterState)
+        if ((state as any).filters) setFilters(normalizeFilters((state as any).filters))
         setHasRestoredState(true)
         console.log('[Compiler] State restored, setting hasRestoredState to true')
         

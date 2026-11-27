@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallback } from 'react'
 import ProgressionChart, { Series } from './ProgressionChart'
 import NodeSelector, { NodeFilterState } from '../NodeSelector'
-import NodeFiltersDialog, { DEFAULT_FILTERS } from '../NodeFiltersDialog'
-import { isFilterActive, buildLinkedTargets, matchesNodeFilters } from '../../utils/nodeFilters'
+import FilterList from '../FilterList'
+import { filterEntries, matchesFilterSet, normalizeFilters } from '../../utils/nodeFilters'
 import NodeOrderingPanel from '../NodeOrderingPanel'
 import { useNodeStore } from '../../store/nodeStore'
 import { useProjectStore } from '../../store/projectStore'
@@ -28,7 +28,8 @@ interface ProgressionConfig {
   maxNodes: number
   manualOrdering: boolean
   orderedNodes: string[]
-  filters?: NodeFilterState
+  // Several filters (#167); older configs hold a single object, see normalizeFilters
+  filters?: NodeFilterState[]
   selectedNodes: string[]
 }
 
@@ -82,7 +83,6 @@ export default function ProgressionPanel(
   const initialRestoredRef = useRef<boolean>(initial.restored)
   const configRef = useRef<ProgressionConfig>(DEFAULT_CONFIG)
   const [advancedOpen, setAdvancedOpen] = useState<boolean>(false)
-  const [filtersOpen, setFiltersOpen] = useState<boolean>(false)
   const hasLoadedFromTabRef = useRef<boolean>(false)
   const [isRestoring, setIsRestoring] = useState<boolean>(initial.restored)
   const pendingRestoreRef = useRef<boolean>(false)
@@ -185,17 +185,20 @@ export default function ProgressionPanel(
     return () => obs.disconnect()
   }, [])
 
+  // Configs saved before #167 hold one filter object; read every shape as a list
+  const filterList = useMemo(() => normalizeFilters(config.filters), [config.filters])
+  const setFilterList = useCallback((filters: NodeFilterState[]) => setConfig(c => ({ ...c, filters })), [])
+
   const scopePaths = useMemo(() => {
     // If user explicitly selected nodes, start with those; otherwise start with all files (not folders)
     let paths = config.selectedNodes.length > 0 ? config.selectedNodes : Array.from(nodeMap.keys()).filter(p => !nodeMap.get(p)?.isDirectory)
 
-    // Apply filters when present (shared rules, #34)
-    const f = config.filters
-    if (f && isFilterActive(f)) {
-      const linkedTargets = buildLinkedTargets(f, nodeMap.values())
+    // Apply filters when present (shared rules, #34, #167)
+    const entries = filterEntries(filterList, nodeMap.values())
+    if (entries.length > 0) {
       paths = paths.filter(p => {
         const node = nodeMap.get(p)
-        return !!node && matchesNodeFilters(node, f, linkedTargets)
+        return !!node && matchesFilterSet(node, entries)
       })
     }
 
@@ -204,7 +207,7 @@ export default function ProgressionPanel(
       return config.orderedNodes.filter(p => setSel.has(p))
     }
     return paths.sort()
-  }, [config.selectedNodes, config.manualOrdering, config.orderedNodes, nodeMap, config.filters])
+  }, [config.selectedNodes, config.manualOrdering, config.orderedNodes, nodeMap, filterList])
 
   // Enforce limits
   const limitedPaths = useMemo(() => {
@@ -403,7 +406,7 @@ export default function ProgressionPanel(
     try {
       const txt = await file.text()
       const parsed = JSON.parse(txt)
-      setConfig(prev => ({ ...prev, ...parsed }))
+      setConfig(prev => ({ ...prev, ...parsed, ...(parsed && 'filters' in parsed ? { filters: normalizeFilters(parsed.filters) } : {}) }))
     } catch {}
   }
 
@@ -437,16 +440,16 @@ export default function ProgressionPanel(
           <button className="px-2 py-1 bg-accent rounded text-sm" onClick={()=> onSwitchSubView?.('progression')} disabled><span className="inline-flex items-center gap-1"><LineChart className="w-4 h-4"/>Progression</span></button>
         </div>
         <div className="pt-1 border-t border-border" />
-        <div className="grid grid-cols-5 gap-2 items-stretch">
+        <div className="grid grid-cols-4 gap-2 items-stretch">
           <button className="px-2 py-1 text-sm border rounded w-full" onClick={handleSavePNG}>Save Image</button>
           <button className="px-2 py-1 text-sm border rounded w-full" onClick={saveConfigToFile}>Save Config</button>
           <label className="px-2 py-1 text-sm border rounded cursor-pointer inline-flex items-center justify-center w-full text-center">
             <span className="w-full text-center">Load Config</span>
             <input type="file" accept="application/json" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; if(f) onLoadConfig(f) }} />
           </label>
-          <button className="px-2 py-1 text-sm border rounded w-full" onClick={()=> setFiltersOpen(true)}>Filters</button>
           <button className="px-2 py-1 text-sm border rounded w-full" onClick={()=> openHelp(HELP_DOCS.GRAPH, HELP_GRAPH_SECTIONS.PROGRESSION)} title="Open Progression User Guide">Help</button>
         </div>
+        <FilterList filters={filterList} onChange={setFilterList} />
         <div className="pt-1 border-t border-border" />
         <label className="text-xs font-medium">X variable</label>
         <input className="px-2 py-1 border rounded bg-background" value={config.xVar} onChange={e=>setConfig(c=>({ ...c, xVar: e.target.value }))} placeholder="e.g. chapter" />
@@ -505,8 +508,8 @@ export default function ProgressionPanel(
                 selectedNodes={config.selectedNodes}
                 onSelectionChange={(sel)=> setConfig(c=>({ ...c, selectedNodes: sel }))}
                 showFolders={true}
-                filters={config.filters}
-                onFiltersChange={(f)=> setConfig(c=>({ ...c, filters: f }))}
+                filters={filterList}
+                onFiltersChange={setFilterList}
               />
             </div>
             <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={config.manualOrdering} onChange={e=> setConfig(c=>({ ...c, manualOrdering: e.target.checked }))}/> Use manual ordering</label>
@@ -523,12 +526,6 @@ export default function ProgressionPanel(
           </div>
         )}
       </div>
-      <NodeFiltersDialog
-        filters={{ ...DEFAULT_FILTERS, ...(config.filters || {}) }}
-        onFiltersChange={(f)=> setConfig(c=>({ ...c, filters: f }))}
-        isOpen={filtersOpen}
-        onClose={()=> setFiltersOpen(false)}
-      />
     </div>
   )
 }

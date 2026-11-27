@@ -65,6 +65,11 @@ export function runGroupingTests(): string {
   const withHandMade = buildTagGroups(pages, [handMade], 50, genId)
   assert(withHandMade.added.map(g => g.name).join(',') === 'north,south,Villain', 'A group with extra conditions does not count as a tag group')
 
+  const excluded = { id: 'e', name: 'Not north', enabled: true, filters: [{ ...DEFAULT_FILTERS, tags: ['north'], mode: 'exclude' as const }] }
+  assert(buildTagGroups(pages, [excluded], 50, genId).added.some(g => g.name === 'north'), 'An Exclude filter for a tag does not count as a tag group (#35)')
+  const withPath = { id: 'p', name: 'North chars', enabled: true, filters: [{ ...DEFAULT_FILTERS, tags: ['north'], paths: ['characters'] }] }
+  assert(buildTagGroups(pages, [withPath], 50, genId).added.some(g => g.name === 'north'), 'A tag filter with a path does not count as a tag group')
+
   const capped = buildTagGroups(pages, [handMade], 2, genId)
   assert(capped.added.map(g => g.name).join(',') === 'north' && capped.skipped === 2, 'Stops at the group limit and counts the rest')
 

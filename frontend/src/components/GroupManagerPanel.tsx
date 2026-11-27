@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Plus, Trash2, Edit, Filter as FilterIcon, ToggleLeft, X, Tags } from 'lucide-react'
+import { Plus, Trash2, Edit, Filter as FilterIcon, ToggleLeft, Tags } from 'lucide-react'
 import NodeFiltersDialog, { DEFAULT_FILTERS, NodeFilterState } from './NodeFiltersDialog'
-import { summarizeFilters } from '../utils/nodeFilters'
+import { FilterSummaryLines } from './FilterList'
 import { useGroupViewStore, MAX_FILTERS_PER_GROUP, MAX_GROUPS, type GroupDefinition } from '../store/groupViewState'
 import { useNodeStore } from '../store/nodeStore'
 import { buildTagGroups } from '../utils/grouping'
@@ -96,7 +96,8 @@ export default function GroupManagerPanel({ className }: Props) {
     updateGroup(g.id, { filters: g.filters.map((f, i) => (i === filtersOpenFor.index ? nextFilters : f)) })
   }
 
-  // Adds a blank filter and opens it; a page joins the group if it matches any filter (#68)
+  // Adds a blank filter and opens it; a page joins the group if it matches any Include filter
+  // and no Exclude filter (#68, #35)
   const handleAddFilter = (g: GroupDefinition) => {
     if (g.filters.length >= MAX_FILTERS_PER_GROUP) return
     updateGroup(g.id, { filters: [...g.filters, { ...DEFAULT_FILTERS }] })
@@ -137,8 +138,6 @@ export default function GroupManagerPanel({ className }: Props) {
           <div className="text-xs text-muted-foreground">No groups yet. Click Add to create one.</div>
         )}
         {groups.map(g => {
-          const summaries = g.filters.map((f, index) => ({ index, summary: summarizeFilters(f) }))
-          const filterLines = summaries.filter(s => s.summary || g.filters.length > 1)
           return (
             <div key={g.id} className="px-2 py-1 border border-border rounded bg-background/60">
               <div className="flex items-center gap-2">
@@ -158,25 +157,7 @@ export default function GroupManagerPanel({ className }: Props) {
                   ) : (
                     <div className="text-sm truncate" title={g.name}>{g.name}</div>
                   )}
-                  {filterLines.map(({ index, summary }, line) => {
-                    const text = summary || '(empty)'
-                    const label = g.filters.length > 1 ? `${line > 0 ? 'or ' : ''}Filter ${index + 1}` : 'Active'
-                    return (
-                      <div key={index} className="flex items-start gap-1 text-[11px] text-muted-foreground">
-                        <div className="flex-1 min-w-0 whitespace-normal break-words" title={text}>{label}: {text}</div>
-                        {g.filters.length > 1 && (
-                          <>
-                            <button className="shrink-0 p-0.5 rounded hover:bg-accent" onClick={()=> handleEditFilters(g.id, index)} title={`Edit filter ${index + 1}`} aria-label={`Edit filter ${index + 1}`}>
-                              <FilterIcon className="w-3 h-3" />
-                            </button>
-                            <button className="shrink-0 p-0.5 rounded hover:bg-accent" onClick={()=> handleRemoveFilter(g, index)} title={`Remove filter ${index + 1}`} aria-label={`Remove filter ${index + 1}`}>
-                              <X className="w-3 h-3" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    )
-                  })}
+                  <FilterSummaryLines filters={g.filters} onEdit={(index) => handleEditFilters(g.id, index)} onRemove={(index) => handleRemoveFilter(g, index)} />
                 </div>
                 <button className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent" onClick={()=> handleRename(g.id)} title="Rename">
                   <Edit className="w-3 h-3" />
@@ -188,7 +169,7 @@ export default function GroupManagerPanel({ className }: Props) {
                   className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent inline-flex items-center disabled:opacity-50"
                   onClick={()=> handleAddFilter(g)}
                   disabled={g.filters.length >= MAX_FILTERS_PER_GROUP}
-                  title="Add filter: pages matching any filter join the group"
+                  title="Add filter: pages matching any Include filter and no Exclude filter join the group"
                   aria-label="Add filter"
                 >
                   <Plus className="w-3 h-3" />

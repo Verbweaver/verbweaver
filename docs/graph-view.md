@@ -48,7 +48,7 @@ To remove a link, right-click the line and choose **Unlink**. Lines from a folde
 - **Hide uploads:** hides files you've uploaded, such as images.
 - **Hide completed Tasks:** hides pages whose tasks are done.
 - **Display one-way links:** shows links that only point one way, as dashed arrows.
-- **Filters:** shows only the pages you want, for example those with a certain tag. To show only certain folders, type them in **Path starts with**, such as `characters, places`. Pages in their subfolders are shown too.
+- **Filters:** shows only the pages you want, for example those with a certain tag. To show only certain folders, type them in **Path starts with**, such as `characters, places`. Pages in their subfolders are shown too. Click **Exclude** at the top of the Filters window to hide the matching pages instead, for example to hide everything tagged `draft`. Click **+** next to **Filters** to add another filter. A page is shown if it matches any of them, unless an Exclude filter hides it. **Clear** removes them all.
 - **Save Image:** saves the whole map as a PNG picture you can share.
 
 ### Shortcuts
@@ -104,6 +104,8 @@ The Group view sorts your pages into named collections and shows them as boxes, 
 3. Click the pencil icon to give it a name.
 
 To include pages that don't have anything in common, click the **+** next to the funnel to add another filter. A page joins the group if it matches any of the group's filters. For example, one filter for the name "Alice" and one for the name "Bob" puts both of them in the group. To put a whole folder in a group, type it in the filter's **Path starts with** box. Use the **x** next to a filter to remove it.
+
+To keep pages out of a group, switch a filter to **Exclude** at the top of the Filters window. A page is left out if it matches any Exclude filter, even when it matches another filter. For example, one filter for the tag `character` and an Exclude filter for the tag `minor` puts every character except the minor ones in the group.
 
 To make one group for each tag your pages use, click **By tag**. Each new group is named after its tag. If you add new tags later, click **By tag** again to add groups for just those tags.
 
@@ -182,7 +184,7 @@ Details go in the block at the very top of a page, between the two `---` lines. 
 
 ### Choosing which pages appear
 
-- **Filters** narrows the chart to certain pages, for example those tagged "draft" or those in the `chapters` folder.
+- **Filters** narrows the chart to certain pages, for example those tagged "draft" or those in the `chapters` folder. Choose **Exclude** to leave the matching pages out instead. Click **+** next to **Filters** to add another filter. A page is shown if it matches any of them, unless an Exclude filter hides it. **Clear** removes them all.
 - **Show Advanced** lets you tick specific pages. Turn on **Use manual ordering** to drag pages into the order you want.
 - **Max nodes** limits how many pages are plotted.
 

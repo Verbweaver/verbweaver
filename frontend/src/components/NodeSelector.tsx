@@ -5,8 +5,9 @@ import { editorApi } from '../api/editorApi'
 import clsx from 'clsx'
 import { useNodeStore } from '../store/nodeStore'
 import toast from 'react-hot-toast'
-import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from './NodeFiltersDialog'
-import { isFilterActive, needsMetadata, buildLinkedTargets, matchesNodeFilters, summarizeFilters } from '../utils/nodeFilters'
+import type { NodeFilterState } from './NodeFiltersDialog'
+import FilterList from './FilterList'
+import { normalizeFilters, filterEntries, needsMetadataAny, matchesFilterSet } from '../utils/nodeFilters'
 
 interface FileNode {
   id: string
@@ -23,8 +24,9 @@ interface NodeSelectorProps {
   showFolders?: boolean // Whether to show folders as selectable items
   expandedDirs?: Set<string> // External expanded directories state
   onExpandedDirsChange?: (expandedDirs: Set<string>) => void // Callback for expanded directories changes
-  filters?: NodeFilterState
-  onFiltersChange?: (filters: NodeFilterState) => void
+  // Pages pass if they match any Include filter and no Exclude filter (#167)
+  filters?: NodeFilterState[]
+  onFiltersChange?: (filters: NodeFilterState[]) => void
 }
 
 // Check if we're in Electron
@@ -47,16 +49,12 @@ function NodeSelector({
   const [internalExpandedDirs, setInternalExpandedDirs] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
   const [showNodesOnly, setShowNodesOnly] = useState(true)
-  const [filtersOpen, setFiltersOpen] = useState(false)
   // Which bulk action (Select All / Clear All / Expand All) is loading folders, if any
   const [busyAction, setBusyAction] = useState<string | null>(null)
   // Latest selection, read after awaits so a stale closure doesn't drop changes
   const selectedNodesRef = useRef(selectedNodes)
   selectedNodesRef.current = selectedNodes
-  const filters = useMemo(() => ({
-    ...DEFAULT_FILTERS,
-    ...(externalFilters || {})
-  }), [externalFilters])
+  const filters = useMemo(() => normalizeFilters(externalFilters), [externalFilters])
   const startFromRef = useRef<HTMLInputElement | null>(null)
   const startToRef = useRef<HTMLInputElement | null>(null)
   const dueFromRef = useRef<HTMLInputElement | null>(null)
@@ -459,16 +457,16 @@ function NodeSelector({
   // Filter a tree by the active filters. Kept separate from the memo below so that
   // Select All / Clear All / Expand All can apply it to a freshly loaded tree (#113).
   const applyFilters = useCallback((tree: FileNode[]): FileNode[] => {
-    if (!isFilterActive(filters)) return tree
-    const linkedTargets = buildLinkedTargets(filters, nodeMap.values())
-    const metadataNeeded = needsMetadata(filters)
+    const entries = filterEntries(filters, nodeMap.values())
+    if (entries.length === 0) return tree
+    const metadataNeeded = needsMetadataAny(filters)
 
     // Tree paths are already project-relative (normalizeToProjectRelative)
     const matches = (path: string, name: string): boolean => {
       const metaNode = nodeMap.get(path)
       // If metadata isn't loaded and a filter needs it, skip. A path-only filter doesn't.
       if (!metaNode && metadataNeeded) return false
-      return matchesNodeFilters({ path, name, metadata: metaNode?.metadata }, filters, linkedTargets)
+      return matchesFilterSet({ path, name, metadata: metaNode?.metadata }, entries)
     }
 
     const filterNodes = (nodes: FileNode[]): FileNode[] => {
@@ -490,11 +488,6 @@ function NodeSelector({
   const filteredTree: FileNode[] = useMemo(() => applyFilters(fileTree), [applyFilters, fileTree])
 
   // Remove auto-selection: expanding or loading should not auto-select any files
-
-  const updateFilters = (next: Partial<NodeFilterState>) => {
-    const merged = { ...filters, ...next }
-    onFiltersChange?.(merged)
-  }
 
   // Load every folder (the tree loads lazily), so bulk actions also reach files in
   // folders that haven't been expanded yet (#113). Nodes are loaded in place, so the
@@ -648,14 +641,9 @@ function NodeSelector({
         </div>
       </div>
 
-      {/* Show Nodes Only Toggle */}
-      <div className="p-2 border-b border-border flex items-center gap-2">
-        <button
-          onClick={() => setFiltersOpen(true)}
-          className="text-xs px-2 py-1 border border-input rounded hover:bg-accent"
-        >
-          Filters
-        </button>
+      {/* Filters and Show Nodes Only toggle */}
+      <div className="p-2 border-b border-border flex flex-col gap-2">
+        <FilterList filters={filters} onChange={(next) => onFiltersChange?.(next)} />
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
@@ -666,16 +654,6 @@ function NodeSelector({
           <span className="text-xs">Show Nodes Only</span>
         </label>
       </div>
-      {/* Live filter summary */}
-      {(() => {
-        const summary = summarizeFilters(filters)
-        if (!summary) return null
-        return (
-          <div className="px-2 py-1 border-b border-border text-[11px] text-muted-foreground truncate" title={summary}>
-            Active filters: {summary}
-          </div>
-        )
-      })()}
 
       {/* File Tree */}
       <div className="flex-1 overflow-y-auto scrollbar-thin py-1">
@@ -692,12 +670,6 @@ function NodeSelector({
         )}
       </div>
 
-      <NodeFiltersDialog
-        filters={filters}
-        onFiltersChange={onFiltersChange || (() => {})}
-        isOpen={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-      />
     </div>
   )
 }

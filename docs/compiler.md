@@ -10,7 +10,7 @@ In **Select Files** on the left, tick the pages to include. Ticking a folder inc
 
 - **Select All** and **Clear All** help with large projects. They include pages in closed folders too.
 - **Expand All** opens every folder, however deep.
-- **Filters** narrows the list, for example to pages with a certain tag. To keep only certain folders, type them in **Path starts with**, such as `chapters`.
+- **Filters** narrows the list, for example to pages with a certain tag. To keep only certain folders, type them in **Path starts with**, such as `chapters`. Choose **Exclude** to leave the matching pages out instead, for example your notes folder. Click **+** next to **Filters** to add another filter. A page is shown if it matches any of them, unless an Exclude filter hides it. **Clear** removes them all.
 
 ## 2. Put them in order
 
