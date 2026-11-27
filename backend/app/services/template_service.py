@@ -88,6 +88,27 @@ function Code(el)
 end
 """
 
+# Hidden notes (#156): a `::: hidden` block stays in the node but is left out of
+# every compiled format. This filter runs first, so hidden text never reaches the
+# other filters.
+HIDDEN_TEXT_FILTER = r"""
+function Div(el)
+  if el.classes:includes('hidden') then return {} end
+end
+"""
+
+# The Editor's preview shows hidden notes dimmed instead of dropping them. The
+# `hidden` class is swapped out because the app's own CSS hides `.hidden`.
+HIDDEN_PREVIEW_FILTER = r"""
+function Div(el)
+  if el.classes:includes('hidden') then
+    el.classes = el.classes:filter(function(c) return c ~= 'hidden' end)
+    el.classes:insert('vw-hidden-note')
+    return el
+  end
+end
+"""
+
 
 # Compiler layout options (#143), mapped to Pandoc variables. Only these allow-listed
 # values are passed on, so nothing the user types reaches the Pandoc command line.
@@ -1070,6 +1091,10 @@ class TemplateService:
                     '-o', output_file,
                     '-f', 'markdown+tex_math_dollars+tex_math_single_backslash'
                 ]
+                # Leave out `::: hidden` notes in every format (#156)
+                hidden_filter_path = _write_temp_file(HIDDEN_TEXT_FILTER, '.lua')
+                support_files.append(hidden_filter_path)
+                cmd.append(f'--lua-filter={hidden_filter_path}')
                 # Ensure resources (images) resolve relative to project root
                 try:
                     if os.path.isdir(self.project_path):

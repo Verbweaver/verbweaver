@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Response
 from typing import Dict, Any, Optional, List
-from app.services.template_service import TemplateService
+from app.services.template_service import TemplateService, HIDDEN_PREVIEW_FILTER, _write_temp_file
 from pydantic import BaseModel
 import yaml
 
@@ -119,6 +119,10 @@ async def preview_markdown(request: PreviewRequest):
             except Exception:
                 pass
 
+        # Show `::: hidden` notes dimmed instead of dropping them (#156)
+        hidden_filter_path = _write_temp_file(HIDDEN_PREVIEW_FILTER, '.lua')
+        cmd.append(f"--lua-filter={hidden_filter_path}")
+
         # Create temporary markdown file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.md', 
                                        delete=False, encoding='utf-8') as temp_file:
@@ -158,6 +162,8 @@ async def preview_markdown(request: PreviewRequest):
             # Clean up temporary file
             if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
+            if os.path.exists(hidden_filter_path):
+                os.unlink(hidden_filter_path)
         
         # Extract just the body content, removing Pandoc's CSS
         import re
@@ -231,6 +237,21 @@ async def preview_markdown(request: PreviewRequest):
             height: auto;
             display: block;
             margin: 0.5rem 0;
+        }}
+        .markdown-preview .vw-hidden-note {{
+            border-left: 3px dashed rgba(127, 127, 127, 0.5);
+            padding-left: 1em;
+            margin: 1em 0;
+            opacity: 0.55;
+        }}
+        .markdown-preview .vw-hidden-note::before {{
+            content: "Hidden from compile";
+            display: block;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5em;
         }}
     </style>
 </head>

@@ -89,6 +89,18 @@ So is this one.
 
 The font shows up when you export to PDF, HTML, EPUB, Word or OpenDocument. The Editor itself keeps its usual font. Use the font's name exactly as it appears in **Settings → Dependencies → Fonts**. See [Fonts](fonts.md) for installing new fonts.
 
+### Hidden notes
+
+To keep notes in a page without them appearing in your finished document, put them between a `::: hidden` line and a `:::` line:
+
+```markdown
+::: hidden
+Remember to check this date with the archive.
+:::
+```
+
+You still see hidden notes in the Editor. In the preview they're faded and labelled **Hidden from compile**. The Compiler leaves them out of every export format.
+
 ## Linking to other pages
 
 The easiest way to connect pages is **Create link**. You can also write a link in the text:
