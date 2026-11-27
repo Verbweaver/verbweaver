@@ -39,6 +39,7 @@ export interface Tab {
     filePath?: string // For editor tabs; an editor tab without one is an empty Editor tab
     isModified?: boolean // Track if file has unsaved changes
     unsavedContent?: string // Store unsaved content for editor tabs
+    editorViewState?: unknown // Monaco's cursor, selection and scroll for the tab's file (#169)
     // For compiler tabs
     compilerState?: CompilerState
     compilerStateByProject?: Record<string, CompilerState>
@@ -81,6 +82,9 @@ const newTabId = (prefix: string) => {
   } catch { /* fall back below */ }
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
+
+/** Window event asking the open Editor to take keyboard focus (#169). */
+export const FOCUS_EDITOR_EVENT = 'vw:focus-editor'
 
 export const editorTabPath = (filePath: string) => `/editor/${encodeURIComponent(filePath)}`
 

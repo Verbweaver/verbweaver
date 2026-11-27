@@ -1,7 +1,7 @@
 import { X, Plus, Circle } from 'lucide-react'
 import clsx from 'clsx'
 import { TAB_HEIGHT } from '@verbweaver/shared'
-import { useTabStore, Tab, isEmptyEditorTab, tabPathname } from '../store/tabStore'
+import { useTabStore, Tab, isEmptyEditorTab, tabPathname, FOCUS_EDITOR_EVENT } from '../store/tabStore'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useRef } from 'react'
 
@@ -45,6 +45,9 @@ function TabBar() {
   }, [pathname, search, tabs, activeTabId, setActiveTab, updateTab])
 
   const handleTabClick = (tab: Tab) => {
+    // Clicking the Editor tab you're already on puts you back in the editor (#169); switching
+    // tabs is handled by the Editor when it restores the cursor
+    if (tab.type === 'editor' && tab.id === activeTabId) window.dispatchEvent(new Event(FOCUS_EDITOR_EVENT))
     setActiveTab(tab.id)
     navigate(tab.path)
   }

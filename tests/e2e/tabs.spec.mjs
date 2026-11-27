@@ -152,6 +152,69 @@ test.describe('Tabs', () => {
     await expect(win.locator('[role="tab"]')).toHaveCount(3);
   });
 
+  test('an Editor tab puts the cursor back where it was (#169)', async ({ tabs }) => {
+    const { win, projectPath, tmp } = tabs;
+    const other = path.join(tmp, 'Other Project');
+    await createProject(win, { name: 'Other Project' }, other);
+    await openProject(win, projectPath);
+    await openNav(win, 'Editor');
+    const line = (text) => win.locator('.monaco-editor .view-line').filter({ hasText: text }).first();
+    /** Put the cursor at the end of a line, then wait for the place to be saved. */
+    const placeAtEnd = async (text) => {
+      await line(text).click();
+      await win.keyboard.press('End');
+      await sleep(600);
+    };
+    /** Type straight away (the editor must have focus, cursor showing) and check where it landed. */
+    const typeAndExpect = async (typed, expected) => {
+      await expect(win.locator('.monaco-editor.focused')).toHaveCount(1);
+      await win.keyboard.type(typed);
+      await expect(editorText(win)).toContainText(expected);
+      await sleep(600);
+    };
+
+    // A file with unsaved changes: the cursor is after the text you typed
+    await openFromTree(win, 'alpha.md');
+    await expect(editorText(win)).toContainText('Alpha page text.');
+    await placeAtEnd('Alpha page text.');
+    await typeAndExpect('A1', 'Alpha page text.A1');
+
+    // A saved file, with the cursor on another line than in alpha.md
+    await openFromTree(win, 'beta.md');
+    await expect(editorText(win)).toContainText('Beta page text.');
+    await placeAtEnd('# Beta');
+
+    await clickTab(win, 'alpha.md');
+    await expect(editorText(win)).toContainText('Alpha page text.A1');
+    await typeAndExpect('A2', 'Alpha page text.A1A2');
+
+    await clickTab(win, 'beta.md');
+    await expect(editorText(win)).toContainText('Beta page text.');
+    await typeAndExpect('B1', '# BetaB1');
+
+    // Via another view
+    await openNav(win, 'Dashboard');
+    await clickTab(win, 'alpha.md');
+    await expect(editorText(win)).toContainText('Alpha page text.A1A2');
+    await typeAndExpect('A3', 'Alpha page text.A1A2A3');
+
+    // After Preview
+    await win.getByTitle('Toggle preview').click();
+    await expect(win.locator('.monaco-editor')).toHaveCount(0);
+    await win.getByTitle('Toggle preview').click();
+    await expect(editorText(win)).toContainText('Alpha page text.A1A2A3');
+    await typeAndExpect('A4', 'Alpha page text.A1A2A3A4');
+
+    // Tabs are saved with the project, so the place is kept when you come back to it
+    await win.keyboard.press('Control+s');
+    await sleep(600);
+    await openProject(win, other);
+    await openProject(win, projectPath);
+    await clickTab(win, 'alpha.md');
+    await expect(editorText(win)).toContainText('Alpha page text.A1A2A3A4');
+    await typeAndExpect('A5', 'Alpha page text.A1A2A3A4A5');
+  });
+
   test('the Settings tab keeps its sub-page', async ({ tabs }) => {
     const { win, projectPath } = tabs;
     await openProject(win, projectPath);
