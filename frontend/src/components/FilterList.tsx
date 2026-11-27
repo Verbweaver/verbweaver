@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Filter as FilterIcon, Plus, X } from 'lucide-react'
+import { Filter as FilterIcon, Plus, Trash2, X } from 'lucide-react'
 import NodeFiltersDialog, { DEFAULT_FILTERS, type NodeFilterState } from './NodeFiltersDialog'
-import { summarizeFilters, isExcludeFilter, MAX_FILTERS } from '../utils/nodeFilters'
+import { summarizeFilters, isExcludeFilter, isAnyFilterActive, MAX_FILTERS } from '../utils/nodeFilters'
 
 // One line per filter: "Filter 1 / or Filter 2 / except Filter 3", or a single "<singleLabel>: …"
 // line when there is only one filter. Shared by the Groups panel and FilterList (#68, #35, #167).
@@ -63,6 +63,9 @@ export default function FilterList({ filters, onChange, className = '' }: {
     onChange([...list, { ...DEFAULT_FILTERS }])
     setEditing(list.length)
   }
+  // Back to one blank filter, like a fresh view
+  const clear = () => onChange([{ ...DEFAULT_FILTERS }])
+  const canClear = list.length > 1 || isAnyFilterActive(list)
   const remove = (index: number) => {
     const rest = list.filter((_, i) => i !== index)
     onChange(rest.length > 0 ? rest : [{ ...DEFAULT_FILTERS }])
@@ -87,6 +90,15 @@ export default function FilterList({ filters, onChange, className = '' }: {
           aria-label="Add filter"
         >
           <Plus className="w-4 h-4" />
+        </button>
+        <button
+          className="px-2 border border-input rounded hover:bg-destructive hover:text-destructive-foreground inline-flex items-center gap-1 text-xs disabled:opacity-50 disabled:pointer-events-none"
+          onClick={clear}
+          disabled={!canClear}
+          title="Remove all filters"
+          data-testid="filters-clear"
+        >
+          <Trash2 className="w-3 h-3" /> Clear
         </button>
       </div>
       <FilterSummaryLines filters={list} onEdit={setEditing} onRemove={remove} singleLabel="Active filters" />
