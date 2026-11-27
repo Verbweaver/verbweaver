@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { parseList } from '../utils/nodeFilters'
 
 export interface NodeFilterState {
+  // include keeps the pages that match; exclude hides them (#35). Missing means include.
+  mode?: 'include' | 'exclude'
   tags: string[]
   tagsLogic: 'ANY' | 'ALL'
   nameKeyword: string
@@ -19,6 +21,7 @@ export interface NodeFilterState {
 }
 
 export const DEFAULT_FILTERS: NodeFilterState = {
+  mode: 'include',
   tags: [],
   tagsLogic: 'ANY',
   nameKeyword: '',
@@ -87,7 +90,30 @@ export default function NodeFiltersDialog({
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={onClose}>
       <div className="bg-background border border-border rounded-lg w-[640px] max-w-[95vw] p-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold">Filters</h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-lg font-semibold">Filters</h3>
+            <div className="inline-flex border border-input rounded overflow-hidden text-xs" role="group" aria-label="Filter mode" data-testid="filter-mode">
+              {(['include', 'exclude'] as const).map(m => {
+                const selected = (filters.mode || 'include') === m
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    className={`px-2 py-1 ${selected ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+                    aria-pressed={selected}
+                    data-testid={`filter-mode-${m}`}
+                    onClick={() => updateFilters({ mode: m })}
+                    title={m === 'include' ? 'Show only pages that match' : 'Hide pages that match'}
+                  >
+                    {m === 'include' ? 'Include' : 'Exclude'}
+                  </button>
+                )
+              })}
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {filters.mode === 'exclude' ? 'Pages that match are hidden.' : 'Only pages that match are shown.'}
+            </span>
+          </div>
           <button className="px-2 py-1 text-xs border rounded" onClick={() => { onFiltersChange(DEFAULT_FILTERS) }}>
             Clear
           </button>

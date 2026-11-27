@@ -1,5 +1,5 @@
 // Lightweight tests for the shared filter rules. Run manually by importing and calling runNodeFilterTests() in dev.
-import { isFilterActive, pathMatches, matchesNodeFilters, buildLinkedTargets, summarizeFilters, parseList } from './nodeFilters'
+import { isFilterActive, pathMatches, matchesNodeFilters, matchesFilterSet, buildLinkedTargets, summarizeFilters, parseList } from './nodeFilters'
 import { DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
 
 function assert(condition: boolean, message: string) {
@@ -47,9 +47,32 @@ export function runNodeFilterTests(): string {
   const linked = buildLinkedTargets(linkedF, [alice, bob, north])
   assert(matchesNodeFilters(bob, linkedF, linked) && !matchesNodeFilters(alice, linkedF, linked), 'Linked from')
 
+  // Include / Exclude (#35)
+  const notHero = { ...DEFAULT_FILTERS, tags: ['hero'], mode: 'exclude' as const }
+  assert(!matchesNodeFilters(alice, notHero, null) && matchesNodeFilters(bob, notHero, null), 'Exclude hides the pages that match')
+  assert(!isFilterActive({ ...DEFAULT_FILTERS, mode: 'exclude' }), 'An empty Exclude filter is not active')
+  assert(matchesNodeFilters(alice, { ...legacy, tags: ['hero'] }, null) && !matchesNodeFilters(bob, { ...legacy, tags: ['hero'] }, null), 'A filter with no mode includes')
+  const notLinked = { ...DEFAULT_FILTERS, linkedFromNodeTags: ['node-n'], mode: 'exclude' as const }
+  const notLinkedTargets = buildLinkedTargets(notLinked, [alice, bob, north])
+  assert(!matchesNodeFilters(bob, notLinked, notLinkedTargets) && matchesNodeFilters(alice, notLinked, notLinkedTargets), 'Exclude linked from')
+
+  // Several filters, as in a group: any Include and no Exclude
+  const entry = (f: typeof DEFAULT_FILTERS) => ({ f, linked: null })
+  const chars = entry({ ...DEFAULT_FILTERS, paths: ['characters'] })
+  const places = entry({ ...DEFAULT_FILTERS, paths: ['places'] })
+  const villains = entry({ ...DEFAULT_FILTERS, tags: ['villain'], mode: 'exclude' })
+  const names = (es: ReturnType<typeof entry>[]) => [alice, bob, north].filter(p => matchesFilterSet(p, es)).map(p => p.metadata.id).join(',')
+  assert(names([]) === 'a,b,n', 'No filters keeps every page')
+  assert(names([chars, places]) === 'a,b,n', 'Include filters combine with OR')
+  assert(names([villains]) === 'a,n', 'Only Exclude filters keep everything else')
+  assert(names([chars, villains]) === 'a', 'Include and Exclude together: in an Include and not in an Exclude')
+  assert(names([villains, chars, entry(notHero)]) === '', 'Several Exclude filters each remove pages')
+
   // Summary and list parsing
   assert(summarizeFilters(DEFAULT_FILTERS) === null, 'No summary when nothing is filtered')
   assert(summarizeFilters({ ...DEFAULT_FILTERS, paths: ['characters', 'places'] }) === 'path: characters, places', 'Path summary')
+  assert(summarizeFilters(notHero) === 'exclude: tags(ANY): hero', 'Exclude summary')
+  assert(summarizeFilters({ ...DEFAULT_FILTERS, mode: 'exclude' }) === null, 'No summary for an empty Exclude')
   assert(parseList(' characters, places/north ,, ').join('|') === 'characters|places/north', 'Comma-separated list parsing')
 
   return 'Node filter tests passed'

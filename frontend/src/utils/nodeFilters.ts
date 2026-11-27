@@ -68,8 +68,12 @@ export const buildLinkedTargets = (f: FilterLike, pages: Iterable<FilterablePage
   return targets
 }
 
-// Does a page pass every active field? `linkedTargets` comes from buildLinkedTargets.
-export const matchesNodeFilters = (page: FilterablePage, f: FilterLike, linkedTargets: Set<string> | null): boolean => {
+// True if the filter hides the pages it matches instead of keeping them (#35).
+// Filters saved before #35 have no mode and include.
+export const isExcludeFilter = (f: FilterLike | null | undefined): boolean => f?.mode === 'exclude'
+
+// Does a page pass every active field, ignoring the Include/Exclude mode?
+const matchesCriteria = (page: FilterablePage, f: FilterLike, linkedTargets: Set<string> | null): boolean => {
   const meta: PageMetadata = page?.metadata || {}
   const title = String(meta?.title || page?.name || '')
   const description = String(meta?.description || '')
@@ -121,8 +125,30 @@ export const matchesNodeFilters = (page: FilterablePage, f: FilterLike, linkedTa
   return true
 }
 
-// Short text for the filter chip, or null when nothing is filtered
-export const summarizeFilters = (f: FilterLike | null | undefined): string | null => {
+// Does a single filter keep this page? An Exclude filter keeps the pages its fields don't
+// match. `linkedTargets` comes from buildLinkedTargets.
+export const matchesNodeFilters = (page: FilterablePage, f: FilterLike, linkedTargets: Set<string> | null): boolean => {
+  const matched = matchesCriteria(page, f, linkedTargets)
+  return isExcludeFilter(f) ? !matched : matched
+}
+
+export type FilterEntry = { f: FilterLike; linked: Set<string> | null }
+
+// Does a list of filters keep this page (Groups, #68/#35)? The page must match any Include
+// filter (or there are none) and no Exclude filter. Pass active filters only.
+export const matchesFilterSet = (page: FilterablePage, entries: FilterEntry[]): boolean => {
+  const includes = entries.filter(e => !isExcludeFilter(e.f))
+  const excludes = entries.filter(e => isExcludeFilter(e.f))
+  if (includes.length > 0 && !includes.some(e => matchesCriteria(page, e.f, e.linked))) return false
+  return !excludes.some(e => matchesCriteria(page, e.f, e.linked))
+}
+
+// True if the filter has a non-blank path prefix
+export const hasActivePaths = (f: FilterLike): boolean => activePaths(f).length > 0
+
+// Short text for the filter chip, or null when nothing is filtered. Exclude filters start
+// with "exclude: " unless `withMode` is false (for callers that label the mode themselves).
+export const summarizeFilters = (f: FilterLike | null | undefined, { withMode = true } = {}): string | null => {
   if (!f || !isFilterActive(f)) return null
   const parts: string[] = []
   const paths = (f.paths || []).filter(p => !!normalizePathPrefix(p))
@@ -136,5 +162,6 @@ export const summarizeFilters = (f: FilterLike | null | undefined): string | nul
   if (f.dueDateFrom || f.dueDateTo) parts.push(`due:${f.dueDateFrom || ''}..${f.dueDateTo || ''}`)
   if (f.hasAttachments) parts.push('attachments')
   if ((f.linkedFromNodeTags || []).length > 0) parts.push(`linkedFrom(${(f.linkedFromNodeTags || []).length})`)
-  return parts.join('  •  ')
+  const text = parts.join('  •  ')
+  return withMode && isExcludeFilter(f) ? `exclude: ${text}` : text
 }

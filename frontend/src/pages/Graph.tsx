@@ -33,7 +33,7 @@ import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
 import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers, HelpCircle, ImageDown } from 'lucide-react'
 import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
-import { isFilterActive, buildLinkedTargets, matchesNodeFilters } from '../utils/nodeFilters'
+import { isFilterActive, buildLinkedTargets, matchesNodeFilters, summarizeFilters } from '../utils/nodeFilters'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
 import * as htmlToImage from 'html-to-image'
 import clsx from 'clsx'
@@ -1950,21 +1950,13 @@ function GraphView() {
                   <span>Save Image</span>
                 </button>
                 {(() => {
-                  const parts: string[] = []
-                  if ((filters.tags || []).length > 0) parts.push(`tags(${filters.tagsLogic}): ${filters.tags.join(', ')}`)
-                  if (filters.nameKeyword) parts.push(`name:"${filters.nameKeyword}"`)
-                  if (filters.descriptionKeyword) parts.push(`desc:"${filters.descriptionKeyword}"`)
-                  if (filters.startsWith) parts.push(`starts:${filters.startsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
-                  if (filters.endsWith) parts.push(`ends:${filters.endsWith}${filters.startsEndsCaseSensitive ? '' : ' (i)'}`)
-                  if (filters.startDateFrom || filters.startDateTo) parts.push(`start:${filters.startDateFrom || ''}..${filters.startDateTo || ''}`)
-                  if (filters.dueDateFrom || filters.dueDateTo) parts.push(`due:${filters.dueDateFrom || ''}..${filters.dueDateTo || ''}`)
-                  if (filters.hasAttachments) parts.push('attachments')
-                  if ((filters.linkedFromNodeTags || []).length > 0) parts.push(`linkedFrom(${filters.linkedFromNodeTags.length})`)
-                  if (parts.length === 0) return null
+                  // Shared summary, so paths and Include/Exclude show here too (#34, #35)
+                  const summary = summarizeFilters(filters)
+                  if (!summary) return null
                   return (
                     <div className="text-[11px] text-muted-foreground px-2 py-1 border border-border rounded bg-background/60"
-                         title={parts.join('  •  ')}>
-                      Active filters: {parts.join('  •  ')}
+                         title={summary}>
+                      Active filters: {summary}
                     </div>
                   )
                 })()}

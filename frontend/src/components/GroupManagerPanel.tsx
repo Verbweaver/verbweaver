@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Plus, Trash2, Edit, Filter as FilterIcon, ToggleLeft, X, Tags } from 'lucide-react'
 import NodeFiltersDialog, { DEFAULT_FILTERS, NodeFilterState } from './NodeFiltersDialog'
-import { summarizeFilters } from '../utils/nodeFilters'
+import { summarizeFilters, isExcludeFilter } from '../utils/nodeFilters'
 import { useGroupViewStore, MAX_FILTERS_PER_GROUP, MAX_GROUPS, type GroupDefinition } from '../store/groupViewState'
 import { useNodeStore } from '../store/nodeStore'
 import { buildTagGroups } from '../utils/grouping'
@@ -96,7 +96,8 @@ export default function GroupManagerPanel({ className }: Props) {
     updateGroup(g.id, { filters: g.filters.map((f, i) => (i === filtersOpenFor.index ? nextFilters : f)) })
   }
 
-  // Adds a blank filter and opens it; a page joins the group if it matches any filter (#68)
+  // Adds a blank filter and opens it; a page joins the group if it matches any Include filter
+  // and no Exclude filter (#68, #35)
   const handleAddFilter = (g: GroupDefinition) => {
     if (g.filters.length >= MAX_FILTERS_PER_GROUP) return
     updateGroup(g.id, { filters: [...g.filters, { ...DEFAULT_FILTERS }] })
@@ -137,8 +138,13 @@ export default function GroupManagerPanel({ className }: Props) {
           <div className="text-xs text-muted-foreground">No groups yet. Click Add to create one.</div>
         )}
         {groups.map(g => {
-          const summaries = g.filters.map((f, index) => ({ index, summary: summarizeFilters(f) }))
-          const filterLines = summaries.filter(s => s.summary || g.filters.length > 1)
+          // With several filters the label says "except", so the summary leaves out "exclude:"
+          const summaries = g.filters.map((f, index) => ({ index, summary: summarizeFilters(f, { withMode: g.filters.length === 1 }) }))
+          // Include lines read "Filter 1 / or Filter 2"; Exclude lines read "except Filter 3" (#35)
+          let includeCount = 0
+          const filterLines = summaries
+            .filter(s => s.summary || g.filters.length > 1)
+            .map(s => ({ ...s, includeLine: isExcludeFilter(g.filters[s.index]) ? -1 : includeCount++ }))
           return (
             <div key={g.id} className="px-2 py-1 border border-border rounded bg-background/60">
               <div className="flex items-center gap-2">
@@ -158,9 +164,11 @@ export default function GroupManagerPanel({ className }: Props) {
                   ) : (
                     <div className="text-sm truncate" title={g.name}>{g.name}</div>
                   )}
-                  {filterLines.map(({ index, summary }, line) => {
+                  {filterLines.map(({ index, summary, includeLine }) => {
                     const text = summary || '(empty)'
-                    const label = g.filters.length > 1 ? `${line > 0 ? 'or ' : ''}Filter ${index + 1}` : 'Active'
+                    const label = g.filters.length > 1
+                      ? (isExcludeFilter(g.filters[index]) ? `except Filter ${index + 1}` : `${includeLine > 0 ? 'or ' : ''}Filter ${index + 1}`)
+                      : 'Active'
                     return (
                       <div key={index} className="flex items-start gap-1 text-[11px] text-muted-foreground">
                         <div className="flex-1 min-w-0 whitespace-normal break-words" title={text}>{label}: {text}</div>
@@ -188,7 +196,7 @@ export default function GroupManagerPanel({ className }: Props) {
                   className="text-xs px-1 py-0.5 border border-input rounded hover:bg-accent inline-flex items-center disabled:opacity-50"
                   onClick={()=> handleAddFilter(g)}
                   disabled={g.filters.length >= MAX_FILTERS_PER_GROUP}
-                  title="Add filter: pages matching any filter join the group"
+                  title="Add filter: pages matching any Include filter and no Exclude filter join the group"
                   aria-label="Add filter"
                 >
                   <Plus className="w-3 h-3" />
