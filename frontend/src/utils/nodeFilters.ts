@@ -1,4 +1,4 @@
-import type { NodeFilterState } from '../components/NodeFiltersDialog'
+import { DEFAULT_FILTERS, type NodeFilterState } from '../components/NodeFiltersDialog'
 
 // Matching rules for the Filters dialog, shared by the Graph, Group view,
 // Compiler (NodeSelector) and Progression chart so they can't drift apart (#34)
@@ -142,6 +142,34 @@ export const matchesFilterSet = (page: FilterablePage, entries: FilterEntry[]): 
   if (includes.length > 0 && !includes.some(e => matchesCriteria(page, e.f, e.linked))) return false
   return !excludes.some(e => matchesCriteria(page, e.f, e.linked))
 }
+
+// Builds the entries for matchesFilterSet: active filters only, each with its linked targets
+export const filterEntries = (filters: FilterLike[], pages: Iterable<FilterablePage>): FilterEntry[] => {
+  const active = filters.filter(isFilterActive)
+  if (active.length === 0) return []
+  const list = Array.from(pages)
+  return active.map(f => ({ f, linked: buildLinkedTargets(f, list) }))
+}
+
+// The most filters a list (a group, the Graph, the Compiler, a chart) can hold
+export const MAX_FILTERS = 20
+
+// Filters saved before #68/#167 are a single object; newer ones are a list. Always returns at
+// least one (blank) filter so the editor has something to show.
+export const normalizeFilters = (raw: unknown): NodeFilterState[] => {
+  const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : []
+  const filters = list
+    .filter((f): f is Partial<NodeFilterState> => !!f && typeof f === 'object')
+    .slice(0, MAX_FILTERS)
+    .map(f => ({ ...DEFAULT_FILTERS, ...f }))
+  return filters.length > 0 ? filters : [{ ...DEFAULT_FILTERS }]
+}
+
+// True if any filter in the list narrows the pages
+export const isAnyFilterActive = (filters: FilterLike[] | null | undefined): boolean => (filters || []).some(isFilterActive)
+
+// True if any active filter in the list reads page metadata
+export const needsMetadataAny = (filters: FilterLike[]): boolean => filters.some(f => isFilterActive(f) && needsMetadata(f))
 
 // True if the filter has a non-blank path prefix
 export const hasActivePaths = (f: FilterLike): boolean => activePaths(f).length > 0

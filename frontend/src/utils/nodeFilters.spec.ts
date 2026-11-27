@@ -1,5 +1,5 @@
 // Lightweight tests for the shared filter rules. Run manually by importing and calling runNodeFilterTests() in dev.
-import { isFilterActive, pathMatches, matchesNodeFilters, matchesFilterSet, buildLinkedTargets, summarizeFilters, parseList } from './nodeFilters'
+import { isFilterActive, pathMatches, matchesNodeFilters, matchesFilterSet, buildLinkedTargets, summarizeFilters, parseList, normalizeFilters, filterEntries, isAnyFilterActive, needsMetadataAny, MAX_FILTERS } from './nodeFilters'
 import { DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
 
 function assert(condition: boolean, message: string) {
@@ -67,6 +67,19 @@ export function runNodeFilterTests(): string {
   assert(names([villains]) === 'a,n', 'Only Exclude filters keep everything else')
   assert(names([chars, villains]) === 'a', 'Include and Exclude together: in an Include and not in an Exclude')
   assert(names([villains, chars, entry(notHero)]) === '', 'Several Exclude filters each remove pages')
+
+  // Filter lists everywhere (#167)
+  const one = normalizeFilters({ tags: ['hero'] })
+  assert(one.length === 1 && one[0].tags[0] === 'hero' && one[0].mode === 'include' && one[0].paths.length === 0, 'A single saved filter becomes a list of one, with defaults filled in')
+  assert(normalizeFilters([{ tags: ['a'] }, { mode: 'exclude' }]).length === 2, 'A saved list stays a list')
+  assert(normalizeFilters(undefined).length === 1 && !isFilterActive(normalizeFilters('junk')[0]), 'Nothing saved gives one blank filter')
+  assert(normalizeFilters([null, 3, { tags: ['a'] }]).length === 1, 'Junk entries are dropped')
+  assert(normalizeFilters(Array.from({ length: 30 }, () => ({}))).length === MAX_FILTERS, 'Lists are capped')
+  assert(filterEntries([DEFAULT_FILTERS, notHero], [alice, bob]).length === 1, 'filterEntries drops blank filters')
+  const linkedEntry = filterEntries([linkedF], [alice, bob, north])[0]
+  assert(!!linkedEntry.linked && linkedEntry.linked.has('b'), 'filterEntries works out linked targets')
+  assert(!isAnyFilterActive([DEFAULT_FILTERS]) && isAnyFilterActive([DEFAULT_FILTERS, notHero]) && !isAnyFilterActive(undefined), 'isAnyFilterActive')
+  assert(!needsMetadataAny([{ ...DEFAULT_FILTERS, paths: ['x'] }]) && needsMetadataAny([{ ...DEFAULT_FILTERS, paths: ['x'] }, notHero]), 'needsMetadataAny')
 
   // Summary and list parsing
   assert(summarizeFilters(DEFAULT_FILTERS) === null, 'No summary when nothing is filtered')

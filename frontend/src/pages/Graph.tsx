@@ -31,9 +31,10 @@ import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import { FileStorage, StoredFile } from '../utils/fileStorage'
 import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
-import { Paperclip, Filter, ListTree, Loader2, LineChart, Network, Layers, HelpCircle, ImageDown } from 'lucide-react'
-import NodeFiltersDialog, { NodeFilterState, DEFAULT_FILTERS } from '../components/NodeFiltersDialog'
-import { isFilterActive, buildLinkedTargets, matchesNodeFilters, summarizeFilters } from '../utils/nodeFilters'
+import { Paperclip, ListTree, Loader2, LineChart, Network, Layers, HelpCircle, ImageDown } from 'lucide-react'
+import type { NodeFilterState } from '../components/NodeFiltersDialog'
+import FilterList from '../components/FilterList'
+import { filterEntries, matchesFilterSet, normalizeFilters } from '../utils/nodeFilters'
 // @ts-ignore: type stub provided in global.d.ts; package installed at runtime
 import * as htmlToImage from 'html-to-image'
 import clsx from 'clsx'
@@ -173,8 +174,8 @@ function GraphView() {
   })
 
   // Filters state
-  const [filters, setFilters] = useState<NodeFilterState>(DEFAULT_FILTERS)
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  // Several filters (#167): pages show if they match any Include filter and no Exclude filter
+  const [filters, setFilters] = useState<NodeFilterState[]>(() => normalizeFilters(null))
 
   // Persist filters per tab so they survive tab switches
   useEffect(() => {
@@ -354,8 +355,8 @@ function GraphView() {
   // saving effects so, on a switch, those run first and skip (restoredTabId is still the old tab).
   useEffect(() => {
     if (!activeGraphTabId) return
-    const saved = (useTabStore.getState().getTabById(activeGraphTabId)?.metadata as any)?.graphFilters as NodeFilterState | undefined
-    setFilters(saved && typeof saved === 'object' ? { ...DEFAULT_FILTERS, ...saved } : DEFAULT_FILTERS)
+    // Tabs saved before #167 hold a single filter object
+    setFilters(normalizeFilters((useTabStore.getState().getTabById(activeGraphTabId)?.metadata as any)?.graphFilters))
     setSubView(savedSubView(activeGraphTabId))
     setRestoredTabId(activeGraphTabId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -633,9 +634,9 @@ function GraphView() {
         return true
       }
       // Helper function to check if a node matches the filters (shared rules, #34)
-      const usingFilters = isFilterActive(filters)
-      const linkedTargets = usingFilters ? buildLinkedTargets(filters, verbweaverNodes.values()) : null
-      const nodeMatchesFilters = (node: any): boolean => !usingFilters || matchesNodeFilters(node, filters, linkedTargets)
+      const filterSet = filterEntries(filters, verbweaverNodes.values())
+      const usingFilters = filterSet.length > 0
+      const nodeMatchesFilters = (node: any): boolean => !usingFilters || matchesFilterSet(node, filterSet)
 
       // Convert VerbweaverNodes to React Flow nodes and edges
       const flowNodes: Node[] = []
@@ -1933,14 +1934,7 @@ function GraphView() {
                   />
                   Rigid mode
                 </label>
-                <button
-                  className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent flex items-center gap-2"
-                  onClick={() => setFiltersOpen(true)}
-                  title="Filter visible nodes by path, tags, keywords, dates, and more"
-                >
-                  <Filter className="w-4 h-4" />
-                  <span>Filters</span>
-                </button>
+                <FilterList filters={filters} onChange={setFilters} />
                 <button
                   className="w-full text-left px-2 py-1 text-sm border border-input rounded hover:bg-accent flex items-center gap-2"
                   onClick={() => { void exportMapAsPng() }}
@@ -1949,17 +1943,6 @@ function GraphView() {
                   <ImageDown className="w-4 h-4" />
                   <span>Save Image</span>
                 </button>
-                {(() => {
-                  // Shared summary, so paths and Include/Exclude show here too (#34, #35)
-                  const summary = summarizeFilters(filters)
-                  if (!summary) return null
-                  return (
-                    <div className="text-[11px] text-muted-foreground px-2 py-1 border border-border rounded bg-background/60"
-                         title={summary}>
-                      Active filters: {summary}
-                    </div>
-                  )
-                })()}
                 <div className="text-[11px] text-muted-foreground px-1">
                   Shift+drag to box-select · Shift/Ctrl+click to add or remove
                 </div>
@@ -2390,12 +2373,6 @@ function GraphView() {
             if (input) input.value = ''
           }
         }}
-      />
-      <NodeFiltersDialog
-        filters={filters}
-        onFiltersChange={setFilters}
-        isOpen={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
       />
     </div>
   )

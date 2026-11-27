@@ -10,7 +10,7 @@ import NodeContextMenu from '../components/graph/NodeContextMenu'
 import SharedCreateLinkModal from '../components/common/CreateLinkModal'
 import RemoveLinksModal from '../components/common/RemoveLinksModal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { isFilterActive, buildLinkedTargets, matchesFilterSet } from '../utils/nodeFilters'
+import { filterEntries, matchesFilterSet } from '../utils/nodeFilters'
 import { getLinkedNodes } from '../utils/nodeLinks'
 import { attachFilesToNode } from '../utils/nodeAttachments'
 import { chooseHandleIds, type XY } from '../utils/edgeHandles'
@@ -86,7 +86,7 @@ function GroupViewInner() {
     // A page is in a group if it matches any of the group's Include filters and none of its
     // Exclude filters; blank filters are ignored, and a group with no conditions holds every page (#68, #35)
     const groupNodes = enabled.map(g => {
-      const active = g.filters.filter(isFilterActive).map(f => ({ f, linked: buildLinkedTargets(f, nodesArr) }))
+      const active = filterEntries(g.filters, nodesArr)
       return {
         groupId: g.id,
         nodeIds: nodesArr

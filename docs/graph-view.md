@@ -48,7 +48,7 @@ To remove a link, right-click the line and choose **Unlink**. Lines from a folde
 - **Hide uploads:** hides files you've uploaded, such as images.
 - **Hide completed Tasks:** hides pages whose tasks are done.
 - **Display one-way links:** shows links that only point one way, as dashed arrows.
-- **Filters:** shows only the pages you want, for example those with a certain tag. To show only certain folders, type them in **Path starts with**, such as `characters, places`. Pages in their subfolders are shown too. Click **Exclude** at the top of the Filters window to hide the matching pages instead, for example to hide everything tagged `draft`.
+- **Filters:** shows only the pages you want, for example those with a certain tag. To show only certain folders, type them in **Path starts with**, such as `characters, places`. Pages in their subfolders are shown too. Click **Exclude** at the top of the Filters window to hide the matching pages instead, for example to hide everything tagged `draft`. Click **+** next to **Filters** to add another filter. A page is shown if it matches any of them, unless an Exclude filter hides it.
 - **Save Image:** saves the whole map as a PNG picture you can share.
 
 ### Shortcuts
@@ -184,7 +184,7 @@ Details go in the block at the very top of a page, between the two `---` lines. 
 
 ### Choosing which pages appear
 
-- **Filters** narrows the chart to certain pages, for example those tagged "draft" or those in the `chapters` folder. Choose **Exclude** to leave the matching pages out instead.
+- **Filters** narrows the chart to certain pages, for example those tagged "draft" or those in the `chapters` folder. Choose **Exclude** to leave the matching pages out instead. Click **+** next to **Filters** to add another filter. A page is shown if it matches any of them, unless an Exclude filter hides it.
 - **Show Advanced** lets you tick specific pages. Turn on **Use manual ordering** to drag pages into the order you want.
 - **Max nodes** limits how many pages are plotted.
 
