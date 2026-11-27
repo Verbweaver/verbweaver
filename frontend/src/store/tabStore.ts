@@ -39,6 +39,7 @@ export interface Tab {
     filePath?: string // For editor tabs; an editor tab without one is an empty Editor tab
     isModified?: boolean // Track if file has unsaved changes
     unsavedContent?: string // Store unsaved content for editor tabs
+    editorViewState?: unknown // Monaco's cursor, selection and scroll for the tab's file (#169)
     // For compiler tabs
     compilerState?: CompilerState
     compilerStateByProject?: Record<string, CompilerState>

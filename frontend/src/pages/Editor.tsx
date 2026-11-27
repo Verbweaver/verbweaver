@@ -64,6 +64,13 @@ function EditorView() {
   const [removeLinksOpen, setRemoveLinksOpen] = useState(false)
   const [removeLinksSelected, setRemoveLinksSelected] = useState<Set<string>>(new Set())
   const editorRef = useRef<any>(null)
+  // Cursor, selection and scroll per file, kept in the file's tab so switching away and back (or
+  // restarting) puts you where you were (#169). loadedKey names the file whose content is in `content`.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const viewStateKeyRef = useRef<string | null>(null)
+  const pendingRestoreRef = useRef<string | null>(null)
+  const viewStateSnapshotRef = useRef<{ key: string; state: unknown } | null>(null)
+  const viewStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const monacoRef = useRef<any>(null)
   const decorationIdsRef = useRef<string[]>([])
   const decorationHrefMapRef = useRef<Map<string, string>>(new Map())
@@ -350,6 +357,7 @@ function EditorView() {
           if (hasUnsavedContent && tab.metadata?.unsavedContent) {
             // Restore unsaved content
             setContent(tab.metadata.unsavedContent)
+            setLoadedKey(decodedPath)
             setLocalFilePath(decodedPath)
             setLocalFileName(decodedPath.split(/[/\\]/).pop() || 'Unknown')
             setIsModified(true)
@@ -357,6 +365,7 @@ function EditorView() {
             // Load from file
             const fileContent = await window.electronAPI.readFile(decodedPath)
             setContent(fileContent)
+            setLoadedKey(decodedPath)
             setLocalFilePath(decodedPath)
             setLocalFileName(decodedPath.split(/[/\\]/).pop() || 'Unknown')
             setIsModified(false)
@@ -381,12 +390,14 @@ function EditorView() {
         if (hasUnsavedContent && tab.metadata?.unsavedContent) {
           // Restore unsaved content
           setContent(tab.metadata.unsavedContent)
+          setLoadedKey(decoded)
           setIsModified(true)
         } else {
           // Load from API
           loadFile(currentProject.id, decoded)
             .then((file) => {
               setContent(file.content)
+              setLoadedKey(decoded)
               setIsModified(false)
               try { console.debug('[Editor] loaded content (web), scheduling decoration refresh') } catch {}
               setTimeout(() => updateLinkDecorationsRef.current?.(), 0)
@@ -407,6 +418,7 @@ function EditorView() {
   // the same Editor stays mounted for /editor and /editor/<file> (#164)
   useEffect(() => {
     if (filePath) return
+    setLoadedKey(null)
     setLocalFilePath(null)
     setLocalFileName(null)
     setContent('')
@@ -456,6 +468,74 @@ function EditorView() {
     tryOpenReadme()
     return () => { cancelled = true }
   }, [currentProject, currentProjectPath, filePath, currentFile, localFilePath, navigate])
+
+  // --- Cursor/scroll restore (#169) ---
+  // Write the latest view state into its file's tab (tab metadata is saved per project, so it
+  // also survives a restart).
+  const flushViewState = useCallback(() => {
+    if (viewStateTimerRef.current) {
+      clearTimeout(viewStateTimerRef.current)
+      viewStateTimerRef.current = null
+    }
+    const snap = viewStateSnapshotRef.current
+    if (!snap) return
+    viewStateSnapshotRef.current = null
+    const { findEditorTab: findTab, updateTabMetadata } = useTabStore.getState()
+    const tab = findTab(snap.key)
+    if (tab) updateTabMetadata(tab.id, (prev) => ({ ...prev, editorViewState: snap.state }))
+  }, [])
+
+  // Called on cursor/selection/scroll changes. Snapshot now (the model may hold another file's
+  // text by the time a debounced write runs); write after a pause.
+  const recordViewState = useCallback(() => {
+    const ed = editorRef.current
+    const key = viewStateKeyRef.current
+    // While a file is being swapped in, Monaco's own edits move the cursor: don't record those.
+    if (!ed || !key || pendingRestoreRef.current) return
+    try {
+      const state = ed.saveViewState?.()
+      if (!state) return
+      viewStateSnapshotRef.current = { key, state }
+    } catch { return }
+    if (viewStateTimerRef.current) clearTimeout(viewStateTimerRef.current)
+    viewStateTimerRef.current = setTimeout(flushViewState, 300)
+  }, [flushViewState])
+
+  // Put the cursor back once the editor holds the file's text.
+  const tryRestoreViewState = useCallback(() => {
+    const key = pendingRestoreRef.current
+    const ed = editorRef.current
+    if (!key || !ed || key !== loadedKey || isPreview) return
+    // A disposed editor (after Preview) has no model; wait for the new one's onMount
+    if (!ed.getModel?.()) return
+    pendingRestoreRef.current = null
+    const saved = useTabStore.getState().findEditorTab(key)?.metadata?.editorViewState
+    if (!saved) return
+    try { ed.restoreViewState(saved) } catch { /* stale or incompatible state: leave the cursor */ }
+  }, [loadedKey, isPreview])
+  const tryRestoreViewStateRef = useRef(tryRestoreViewState)
+  useEffect(() => { tryRestoreViewStateRef.current = tryRestoreViewState }, [tryRestoreViewState])
+
+  // A new file (or the first one after mounting): save the old file's position, restore the new one's
+  useEffect(() => {
+    flushViewState()
+    const key = filePath ? (() => { try { return decodeURIComponent(filePath) } catch { return filePath } })() : null
+    viewStateKeyRef.current = key
+    pendingRestoreRef.current = key
+  }, [filePath, flushViewState])
+
+  // Preview unmounts Monaco; restore again when the editor comes back
+  useEffect(() => {
+    if (!isPreview) return
+    flushViewState()
+    pendingRestoreRef.current = viewStateKeyRef.current
+  }, [isPreview, flushViewState])
+
+  // Monaco is a child, so its value update has run by the time this effect does
+  useEffect(() => { tryRestoreViewState() }, [tryRestoreViewState, content, hideMetadata])
+
+  // Leaving the Editor view (e.g. for Graph) unmounts it: keep the last position
+  useEffect(() => () => flushViewState(), [flushViewState])
 
   // Update tab modified state and save unsaved content
   useEffect(() => {
@@ -1180,6 +1260,12 @@ function EditorView() {
               onMount={(editorInstance, monaco) => {
                 editorRef.current = editorInstance
                 monacoRef.current = monaco
+                // Remember the cursor/scroll per file and restore it on return (#169)
+                try {
+                  editorInstance.onDidChangeCursorSelection(() => recordViewState())
+                  editorInstance.onDidScrollChange(() => recordViewState())
+                } catch { /* editor without these events: no restore */ }
+                tryRestoreViewStateRef.current()
                 // Avoid Ctrl/Cmd creating multi-cursors so we can use it for link navigation
                 try { editorInstance.updateOptions({ multiCursorModifier: 'alt' }) } catch {}
                 // Register Monaco-level keybindings to ensure shortcuts work when editor has focus
