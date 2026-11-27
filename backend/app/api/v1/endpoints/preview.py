@@ -245,7 +245,7 @@ async def preview_markdown(request: PreviewRequest):
             opacity: 0.55;
         }}
         .markdown-preview .vw-hidden-note::before {{
-            content: "Hidden from compile";
+            content: "Hidden from compiled documents";
             display: block;
             font-size: 0.75em;
             font-weight: 600;

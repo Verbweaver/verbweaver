@@ -99,7 +99,7 @@ Remember to check this date with the archive.
 :::
 ```
 
-You still see hidden notes in the Editor. In the preview they're faded and labelled **Hidden from compile**. The Compiler leaves them out of every export format.
+You still see hidden notes in the Editor. In the preview they're faded and labelled **Hidden from compiled documents**. The Compiler leaves them out of every export format.
 
 ## Linking to other pages
 

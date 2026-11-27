@@ -76,4 +76,4 @@ def test_preview_shows_hidden_text_dimmed():
     assert SECRET in html
     assert 'class="vw-hidden-note"' in html
     assert 'class="hidden"' not in html
-    assert "Hidden from compile" in html
+    assert "Hidden from compiled documents" in html
