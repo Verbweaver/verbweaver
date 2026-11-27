@@ -165,9 +165,9 @@ test.describe('Tabs', () => {
       await win.keyboard.press('End');
       await sleep(600);
     };
-    /** Type where the cursor is (focusing the editor doesn't move it) and check where it landed. */
+    /** Type straight away (the editor must have focus, cursor showing) and check where it landed. */
     const typeAndExpect = async (typed, expected) => {
-      await win.locator('.monaco-editor textarea').first().focus();
+      await expect(win.locator('.monaco-editor.focused')).toHaveCount(1);
       await win.keyboard.type(typed);
       await expect(editorText(win)).toContainText(expected);
       await sleep(600);

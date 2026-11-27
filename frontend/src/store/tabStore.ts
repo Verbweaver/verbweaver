@@ -83,6 +83,9 @@ const newTabId = (prefix: string) => {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+/** Window event asking the open Editor to take keyboard focus (#169). */
+export const FOCUS_EDITOR_EVENT = 'vw:focus-editor'
+
 export const editorTabPath = (filePath: string) => `/editor/${encodeURIComponent(filePath)}`
 
 /**

@@ -6,7 +6,7 @@ import { editorApi } from '../api/editorApi'
 import { useProjectStore } from '../store/projectStore'
 import { useEditorStore } from '../store/editorStore'
 import { useThemeStore } from '../store/themeStore'
-import { useTabStore, isEmptyEditorTab } from '../store/tabStore'
+import { useTabStore, isEmptyEditorTab, FOCUS_EDITOR_EVENT } from '../store/tabStore'
 import EditorSidebar from '../components/editor/EditorSidebar'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import toast from 'react-hot-toast'
@@ -512,6 +512,8 @@ function EditorView() {
     const saved = useTabStore.getState().findEditorTab(key)?.metadata?.editorViewState
     if (!saved) return
     try { ed.restoreViewState(saved) } catch { /* stale or incompatible state: leave the cursor */ }
+    // Focus so the cursor shows (and typing goes) where you left it
+    try { ed.focus() } catch { /* editor gone */ }
   }, [loadedKey, isPreview])
   const tryRestoreViewStateRef = useRef(tryRestoreViewState)
   useEffect(() => { tryRestoreViewStateRef.current = tryRestoreViewState }, [tryRestoreViewState])
@@ -533,6 +535,13 @@ function EditorView() {
 
   // Monaco is a child, so its value update has run by the time this effect does
   useEffect(() => { tryRestoreViewState() }, [tryRestoreViewState, content, hideMetadata])
+
+  // Clicking the Editor tab you're already on focuses the editor (TabBar sends this)
+  useEffect(() => {
+    const onFocusEditor = () => { try { editorRef.current?.focus?.() } catch { /* editor gone */ } }
+    window.addEventListener(FOCUS_EDITOR_EVENT, onFocusEditor)
+    return () => window.removeEventListener(FOCUS_EDITOR_EVENT, onFocusEditor)
+  }, [])
 
   // Leaving the Editor view (e.g. for Graph) unmounts it: keep the last position
   useEffect(() => () => flushViewState(), [flushViewState])
